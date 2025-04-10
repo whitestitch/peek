@@ -1,17 +1,17 @@
 import SwiftUI
 
-struct PeekSplashView: View {
-    @ObservedObject var session: PeekSessionModel
+struct SplashScreenView: View {
+    @ObservedObject var viewModel: PeekViewModel
     @State private var countdown = 3
     @State private var showImage = false
 
     var body: some View {
         Group {
             if showImage {
-                PeekImageView(session: session)
+                PeekImageView(viewModel: viewModel)
             } else {
-                VStack {
-                    Text("Opening Peek in \(countdown)...")
+                VStack(spacing: 20) {
+                    Text("⏳ Opening peek in \(countdown)...")
                         .font(.largeTitle)
                         .bold()
                     ProgressView()
