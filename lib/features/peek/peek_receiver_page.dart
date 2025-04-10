@@ -20,19 +20,6 @@ class _PeekReceiverPageState extends State<PeekReceiverPage> {
     _listenForRequests();
   }
 
-  @override
-  void dispose() {
-    super.dispose();
-    // _streamSub?.cancel();
-  }
-
-  // @override
-  // Widget build(BuildContext context) {
-  //   return Scaffold(
-  //     // UI
-  //   );
-  // }
-
   void _listenForRequests() {
     FirebaseFirestore.instance
         .collection('peek_requests')
@@ -56,6 +43,7 @@ class _PeekReceiverPageState extends State<PeekReceiverPage> {
     if (_currentRequest == null) return;
 
     final docRef = _currentRequest!.reference;
+    final requestId = _currentRequest!.id;
     final uid = _auth.currentUser?.uid ?? 'anonymous';
 
     await docRef.update({
@@ -65,8 +53,7 @@ class _PeekReceiverPageState extends State<PeekReceiverPage> {
     });
 
     if (accept) {
-      // ✅ Only receiver opens the camera
-      context.go('/capture');
+      context.go('/capture?requestId=$requestId'); // Receiver takes photo
     } else {
       context.go('/');
     }
