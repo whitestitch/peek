@@ -1,0 +1,1 @@
+This file unlocks the Upload Files button.
