@@ -12,63 +12,54 @@ class SplashPage extends StatefulWidget {
 }
 
 class _SplashPageState extends State<SplashPage> {
-  String? _imageUrl;
-  bool _imageReady = false;
+  bool _imageReceived = false;
   int _countdown = 3;
   Timer? _countdownTimer;
-  bool _errorLoadingImage = false;
+  String? _imageUrl;
 
   @override
   void initState() {
     super.initState();
-    _waitForImage();
+    _listenForImage();
   }
 
-  void _waitForImage() {
+  void _listenForImage() {
     FirebaseFirestore.instance
         .collection('peek_requests')
         .doc(widget.requestId)
         .snapshots()
-        .listen((doc) {
-          final data = doc.data();
-          final url = data?['imageUrl'];
+        .listen((snapshot) {
+          final data = snapshot.data();
+          final imageUrl = data?['imageUrl'];
 
-          if (url != null && !_imageReady) {
-            print('📸 Image URL detected: $url');
-
+          if (!_imageReceived && imageUrl != null) {
             setState(() {
-              _imageUrl = url;
+              _imageReceived = true;
+              _imageUrl = imageUrl;
             });
-
-            // Delay to allow Storage to replicate image
-            Future.delayed(const Duration(seconds: 2), () {
-              _startCountdown();
-            });
+            _startCountdown();
           }
         });
   }
 
   void _startCountdown() {
-    setState(() {
-      _imageReady = true;
-      _errorLoadingImage = false;
-    });
-
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (_countdown > 0) {
+      if (_countdown > 1) {
         setState(() => _countdown--);
       } else {
         timer.cancel();
+        _goToImageView();
       }
     });
   }
 
-  void _retry() {
-    setState(() {
-      _errorLoadingImage = false;
-      _countdown = 3;
-    });
-    _startCountdown();
+  void _goToImageView() {
+    if (_imageUrl == null || !mounted) return;
+
+    final encodedUrl = Uri.encodeComponent(_imageUrl!);
+    context.go(
+      '/peek-image?requestId=${widget.requestId}&imageUrl=$encodedUrl',
+    );
   }
 
   @override
@@ -79,14 +70,14 @@ class _SplashPageState extends State<SplashPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (_imageUrl == null) {
-      return const Scaffold(
+    if (!_imageReceived) {
+      return Scaffold(
         body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
-            children: [
+            children: const [
               CircularProgressIndicator(),
-              SizedBox(height: 12),
+              SizedBox(height: 16),
               Text("Waiting for photo..."),
             ],
           ),
@@ -94,62 +85,12 @@ class _SplashPageState extends State<SplashPage> {
       );
     }
 
-    if (!_imageReady) {
-      return Scaffold(body: Center(child: Text("Preparing to peek...")));
-    }
-
-    if (_countdown > 0) {
-      return Scaffold(
-        body: Center(
-          child: Text(
-            "Opening in $_countdown...",
-            style: const TextStyle(fontSize: 32),
-          ),
-        ),
-      );
-    }
-
-    // ⏳ Countdown finished, show image
     return Scaffold(
       body: Center(
-        child:
-            _errorLoadingImage
-                ? Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(
-                      Icons.error_outline,
-                      size: 64,
-                      color: Colors.red,
-                    ),
-                    const SizedBox(height: 16),
-                    const Text("Could not load the Peek image"),
-                    const SizedBox(height: 12),
-                    ElevatedButton.icon(
-                      onPressed: _retry,
-                      icon: const Icon(Icons.refresh),
-                      label: const Text("Try Again"),
-                    ),
-                  ],
-                )
-                : Image.network(
-                  _imageUrl!,
-                  loadingBuilder: (context, child, loadingProgress) {
-                    if (loadingProgress == null) return child;
-                    return const CircularProgressIndicator();
-                  },
-                  errorBuilder: (context, error, stackTrace) {
-                    print("❌ Image failed to load: $error");
-                    Future.delayed(Duration.zero, () {
-                      if (mounted) {
-                        setState(() {
-                          _errorLoadingImage = true;
-                        });
-                      }
-                    });
-                    return const SizedBox();
-                  },
-                ),
+        child: Text(
+          "Opening in $_countdown...",
+          style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
+        ),
       ),
     );
   }
