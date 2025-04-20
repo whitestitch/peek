@@ -1,3 +1,5 @@
+// lib/features/home/home_page.dart
+import 'package:peek/features/peek/controllers/peek_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
@@ -5,9 +7,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:peek/shared/upgrade_prompt_dialog.dart';
+import 'package:peek/core/feature_flags.dart';
 import '../menu/drawer_menu.dart';
 
-// ✅ Riverpod stream for live user doc
 final userDocProvider = StreamProvider<DocumentSnapshot<Map<String, dynamic>>>((
   ref,
 ) {
@@ -25,18 +27,15 @@ class HomePage extends ConsumerStatefulWidget {
 
 class _HomePageState extends ConsumerState<HomePage> {
   bool _hasHitLimit = false;
-  int _cooldownRemaining = 0;
 
   @override
   void initState() {
     super.initState();
-
-    // 🧪 DEV ONLY: Force prompt for testing – REMOVE after confirming
-    // SharedPreferences.getInstance().then((prefs) async {
-    //   await prefs.clear(); // 💥 Clear all local keys
-    // });
-
-    _maybeShowPromoModal();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (FeatureFlags.showIntroScreens) {
+        _maybeShowPromoModal();
+      }
+    });
   }
 
   Future<void> _maybeShowPromoModal() async {
@@ -45,16 +44,18 @@ class _HomePageState extends ConsumerState<HomePage> {
     final now = DateTime.now().millisecondsSinceEpoch;
     const sevenDays = 7 * 24 * 60 * 60 * 1000;
 
-    if (now - lastShown > sevenDays) {
+    if (now - lastShown > sevenDays && mounted) {
       await showDialog(
         context: context,
         builder: (_) => const UpgradePromptDialog(),
       );
-      await prefs.setInt('premiumModalLastShown', now);
+      if (mounted) {
+        await prefs.setInt('premiumModalLastShown', now);
+      }
     }
   }
 
-  Future<void> _startPeeking(BuildContext context, bool isPremium) async {
+  Future<void> _startPeeking(bool isPremium) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
 
@@ -75,7 +76,10 @@ class _HomePageState extends ConsumerState<HomePage> {
 
       final peekCount = peekQuery.docs.length;
 
+      // Enforce the daily limit of 3 peeks.
       if (peekCount >= 3) {
+        if (!mounted) return;
+
         final proceed =
             await showDialog<bool>(
               context: context,
@@ -83,54 +87,75 @@ class _HomePageState extends ConsumerState<HomePage> {
             ) ??
             false;
 
-        if (!proceed) {
+        if (!proceed && mounted) {
           setState(() => _hasHitLimit = true);
           return;
         }
       }
-
-      final lastPeek =
-          peekQuery.docs.isNotEmpty
-              ? peekQuery.docs.first.data()['createdAt']?.toDate()
-              : null;
-
-      if (lastPeek != null && now.difference(lastPeek).inSeconds < 60) {
-        final remaining = 60 - now.difference(lastPeek).inSeconds;
-        setState(() => _cooldownRemaining = remaining);
-
-        Future.delayed(Duration(seconds: remaining), () {
-          setState(() => _cooldownRemaining = 0);
-        });
-
-        return;
-      }
     }
 
     try {
-      final expiresAt = now.add(const Duration(seconds: 10));
-      final docRef = await FirebaseFirestore.instance
-          .collection('peek_requests')
-          .add({
-            'from': uid,
-            'status': 'pending',
-            'createdAt': Timestamp.fromDate(now),
-            'expiresAt': Timestamp.fromDate(expiresAt),
-          });
-
-      context.go('/peek/${docRef.id}');
+      final controller = ref.read(peekControllerProvider.notifier);
+      final requestId = await controller.createPeekRequest(uid);
+      if (requestId != null && mounted) {
+        // Navigate to the waiting page so that the timer and timeout logic are active.
+        context.go('/wait?requestId=$requestId');
+      }
     } catch (e) {
-      print('🔥 Peek creation failed: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to send peek request')),
-      );
+      if (mounted) {
+        print('🔥 Peek creation failed: $e');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to send peek request')),
+        );
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
+    final uid = user?.uid;
     final isAnonymous = user?.isAnonymous ?? true;
-    final userDocAsync = ref.watch(userDocProvider);
+
+    // Using the current time to filter "today" – resets naturally at midnight.
+    final now = DateTime.now();
+
+    // Listen to user's peek_requests today for non-premium users.
+    final peekCounterWidget =
+        (!isAnonymous &&
+                !user!.isAnonymous &&
+                !ref.watch(userDocProvider).asData!.value.data()!['isPremium'])
+            ? StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream:
+                  FirebaseFirestore.instance
+                      .collection('peek_requests')
+                      .where('from', isEqualTo: uid)
+                      .where(
+                        'createdAt',
+                        isGreaterThanOrEqualTo: Timestamp.fromDate(
+                          DateTime(now.year, now.month, now.day),
+                        ),
+                      )
+                      .snapshots(),
+              builder: (context, snapshot) {
+                int peekCount = 0;
+                if (snapshot.hasData) {
+                  peekCount = snapshot.data!.docs.length;
+                }
+                final remaining = 3 - peekCount;
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Text(
+                    'You have $remaining peeks left today.',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                );
+              },
+            )
+            : const SizedBox.shrink();
 
     return Scaffold(
       appBar: AppBar(
@@ -154,76 +179,77 @@ class _HomePageState extends ConsumerState<HomePage> {
         ],
       ),
       drawer: const DrawerMenu(),
-      body: userDocAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error loading user: $e')),
-        data: (doc) {
-          final isPremium = doc.data()?['isPremium'] == true;
-
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  isAnonymous
-                      ? 'Welcome to Peek 👀\nYou\'re browsing as a guest.'
-                      : isPremium
-                      ? '👑 Premium unlocked. Enjoy unlimited peeking!'
-                      : 'Welcome back, ${user?.email ?? "user"}',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.headlineSmall,
-                ),
-                const SizedBox(height: 40),
-                if (_cooldownRemaining > 0)
-                  Text('⏳ Please wait $_cooldownRemaining seconds...')
-                else if (_hasHitLimit && !isPremium)
-                  const Text(
-                    '🚫 Free peeks used up today.\nUpgrade to unlock more!',
-                  )
-                else
-                  ElevatedButton.icon(
-                    onPressed: () => _startPeeking(context, isPremium),
-                    icon: const Icon(Icons.visibility),
-                    label: const Text('Start Peeking'),
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 24,
-                        vertical: 16,
+      body: ref
+          .watch(userDocProvider)
+          .when(
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (e, _) => Center(child: Text('Error loading user: $e')),
+            data: (doc) {
+              final isPremium = doc.data()?['isPremium'] == true;
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      isAnonymous
+                          ? 'Welcome to Peek 👀\nYou\'re browsing as a guest.'
+                          : isPremium
+                          ? '👑 Premium unlocked. Enjoy unlimited peeking!'
+                          : 'Welcome back, ${user?.email ?? "user"}',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.headlineSmall,
+                    ),
+                    // Show the real-time peek counter for non-premium users.
+                    if (!isPremium) peekCounterWidget,
+                    const SizedBox(height: 40),
+                    if (_hasHitLimit && !isPremium)
+                      const Text(
+                        '🚫 Free peeks used up today.\nUpgrade to unlock more!',
+                      )
+                    else
+                      ElevatedButton.icon(
+                        onPressed: () => _startPeeking(isPremium),
+                        icon: const Icon(Icons.visibility),
+                        label: const Text('Start Peeking'),
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 24,
+                            vertical: 16,
+                          ),
+                          textStyle: const TextStyle(fontSize: 18),
+                        ),
                       ),
-                      textStyle: const TextStyle(fontSize: 18),
-                    ),
-                  ),
-                const SizedBox(height: 20),
-                ElevatedButton.icon(
-                  onPressed: () => context.go('/receive'),
-                  icon: const Icon(Icons.radio),
-                  label: const Text('Receiver Mode'),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
-                      vertical: 16,
-                    ),
-                    textStyle: const TextStyle(fontSize: 18),
-                  ),
-                ),
-                const SizedBox(height: 40),
-                if (!isPremium)
-                  ElevatedButton.icon(
-                    onPressed: () => context.go('/premium'),
-                    icon: const Icon(Icons.star),
-                    label: const Text('Upgrade to Premium'),
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 24,
-                        vertical: 16,
+                    const SizedBox(height: 20),
+                    ElevatedButton.icon(
+                      onPressed: () => context.go('/receive'),
+                      icon: const Icon(Icons.radio),
+                      label: const Text('Receiver Mode'),
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 16,
+                        ),
+                        textStyle: const TextStyle(fontSize: 18),
                       ),
                     ),
-                  ),
-              ],
-            ),
-          );
-        },
-      ),
+                    const SizedBox(height: 40),
+                    if (!isPremium)
+                      ElevatedButton.icon(
+                        onPressed: () => context.go('/premium'),
+                        icon: const Icon(Icons.star),
+                        label: const Text('Upgrade to Premium'),
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 24,
+                            vertical: 16,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            },
+          ),
     );
   }
 }

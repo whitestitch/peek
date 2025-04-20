@@ -14,6 +14,7 @@ class PremiumPage extends StatefulWidget {
 class _PremiumPageState extends State<PremiumPage> {
   bool _loading = true;
   bool _isPremium = false;
+  bool _purchaseInProgress = false;
   ProductDetails? _product;
 
   @override
@@ -24,9 +25,7 @@ class _PremiumPageState extends State<PremiumPage> {
 
   Future<void> _initPage() async {
     await Future.wait([_checkPremiumStatus(), _loadProduct()]);
-    setState(() {
-      _loading = false;
-    });
+    if (mounted) setState(() => _loading = false);
   }
 
   Future<void> _checkPremiumStatus() async {
@@ -38,6 +37,7 @@ class _PremiumPageState extends State<PremiumPage> {
             .collection('users')
             .doc(user.uid)
             .get();
+
     setState(() {
       _isPremium = doc.data()?['isPremium'] == true;
     });
@@ -58,10 +58,26 @@ class _PremiumPageState extends State<PremiumPage> {
     }
   }
 
-  void _buy() {
-    if (_product == null) return;
-    final purchaseParam = PurchaseParam(productDetails: _product!);
-    InAppPurchase.instance.buyNonConsumable(purchaseParam: purchaseParam);
+  Future<void> _buy() async {
+    if (_product == null || _purchaseInProgress) return;
+
+    setState(() => _purchaseInProgress = true);
+
+    try {
+      final purchaseParam = PurchaseParam(productDetails: _product!);
+      InAppPurchase.instance.buyNonConsumable(purchaseParam: purchaseParam);
+    } catch (e) {
+      print('❌ Purchase failed: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Something went wrong. Please try again.'),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _purchaseInProgress = false);
+    }
   }
 
   void _restorePurchases() {
@@ -83,7 +99,7 @@ class _PremiumPageState extends State<PremiumPage> {
         actions: [
           IconButton(
             icon: const Icon(Icons.restore),
-            tooltip: 'Restore Purchase',
+            tooltip: 'Restore Purchases',
             onPressed: _restorePurchases,
           ),
         ],
@@ -133,9 +149,12 @@ class _PremiumPageState extends State<PremiumPage> {
                       else if (_product != null)
                         Center(
                           child: ElevatedButton.icon(
-                            onPressed: _buy,
+                            onPressed: _purchaseInProgress ? null : _buy,
                             icon: const Icon(Icons.star),
-                            label: Text('Upgrade – ${_product!.price}'),
+                            label:
+                                _purchaseInProgress
+                                    ? const Text('Processing...')
+                                    : Text('Upgrade – ${_product!.price}'),
                             style: ElevatedButton.styleFrom(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 32,
@@ -166,10 +185,11 @@ class _BenefitRow extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          const Icon(Icons.check_circle, color: Colors.deepPurple),
-          const SizedBox(width: 12),
-          Text(text, style: const TextStyle(fontSize: 16)),
+          const Icon(Icons.check_circle, color: Colors.deepPurple, size: 20),
+          const SizedBox(width: 10),
+          Expanded(child: Text(text, style: const TextStyle(fontSize: 16))),
         ],
       ),
     );

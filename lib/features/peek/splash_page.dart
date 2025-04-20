@@ -1,11 +1,15 @@
+// lib/features/peek/splash_page.dart
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:go_router/go_router.dart';
 
 class SplashPage extends StatefulWidget {
   final String requestId;
-  const SplashPage({super.key, required this.requestId});
+  final String? initialImageUrl;
+
+  const SplashPage({super.key, required this.requestId, this.initialImageUrl});
 
   @override
   State<SplashPage> createState() => _SplashPageState();
@@ -13,33 +17,67 @@ class SplashPage extends StatefulWidget {
 
 class _SplashPageState extends State<SplashPage> {
   bool _imageReceived = false;
-  int _countdown = 3;
-  Timer? _countdownTimer;
+  bool _isVerifying = false;
   String? _imageUrl;
+  Timer? _countdownTimer;
+  int _countdown = 3;
 
   @override
   void initState() {
     super.initState();
-    _listenForImage();
+    if (widget.initialImageUrl != null) {
+      _handleReceivedImage(widget.initialImageUrl!);
+    } else {
+      _waitForImageUrl();
+    }
   }
 
-  void _listenForImage() {
+  void _waitForImageUrl() {
     FirebaseFirestore.instance
         .collection('peek_requests')
         .doc(widget.requestId)
         .snapshots()
-        .listen((snapshot) {
-          final data = snapshot.data();
-          final imageUrl = data?['imageUrl'];
-
+        .listen((snapshot) async {
+          final imageUrl = snapshot.data()?['imageUrl'];
           if (!_imageReceived && imageUrl != null) {
-            setState(() {
-              _imageReceived = true;
-              _imageUrl = imageUrl;
-            });
-            _startCountdown();
+            _handleReceivedImage(imageUrl);
           }
         });
+  }
+
+  void _handleReceivedImage(String imageUrl) async {
+    setState(() {
+      _isVerifying = true;
+      _imageUrl = imageUrl;
+    });
+
+    final success = await _verifyImageAccessible(imageUrl);
+
+    if (!mounted) return;
+
+    if (success) {
+      setState(() {
+        _imageReceived = true;
+        _isVerifying = false;
+      });
+      _startCountdown();
+    } else {
+      debugPrint('⏳ Image not ready yet, retrying...');
+      await Future.delayed(const Duration(seconds: 1));
+      _handleReceivedImage(imageUrl); // retry
+    }
+  }
+
+  Future<bool> _verifyImageAccessible(String url) async {
+    try {
+      final uri = Uri.parse(url);
+      final client = HttpClient();
+      final request = await client.getUrl(uri);
+      final response = await request.close();
+      return response.statusCode == 200;
+    } catch (e) {
+      return false;
+    }
   }
 
   void _startCountdown() {
@@ -48,18 +86,21 @@ class _SplashPageState extends State<SplashPage> {
         setState(() => _countdown--);
       } else {
         timer.cancel();
-        _goToImageView();
+        _goToImage();
       }
     });
   }
 
-  void _goToImageView() {
-    if (_imageUrl == null || !mounted) return;
-
-    final encodedUrl = Uri.encodeComponent(_imageUrl!);
-    context.go(
-      '/peek-image?requestId=${widget.requestId}&imageUrl=$encodedUrl',
+  void _goToImage() {
+    if (!mounted || _imageUrl == null) return;
+    final uri = Uri(
+      path: '/peek-image',
+      queryParameters: {
+        'requestId': widget.requestId,
+        'imageUrl': _imageUrl!, // no encoding needed
+      },
     );
+    context.go(uri.toString());
   }
 
   @override
@@ -70,27 +111,26 @@ class _SplashPageState extends State<SplashPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_imageReceived) {
-      return Scaffold(
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: const [
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
-              Text("Waiting for photo..."),
-            ],
-          ),
-        ),
-      );
-    }
-
     return Scaffold(
+      backgroundColor: Colors.black,
       body: Center(
-        child: Text(
-          "Opening in $_countdown...",
-          style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
-        ),
+        child:
+            !_imageReceived || _isVerifying
+                ? const Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 16),
+                    Text(
+                      "Waiting for photo...",
+                      style: TextStyle(color: Colors.white),
+                    ),
+                  ],
+                )
+                : Text(
+                  "Opening in $_countdown...",
+                  style: const TextStyle(fontSize: 32, color: Colors.white),
+                ),
       ),
     );
   }

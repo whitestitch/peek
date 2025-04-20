@@ -1,8 +1,8 @@
+// lib/features/peek/photo_capture_page.dart
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:go_router/go_router.dart';
 
@@ -17,78 +17,77 @@ class PhotoCapturePage extends StatefulWidget {
 class _PhotoCapturePageState extends State<PhotoCapturePage> {
   File? _imageFile;
   bool _uploading = false;
+  bool _cameraOpened = false;
+  final ImagePicker _picker = ImagePicker();
 
-  Future<void> _takePhoto() async {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _openCamera());
+  }
+
+  Future<void> _openCamera() async {
+    if (_cameraOpened) return;
+    _cameraOpened = true;
+    await Future.delayed(const Duration(milliseconds: 300));
     try {
-      final picker = ImagePicker();
-      final pickedFile = await picker.pickImage(
-        source: ImageSource.camera,
-        preferredCameraDevice: CameraDevice.rear,
-      );
-
-      if (pickedFile != null && mounted) {
-        setState(() {
-          _imageFile = File(pickedFile.path);
-        });
-      } else if (mounted) {
-        // User canceled the camera
+      final picked = await _picker.pickImage(source: ImageSource.camera);
+      if (!mounted) return;
+      if (picked != null) {
+        setState(() => _imageFile = File(picked.path));
+      } else {
         context.go('/');
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Camera error: ${e.toString()}')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Camera error: $e')));
         context.go('/');
       }
     }
   }
 
-  Future<void> _sendPhoto() async {
-    if (_imageFile == null) return;
-
+  Future<void> _uploadPhoto() async {
+    if (_imageFile == null || _uploading) return;
     setState(() => _uploading = true);
 
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final storagePath = 'peeks/${widget.requestId}/$timestamp.jpg';
+    final ref = FirebaseStorage.instance.ref(storagePath);
+
     try {
-      // Get file extension (e.g. jpg, png)
-      final extension = _imageFile!.path.split('.').last;
-      final fileName =
-          'peeks/${widget.requestId}/${DateTime.now().millisecondsSinceEpoch}.$extension';
-
-      // Upload file to default Firebase Storage bucket
-      final ref = FirebaseStorage.instance.ref().child(fileName);
+      // Upload file
       await ref.putFile(_imageFile!);
-
-      // Get public download URL
       final downloadUrl = await ref.getDownloadURL();
 
-      // Update Firestore with photo URL + status
+      // Update Firestore
       await FirebaseFirestore.instance
           .collection('peek_requests')
           .doc(widget.requestId)
           .update({
             'status': 'accepted',
+            'storagePath': storagePath,
             'imageUrl': downloadUrl,
             'respondedAt': FieldValue.serverTimestamp(),
           });
 
+      // Notify user and return home
       if (mounted) {
-        context.go('/'); // Return to home or wherever appropriate
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Image sent')));
+        context.go('/');
       }
     } catch (e) {
+      debugPrint('Upload failed: $e');
       if (mounted) {
         setState(() => _uploading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Upload failed: ${e.toString()}')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Upload failed: $e')));
       }
     }
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _takePhoto());
   }
 
   @override
@@ -120,7 +119,7 @@ class _PhotoCapturePageState extends State<PhotoCapturePage> {
                     child: SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(
-                        onPressed: _sendPhoto,
+                        onPressed: _uploadPhoto,
                         icon: const Icon(Icons.send),
                         label: const Text('SEND PEEK'),
                         style: ElevatedButton.styleFrom(
