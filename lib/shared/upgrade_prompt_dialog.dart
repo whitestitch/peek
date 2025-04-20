@@ -35,7 +35,7 @@ class UpgradePromptDialog extends StatelessWidget {
           ),
           onPressed: () {
             Navigator.of(context).pop(); // close dialog
-            context.go('/premium'); // navigate to upgrade
+            context.go('/premium'); // navigate to upgrade page
           },
         ),
       ],
@@ -50,8 +50,22 @@ class _Bullet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Text(text),
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.check_circle, color: Colors.deepPurple, size: 20),
+          const SizedBox(width: 8),
+          // Wrap text inside Expanded to avoid overflow
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(fontSize: 14),
+              softWrap: true,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

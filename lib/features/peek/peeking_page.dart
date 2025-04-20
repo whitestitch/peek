@@ -1,3 +1,4 @@
+// lib/features/peek/peeking_page.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:go_router/go_router.dart';
@@ -17,7 +18,7 @@ class _PeekingPageState extends State<PeekingPage> {
           .doc(widget.requestId)
           .snapshots();
 
-  bool _navigated = false; // Prevent multiple redirects
+  bool _navigated = false; // Prevent duplicate redirects
 
   @override
   Widget build(BuildContext context) {
@@ -37,19 +38,23 @@ class _PeekingPageState extends State<PeekingPage> {
         }
 
         if (status == 'accepted' && imageUrl != null && !_navigated) {
-          _navigated = true; // Avoid duplicate redirects
+          _navigated = true;
           if (mounted) {
-            // Avoid async context error
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              context.go(
-                '/splash?requestId=${widget.requestId}&imageUrl=$imageUrl',
-              );
+              final splashUri =
+                  Uri(
+                    path: '/splash',
+                    queryParameters: {
+                      'requestId': widget.requestId,
+                      'imageUrl': imageUrl,
+                    },
+                  ).toString();
+              context.go(splashUri);
             });
           }
           return const Center(child: Text('Preparing your peek...'));
         }
 
-        // Default state for requester waiting
         return const Center(child: Text('👀 Waiting for someone to Peek…'));
       },
     );

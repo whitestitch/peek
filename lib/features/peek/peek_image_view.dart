@@ -1,3 +1,4 @@
+// lib/features/peek/peek_image_view.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -6,14 +7,8 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:go_router/go_router.dart';
 
 class PeekImageView extends StatefulWidget {
-  final String imageUrl;
   final String requestId;
-
-  const PeekImageView({
-    super.key,
-    required this.imageUrl,
-    required this.requestId,
-  });
+  const PeekImageView({super.key, required this.requestId});
 
   @override
   State<PeekImageView> createState() => _PeekImageViewState();
@@ -21,172 +16,170 @@ class PeekImageView extends StatefulWidget {
 
 class _PeekImageViewState extends State<PeekImageView>
     with SingleTickerProviderStateMixin {
-  bool _hasStarted = false;
+  String? _signedUrl;
+  String? _storagePath;
   bool _isPremium = false;
   bool _showReplay = false;
-  int _viewDuration = 5; // fallback default
+  bool _hasStarted = false;
+  int _viewDuration = 5;
 
-  late final AnimationController _fadeController;
-  late final Animation<double> _fadeAnimation;
-
-  Timer? _viewTimer;
-  Timer? _replayWindowTimer;
+  late final AnimationController _fadeCtrl;
+  late final Animation<double> _fadeAnim;
+  Timer? _viewTimer, _replayTimer;
 
   @override
   void initState() {
     super.initState();
-
-    _fadeController = AnimationController(
+    _fadeCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 500),
     );
-    _fadeAnimation = CurvedAnimation(
-      parent: _fadeController,
-      curve: Curves.easeIn,
-    );
+    _fadeAnim = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeIn);
 
-    _initializeSession();
+    _loadPremiumStatus();
+    _fetchSignedUrlAndStart();
   }
 
-  Future<void> _initializeSession() async {
-    await _loadUserStatus();
-    if (mounted) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _startViewCycle());
+  Future<void> _loadPremiumStatus() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final doc =
+          await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      final premium = doc.data()?['isPremium'] == true;
+      setState(() {
+        _isPremium = premium;
+        _viewDuration = premium ? 10 : 5;
+      });
+    } catch (e) {
+      debugPrint('⚠️ Failed to load premium status: $e');
     }
   }
 
-  Future<void> _loadUserStatus() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid != null) {
-      try {
-        final doc =
-            await FirebaseFirestore.instance.collection('users').doc(uid).get();
-        _isPremium = doc.data()?['isPremium'] == true;
-        _viewDuration = _isPremium ? 10 : 5;
-      } catch (e) {
-        debugPrint('⚠️ Failed to load premium status: $e');
-      }
+  Future<void> _fetchSignedUrlAndStart() async {
+    final snap =
+        await FirebaseFirestore.instance
+            .collection('peek_requests')
+            .doc(widget.requestId)
+            .get();
+    final path = snap.data()?['storagePath'] as String?;
+    if (path == null) {
+      debugPrint('❌ No storagePath found');
+      return;
+    }
+    _storagePath = path;
+
+    // small buffer for metadata
+    await Future.delayed(const Duration(milliseconds: 300));
+
+    try {
+      final url = await FirebaseStorage.instance.ref(path).getDownloadURL();
+      setState(() => _signedUrl = url);
+      _startViewCycle();
+    } catch (e) {
+      debugPrint('❌ Failed to fetch downloadURL: $e');
     }
   }
 
   void _startViewCycle() {
-    if (_hasStarted) return;
+    if (_hasStarted || _signedUrl == null) return;
     _hasStarted = true;
-    _fadeController.forward();
-
+    _fadeCtrl.forward();
     _viewTimer = Timer(Duration(seconds: _viewDuration), () {
       if (!mounted) return;
-
       if (_isPremium) {
         setState(() => _showReplay = true);
-        _replayWindowTimer = Timer(const Duration(seconds: 5), () {
-          if (mounted) {
-            setState(() => _showReplay = false);
-            _cleanupSession();
-          }
-        });
+        _replayTimer = Timer(const Duration(seconds: 5), _cleanupAndExit);
       } else {
-        Timer(const Duration(seconds: 2), () async {
-          if (mounted) {
-            await _cleanupSession();
-            if (mounted) context.go('/');
-          }
-        });
+        Timer(const Duration(seconds: 2), _cleanupAndExit);
       }
     });
   }
 
-  Future<void> _replayPeek() async {
-    setState(() {
-      _hasStarted = false;
-      _showReplay = false;
-    });
+  Future<void> _cleanupAndExit() async {
+    // Delete Firestore document
+    await FirebaseFirestore.instance
+        .collection('peek_requests')
+        .doc(widget.requestId)
+        .delete();
 
-    await Future.delayed(const Duration(milliseconds: 100));
-    _startViewCycle();
-  }
-
-  Future<void> _cleanupSession() async {
-    try {
-      await FirebaseFirestore.instance
-          .collection('peek_requests')
-          .doc(widget.requestId)
-          .delete();
-
-      final ref = FirebaseStorage.instance.refFromURL(widget.imageUrl);
-      await ref.delete();
-
-      debugPrint('🧹 Peek session cleaned up.');
-    } catch (e) {
-      debugPrint('⚠️ Cleanup error: $e');
+    // Delete storage file defensively
+    if (_storagePath != null) {
+      final ref = FirebaseStorage.instance.ref(_storagePath!);
+      try {
+        await ref.delete();
+        debugPrint('✅ Deleted storage file: $_storagePath');
+      } on FirebaseException catch (e) {
+        if (e.code == 'object-not-found') {
+          debugPrint('⚠️ File already removed: $_storagePath');
+        } else {
+          debugPrint('❌ Delete error: ${e.code} - ${e.message}');
+        }
+      }
     }
+
+    if (mounted) GoRouter.of(context).go('/');
   }
 
   @override
   void dispose() {
-    _fadeController.dispose();
     _viewTimer?.cancel();
-    _replayWindowTimer?.cancel();
+    _replayTimer?.cancel();
+    _fadeCtrl.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_signedUrl == null) {
+      return const Scaffold(
+        backgroundColor: Colors.black,
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
     return Scaffold(
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: FadeTransition(
-              opacity: _fadeAnimation,
+      backgroundColor: Colors.black,
+      body: FadeTransition(
+        opacity: _fadeAnim,
+        child: Stack(
+          children: [
+            Positioned.fill(
               child: Image.network(
-                widget.imageUrl,
+                _signedUrl!,
                 fit: BoxFit.cover,
-                loadingBuilder: (context, child, loadingProgress) {
-                  if (loadingProgress == null) {
-                    return child;
-                  } else {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                },
                 errorBuilder:
-                    (context, error, stackTrace) => Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Text('❌ Could not load the Peek image'),
-                          const SizedBox(height: 16),
-                          ElevatedButton(
-                            onPressed: () => setState(() {}),
-                            child: const Text('Try Again'),
-                          ),
-                        ],
+                    (_, __, ___) => const Center(
+                      child: Text(
+                        '❌ Could not load image',
+                        style: TextStyle(color: Colors.white),
                       ),
                     ),
               ),
             ),
-          ),
-
-          if (_showReplay && _isPremium)
-            Positioned(
-              bottom: 40,
-              left: 0,
-              right: 0,
-              child: Center(
-                child: ElevatedButton.icon(
-                  onPressed: _replayPeek,
-                  icon: const Icon(Icons.replay),
-                  label: const Text('Replay Peek'),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
-                      vertical: 14,
+            if (_showReplay)
+              Positioned(
+                bottom: 40,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _hasStarted = false;
+                        _showReplay = false;
+                      });
+                      _startViewCycle();
+                    },
+                    icon: const Icon(Icons.replay),
+                    label: const Text('Replay Peek'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.deepPurple,
                     ),
-                    backgroundColor: Colors.deepPurple,
                   ),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
