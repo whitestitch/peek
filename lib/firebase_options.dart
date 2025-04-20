@@ -4,16 +4,6 @@ import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, TargetPlatform;
 
-/// Default [FirebaseOptions] for use with your Firebase apps.
-///
-/// Example:
-/// ```dart
-/// import 'firebase_options.dart';
-/// // ...
-/// await Firebase.initializeApp(
-///   options: DefaultFirebaseOptions.currentPlatform,
-/// );
-/// ```
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
     if (kIsWeb) {
@@ -46,7 +36,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '96119580821',
     projectId: 'peek-fire',
     authDomain: 'peek-fire.firebaseapp.com',
-    storageBucket: 'peek-fire.firebasestorage.app',
+    storageBucket: 'peek-fire.appspot.com',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
@@ -54,7 +44,7 @@ class DefaultFirebaseOptions {
     appId: '1:96119580821:android:5a073baaaedf340e17939c',
     messagingSenderId: '96119580821',
     projectId: 'peek-fire',
-    storageBucket: 'peek-fire.firebasestorage.app',
+    storageBucket: 'peek-fire.appspot.com',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
@@ -62,8 +52,8 @@ class DefaultFirebaseOptions {
     appId: '1:96119580821:ios:889ce1d2cd69dd8117939c',
     messagingSenderId: '96119580821',
     projectId: 'peek-fire',
-    storageBucket: 'peek-fire.firebasestorage.app',
-    iosBundleId: 'com.example.peek',
+    storageBucket: 'peek-fire.appspot.com',
+    iosBundleId: 'com.fab.peek',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
@@ -71,8 +61,8 @@ class DefaultFirebaseOptions {
     appId: '1:96119580821:ios:889ce1d2cd69dd8117939c',
     messagingSenderId: '96119580821',
     projectId: 'peek-fire',
-    storageBucket: 'peek-fire.firebasestorage.app',
-    iosBundleId: 'com.example.peek',
+    storageBucket: 'peek-fire.appspot.com',
+    iosBundleId: 'com.fab.peek',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(
@@ -81,6 +71,6 @@ class DefaultFirebaseOptions {
     messagingSenderId: '96119580821',
     projectId: 'peek-fire',
     authDomain: 'peek-fire.firebaseapp.com',
-    storageBucket: 'peek-fire.firebasestorage.app',
+    storageBucket: 'peek-fire.appspot.com',
   );
 }

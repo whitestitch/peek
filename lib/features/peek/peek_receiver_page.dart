@@ -1,3 +1,4 @@
+// lib/features/peek/peek_receiver_page.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -41,7 +42,6 @@ class _PeekReceiverPageState extends State<PeekReceiverPage> {
 
   Future<void> _respondToRequest({required bool accept}) async {
     if (_currentRequest == null) return;
-
     final docRef = _currentRequest!.reference;
     final requestId = _currentRequest!.id;
     final uid = _auth.currentUser?.uid ?? 'anonymous';
@@ -53,7 +53,7 @@ class _PeekReceiverPageState extends State<PeekReceiverPage> {
     });
 
     if (accept) {
-      context.go('/capture?requestId=$requestId'); // Receiver takes photo
+      context.go('/capture?requestId=$requestId');
     } else {
       context.go('/');
     }
