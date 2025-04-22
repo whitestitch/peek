@@ -1,46 +1,33 @@
-# Miscellaneous
-*.class
-*.log
-*.pyc
-*.swp
+# === Keep existing lines ===
+lib/features/notification/service-account.json
+.git/
+
+# === Add these new lines ===
+
+# macOS
 .DS_Store
-.atom/
-.build/
-.buildlog/
-.history
-.svn/
-.swiftpm/
-migrate_working_dir/
+*.DS_Store
 
-# IntelliJ related
-*.iml
-*.ipr
-*.iws
-.idea/
-
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
-
-# Flutter/Dart/Pub related
-**/doc/api/
-**/ios/Flutter/.last_build_id
+# Flutter
+build/
 .dart_tool/
 .flutter-plugins
 .flutter-plugins-dependencies
-.pub-cache/
-.pub/
-/build/
+*.iml
+*.lock
 
-# Symbolication related
-app.*.symbols
+# Node / Firebase Functions
+node_modules/
+functions/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+firebase-debug.log
+firestore-debug.log
 
-# Obfuscation related
-app.*.map.json
+# IDE files (Example for VS Code, add others if needed)
+.idea/
+.vscode/
 
-# Android Studio will place build artifacts here
-/android/app/debug
-/android/app/profile
-/android/app/release
-lib/features/notification/service-account.json
+# Sensitive files (add any others specific to your project)
+# .env
