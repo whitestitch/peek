@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:peek/features/peek/controllers/peek_controller.dart';
 
+/// Waits for acceptance; on accept, routes into SplashPage for the 3‑second countdown.
 class PeekWaitPage extends ConsumerStatefulWidget {
   final String requestId;
   const PeekWaitPage({super.key, required this.requestId});
@@ -14,110 +15,87 @@ class PeekWaitPage extends ConsumerStatefulWidget {
 }
 
 class _PeekWaitPageState extends ConsumerState<PeekWaitPage> {
-  StreamSubscription<DocumentSnapshot>? _subscription;
-  Timer? _localTimer;
+  StreamSubscription<DocumentSnapshot>? _sub;
+  Timer? _timeoutTimer;
   bool _hasTimedOut = false;
-  bool _hasNavigated = false;
+  bool _navigated = false;
 
   @override
   void initState() {
     super.initState();
-    // Start a local 30-second timer (the designated peek duration)
-    _localTimer = Timer(const Duration(seconds: 30), () {
-      print('[PeekWaitPage] 30-second local timer expired.');
-      _handleTimeout();
-    });
-    print(
-      '[PeekWaitPage] initState: Starting snapshot listener for requestId: ${widget.requestId}',
-    );
-    _listenToRequest();
+    // Fallback after 30s
+    _timeoutTimer = Timer(const Duration(seconds: 30), _onTimeout);
+    _listenForPeek();
   }
 
-  void _listenToRequest() {
-    _subscription = FirebaseFirestore.instance
+  void _listenForPeek() {
+    _sub = FirebaseFirestore.instance
         .collection('peek_requests')
         .doc(widget.requestId)
         .snapshots()
         .listen(
-          (snapshot) {
-            print('[PeekWaitPage] Snapshot received: ${snapshot.data()}');
-            if (!snapshot.exists || _hasNavigated) return;
+          (snap) {
+            final data = snap.data();
+            if (data == null || _navigated) return;
 
-            final data = snapshot.data();
-            final status = data?['status'];
-            final imageUrl = data?['imageUrl'];
+            final status = data['status'] as String?;
+            final imageUrl = data['imageUrl'] as String?;
 
-            // If the document is marked as "timeout", trigger the timeout logic.
             if (status == 'timeout') {
-              print('[PeekWaitPage] Document status is "timeout".');
-              _handleTimeout();
-              return;
+              _onTimeout();
+            } else if (status == 'accepted' && imageUrl != null) {
+              _goToSplash(imageUrl);
+            } else if (status == 'rejected') {
+              _onRejected();
             }
-
-            // If the peek was accepted and an image URL is available, navigate to the image page.
-            if (status == 'accepted' && imageUrl != null) {
-              print('[PeekWaitPage] Peek accepted; imageUrl found.');
-              _navigateToImage(imageUrl);
-              return;
-            }
-
-            // If the peek was rejected, show an appropriate message.
-            if (status == 'rejected') {
-              print('[PeekWaitPage] Peek request was rejected.');
-              _showRejected();
-              return;
-            }
-
-            // Optionally log the current status.
-            print('[PeekWaitPage] Current status is "$status". Waiting...');
           },
-          onError: (error) {
-            print('[PeekWaitPage] Firestore listener error: $error');
+          onError: (e) {
+            debugPrint('PeekWaitPage listener error: $e');
           },
         );
   }
 
-  void _handleTimeout() {
-    if (_hasTimedOut || _hasNavigated) return;
+  void _onTimeout() {
+    if (_hasTimedOut || _navigated) return;
     setState(() => _hasTimedOut = true);
-    print('[PeekWaitPage] _handleTimeout() fired. Initiating document update.');
 
-    // Trigger the update without awaiting to ensure the UI thread isn’t blocked.
+    // mark expired
     ref
         .read(peekControllerProvider.notifier)
         .expirePeek(widget.requestId)
-        .then((_) {
-          print('[PeekWaitPage] expirePeek() completed successfully.');
-        })
-        .catchError((error) {
-          print('[PeekWaitPage] expirePeek() encountered an error: $error');
-        });
+        .catchError((e) => debugPrint('expirePeek error: $e'));
 
-    _cancelAll(); // Cancel timer and subscription.
+    _cancelAll();
 
+    // show message then back home
     Future.delayed(const Duration(seconds: 3), () {
-      if (!mounted || _hasNavigated) return;
-      _hasNavigated = true;
-      print('[PeekWaitPage] Redirecting to home after timeout.');
-      context.go('/');
+      if (mounted && !_navigated) {
+        _navigated = true;
+        context.go('/');
+      }
     });
   }
 
-  void _navigateToImage(String imageUrl) {
-    if (!mounted || _hasNavigated) return;
-    _hasNavigated = true;
+  void _goToSplash(String imageUrl) {
+    if (_navigated) return;
+    _navigated = true;
     _cancelAll();
-    print('[PeekWaitPage] Navigating to image page with URL: $imageUrl');
-    context.go('/peek-image?requestId=${widget.requestId}&imageUrl=$imageUrl');
+
+    // Let GoRouter build the URI, no manual encoding of %2F
+    final uri = Uri(
+      path: '/splash',
+      queryParameters: {
+        'requestId': widget.requestId,
+        'initialImageUrl': Uri.encodeFull(imageUrl),
+      },
+    );
+    context.go(uri.toString());
   }
 
-  void _showRejected() {
-    if (!mounted || _hasNavigated) return;
-    _hasNavigated = true;
+  void _onRejected() {
+    if (_navigated) return;
+    _navigated = true;
     _cancelAll();
-    print(
-      '[PeekWaitPage] Peek was rejected; showing notification and returning home.',
-    );
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('User was not ready to Peek.')),
     );
@@ -125,15 +103,14 @@ class _PeekWaitPageState extends ConsumerState<PeekWaitPage> {
   }
 
   void _cancelAll() {
-    _subscription?.cancel();
-    _localTimer?.cancel();
+    _sub?.cancel();
+    _timeoutTimer?.cancel();
   }
 
   @override
   void dispose() {
     _cancelAll();
     super.dispose();
-    print('[PeekWaitPage] Disposed.');
   }
 
   @override
@@ -157,7 +134,7 @@ class _PeekWaitPageState extends ConsumerState<PeekWaitPage> {
                     CircularProgressIndicator(color: Colors.white),
                     SizedBox(height: 24),
                     Text(
-                      '👀 Waiting for someone to Peek...',
+                      '👀 Waiting for someone to Peek…',
                       style: TextStyle(
                         fontSize: 20,
                         color: Colors.redAccent,

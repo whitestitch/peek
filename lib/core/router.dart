@@ -54,37 +54,28 @@ GoRouter createRouter(GlobalKey<NavigatorState> rootNavigatorKey) {
         name: 'capture',
         builder: (context, state) {
           final requestId = state.uri.queryParameters['requestId'];
-          if (requestId == null) {
-            return _errorScreen('❌ Missing requestId');
-          }
-          return PhotoCapturePage(requestId: requestId);
+          return requestId != null
+              ? PhotoCapturePage(requestId: requestId)
+              : _errorScreen('❌ Missing requestId');
         },
       ),
 
       /// 💧 After upload: splash & countdown
+      // GoRoute(
+      //   path: '/splash',
+      //   builder: (context, state) {
+      //     final requestId = state.uri.queryParameters['requestId'];
+      //     return SplashPage(requestId: requestId!);
+      //   },
+      // ),
       GoRoute(
         path: '/splash',
         name: 'splash',
         builder: (context, state) {
           final requestId = state.uri.queryParameters['requestId'];
           final imageUrl = state.uri.queryParameters['imageUrl'];
-          if (requestId == null) {
-            return _errorScreen('❌ Missing requestId');
-          }
+          if (requestId == null) return _errorScreen('❌ Missing requestId');
           return SplashPage(requestId: requestId, initialImageUrl: imageUrl);
-        },
-      ),
-
-      /// 🕒 Fallback wait if no one responds in time
-      GoRoute(
-        path: '/wait',
-        name: 'wait',
-        builder: (context, state) {
-          final requestId = state.uri.queryParameters['requestId'];
-          if (requestId == null) {
-            return _errorScreen('❌ Missing requestId');
-          }
-          return PeekWaitPage(requestId: requestId);
         },
       ),
 
@@ -94,10 +85,23 @@ GoRouter createRouter(GlobalKey<NavigatorState> rootNavigatorKey) {
         name: 'peek-image',
         builder: (context, state) {
           final requestId = state.uri.queryParameters['requestId'];
-          if (requestId == null) {
-            return _errorScreen('❌ Missing requestId');
+          final imageUrl = state.uri.queryParameters['imageUrl'];
+          if (requestId == null || imageUrl == null) {
+            return _errorScreen('❌ Missing requestId or imageUrl');
           }
-          return PeekImageView(requestId: requestId);
+          return PeekImageView(requestId: requestId, imageUrl: imageUrl);
+        },
+      ),
+
+      /// 🕒 Fallback wait if no one responds in time
+      GoRoute(
+        path: '/wait',
+        name: 'wait',
+        builder: (context, state) {
+          final requestId = state.uri.queryParameters['requestId'];
+          return requestId != null
+              ? PeekWaitPage(requestId: requestId)
+              : _errorScreen('❌ Missing requestId');
         },
       ),
 

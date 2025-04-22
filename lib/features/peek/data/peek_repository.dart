@@ -30,6 +30,7 @@ class PeekRepository {
 
   Future<void> expireRequest(String requestId) async {
     int retries = 0;
+    // A none Membership user
     const int maxRetries = 3;
     while (retries < maxRetries) {
       try {
