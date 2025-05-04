@@ -1,5 +1,5 @@
 # === Keep existing lines ===
-lib/features/notification/service-account.json
+secrets/.
 .git/
 
 # === Add these new lines ===

@@ -28,6 +28,14 @@ class PeekPremiumPage extends StatelessWidget {
               title: Text("More peeks per day"),
             ),
             const ListTile(
+              leading: Icon(Icons.remove_red_eye),
+              title: Text("More peeks per day"),
+            ),
+            const ListTile(
+              leading: Icon(Icons.remove_red_eye),
+              title: Text("More peeks per day"),
+            ),
+            const ListTile(
               leading: Icon(Icons.timer),
               title: Text("Longer view duration"),
             ),

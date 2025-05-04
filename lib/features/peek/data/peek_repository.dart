@@ -1,16 +1,16 @@
+// lib/features/peek/data/peek_repository.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class PeekRepository {
-  final FirebaseFirestore _firestore;
-  final FirebaseAuth _auth;
+  final FirebaseFirestore firestore;
+  final FirebaseAuth auth;
 
-  PeekRepository({FirebaseFirestore? firestore, FirebaseAuth? auth})
-    : _firestore = firestore ?? FirebaseFirestore.instance,
-      _auth = auth ?? FirebaseAuth.instance;
+  PeekRepository({required this.firestore, required this.auth});
 
-  String? get currentUserId => _auth.currentUser?.uid;
+  String? get currentUserId => auth.currentUser?.uid;
 
+  // --- Existing Methods ---
   Future<void> createRequest({
     required String requestId,
     required String from,
@@ -18,47 +18,75 @@ class PeekRepository {
     required Timestamp createdAt,
     required Timestamp expiresAt,
   }) async {
-    await _firestore.collection('peek_requests').doc(requestId).set({
+    await firestore.collection('peek_requests').doc(requestId).set({
       'from': from,
       'to': to,
-      'status': 'pending',
       'createdAt': createdAt,
       'expiresAt': expiresAt,
-      'timeout': false,
+      'status': 'pending',
+      'storagePath': null,
+      'imageUrl': null,
+      'respondedAt': null,
     });
+    print('[PeekRepository] Created peek request: $requestId');
   }
 
   Future<void> expireRequest(String requestId) async {
-    int retries = 0;
-    // A none Membership user
-    const int maxRetries = 3;
-    while (retries < maxRetries) {
-      try {
-        await _firestore.collection('peek_requests').doc(requestId).update({
-          'status': 'timeout',
-          'timeout': true,
-          'expiredAt': Timestamp.now(),
-        });
-        print(
-          '[PeekRepository] Successfully updated peek request $requestId to "timeout".',
-        );
-        return; // Successfully updated, exit the loop.
-      } catch (e) {
-        print(
-          '[PeekRepository] Error updating peek request $requestId (attempt ${retries + 1}): $e',
-        );
-        if (e.toString().contains('Unavailable')) {
-          retries++;
-          await Future.delayed(
-            const Duration(seconds: 2),
-          ); // Wait before retrying.
-        } else {
-          rethrow;
-        }
-      }
-    }
-    throw Exception(
-      'Failed to update peek request $requestId after $maxRetries retries.',
-    );
+    await firestore.collection('peek_requests').doc(requestId).update({
+      'status': 'expired',
+    });
+    print('[PeekRepository] Expired peek request: $requestId');
   }
+
+  // --- *** OPTIMIZED METHOD *** ---
+  /// Updates user stats after a successful peek request.
+  Future<void> updateUserPeekStats(
+    String userId, {
+    bool needsDailyReset = false,
+  }) async {
+    final userRef = firestore.collection('users').doc(userId);
+    final now = Timestamp.now();
+
+    // Prepare data for update
+    final Map<String, dynamic> updateData = {
+      'lastPeekRequestTimestamp': now,
+      // If resetting, set count directly to 1, otherwise increment.
+      'dailyPeekCount': needsDailyReset ? 1 : FieldValue.increment(1),
+    };
+
+    if (needsDailyReset) {
+      updateData['peekCountLastReset'] = now;
+      print(
+        '[PeekRepository] Resetting daily count to 1 and updating stats for user: $userId',
+      );
+    } else {
+      print(
+        '[PeekRepository] Incrementing daily count and updating stats for user: $userId',
+      );
+    }
+
+    // Use merge: true to avoid overwriting other user fields
+    await userRef.set(updateData, SetOptions(merge: true));
+  }
+  // --- *** END OF OPTIMIZED METHOD *** ---
+
+  // --- *** REMOVED _getCurrentPeekCount as it's no longer needed by optimized method *** ---
+  // Future<int> _getCurrentPeekCount(String userId) async { ... }
+  // --- *** END OF REMOVAL *** ---
+
+  // --- *** DEBUG METHOD (Keep as before) *** ---
+  /// Resets cooldown and daily count fields in Firestore for the given user.
+  /// Intended for debugging/testing purposes ONLY.
+  Future<void> resetUserPeekLimits(String userId) async {
+    final userRef = firestore.collection('users').doc(userId);
+    // Explicitly set fields to null/zero to ensure reset
+    await userRef.set({
+      'lastPeekRequestTimestamp': null,
+      'dailyPeekCount': 0,
+      'peekCountLastReset': null,
+    }, SetOptions(merge: true)); // Merge to avoid deleting other fields
+    print('[PeekRepository] DEBUG: Reset peek limits for user $userId');
+  }
+
+  // --- *** END OF DEBUG METHOD *** ---
 }

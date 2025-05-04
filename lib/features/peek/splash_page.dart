@@ -2,16 +2,15 @@
 
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:firebase_core/firebase_core.dart';
+// import 'package:firebase_core/firebase_core.dart'; // Not needed if only using default instance
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:go_router/go_router.dart';
 
 /// SplashPage:
 ///   - Fetches/validates image URL if not provided.
-///   - Precaches the image.
 ///   - Runs a 3-second countdown.
-///   - Navigates to PeekImageView.
+///   - Navigates to PeekImageView with necessary data.
 class SplashPage extends StatefulWidget {
   final String requestId;
   final String? initialImageUrl; // URL can be passed directly
@@ -26,21 +25,26 @@ class _SplashPageState extends State<SplashPage> {
   int _count = 3; // Countdown duration
   Timer? _timer; // Timer for the countdown
   String? _imageUrl; // Holds the final image URL
-  bool _isLoading = true; // Tracks loading state (URL fetching/precaching)
+  bool _isLoading = true; // Tracks loading state (URL fetching)
   String? _errorMessage; // Holds any error message
 
   @override
   void initState() {
     super.initState();
+    // Start the preparation process immediately
     _prepareAndStart();
   }
 
-  /// Fetches URL (if needed), precaches, and starts the countdown.
+  /// Fetches URL (if needed) and starts the countdown.
   Future<void> _prepareAndStart() async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    }); // Start loading state
+    // Ensure initial state is loading and no error
+    // Use mounted check even before async gap for robustness if called elsewhere later
+    if (mounted) {
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
+    }
 
     try {
       // 1. Determine the image URL
@@ -52,16 +56,19 @@ class _SplashPageState extends State<SplashPage> {
         debugPrint(
           "[SplashPage] No initialImageUrl, fetching from Firestore...",
         );
-        // Fetch storagePath from Firestore if URL not provided
+        // Fetch from Firestore if URL not provided
         final snap =
             await FirebaseFirestore.instance
                 .collection('peek_requests')
                 .doc(widget.requestId)
                 .get();
+
+        // Check mounted status after await
+        if (!mounted) return;
+
         final data = snap.data();
         final storagePath = data?['storagePath'] as String?;
-        final directUrl =
-            data?['imageUrl'] as String?; // Also check if URL is already there
+        final directUrl = data?['imageUrl'] as String?;
 
         if (directUrl != null && directUrl.isNotEmpty) {
           _imageUrl = directUrl;
@@ -70,31 +77,34 @@ class _SplashPageState extends State<SplashPage> {
           debugPrint(
             "[SplashPage] Found storagePath: $storagePath, getting download URL...",
           );
-          // If only storagePath exists, get the download URL
-          // Ensure correct bucket if not default (though likely default here)
+          // Get URL from storage path
           _imageUrl =
               await FirebaseStorage.instance.ref(storagePath).getDownloadURL();
         } else {
-          // No URL or path found
+          // Handle case where neither URL nor path is found
           throw Exception(
             'Image URL or storage path not found in Firestore document.',
           );
         }
       }
 
-      if (!mounted) return; // Check after async operations
-
-      // 2. Precache the image
-      debugPrint("[SplashPage] Pre-caching image: $_imageUrl");
-      await precacheImage(NetworkImage(_imageUrl!), context);
-      debugPrint("[SplashPage] Image pre-cached successfully.");
-
+      // Check mounted status again after potential async URL fetch
       if (!mounted) return;
 
-      // 3. Start the countdown
+      // --- REMOVED PRECACHE ---
+      // 2. Precache the image (REMOVED - Caused context error)
+      // debugPrint("[SplashPage] Pre-caching image: $_imageUrl");
+      // await precacheImage(NetworkImage(_imageUrl!), context); // <-- REMOVED THIS LINE
+      // debugPrint("[SplashPage] Image pre-cached successfully.");
+      // --- END REMOVAL ---
+
+      // Check mounted status before final state update and timer start
+      if (!mounted) return;
+
+      // 3. Mark loading complete and start the countdown
       setState(() {
         _isLoading = false;
-      }); // Loading finished
+      });
       _startCountdownTimer();
     } catch (e) {
       debugPrint('❌ [SplashPage] Error during preparation: $e');
@@ -102,9 +112,9 @@ class _SplashPageState extends State<SplashPage> {
         setState(() {
           _isLoading = false;
           _errorMessage =
-              'Failed to load Peek details.\nPlease go back.'; // User-friendly error
+              'Failed to load Peek.\nPlease go home.'; // Updated error message
         });
-        // Optionally auto-navigate home after showing error briefly
+        // Removed auto-navigate home on error, let user decide via button
         // Future.delayed(const Duration(seconds: 4), _goHome);
       }
     }
@@ -112,36 +122,37 @@ class _SplashPageState extends State<SplashPage> {
 
   /// Starts the actual 3..2..1 timer.
   void _startCountdownTimer() {
-    if (_timer?.isActive ?? false) _timer!.cancel(); // Ensure no double timers
+    _timer?.cancel(); // Ensure no duplicate timers
 
     _timer = Timer.periodic(const Duration(seconds: 1), (t) {
       if (!mounted) {
         t.cancel();
         return;
       }
-      // Check count *before* setState
+      // Decrement countdown
       if (_count > 1) {
-        // --- LINT FIX: Added curly braces ---
         setState(() {
           _count--;
         });
-        // ------------------------------------
       } else {
         // Countdown finished
         t.cancel();
         debugPrint(
           "[SplashPage] Countdown finished. Navigating to /peek-image.",
         );
-        // Navigate to the image view page
-        context.go(
-          Uri(
-            path: '/peek-image',
-            queryParameters: {
-              'requestId': widget.requestId,
-              'imageUrl': _imageUrl!, // URL is guaranteed non-null here
-            },
-          ).toString(),
-        );
+        if (mounted) {
+          // Navigate to the image view page, passing the necessary data
+          context.go(
+            Uri(
+              path: '/peek-image',
+              queryParameters: {
+                'requestId': widget.requestId,
+                'imageUrl':
+                    _imageUrl!, // URL should be non-null here if no error occurred
+              },
+            ).toString(),
+          );
+        }
       }
     });
   }
@@ -156,7 +167,7 @@ class _SplashPageState extends State<SplashPage> {
 
   @override
   void dispose() {
-    _timer?.cancel(); // Cancel timer if active
+    _timer?.cancel(); // Important: Cancel timer on dispose
     super.dispose();
   }
 
@@ -164,8 +175,9 @@ class _SplashPageState extends State<SplashPage> {
   Widget build(BuildContext context) {
     Widget content;
 
+    // --- Build Logic based on State ---
     if (_isLoading) {
-      // Show loading indicator while fetching URL/precaching
+      // State 1: Loading URL/preparing
       content = const Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
@@ -175,7 +187,7 @@ class _SplashPageState extends State<SplashPage> {
         ],
       );
     } else if (_errorMessage != null) {
-      // Show error message if preparation failed
+      // State 2: Error occurred during preparation
       content = Padding(
         padding: const EdgeInsets.all(20.0),
         child: Column(
@@ -189,6 +201,7 @@ class _SplashPageState extends State<SplashPage> {
               style: const TextStyle(color: Colors.white, fontSize: 18),
             ),
             const SizedBox(height: 20),
+            // Provide a button to go home manually on error
             TextButton(
               onPressed: _goHome,
               child: const Text(
@@ -200,17 +213,18 @@ class _SplashPageState extends State<SplashPage> {
         ),
       );
     } else {
-      // Show countdown timer
+      // State 3: Loading successful, show countdown
       content = Text(
-        '$_count',
+        '$_count', // Display the current countdown number
         style: const TextStyle(
           color: Colors.white,
-          fontSize: 96, // Larger countdown
+          fontSize: 96,
           fontWeight: FontWeight.bold,
           shadows: [Shadow(blurRadius: 8.0, color: Colors.black45)],
         ),
       );
     }
+    // --- End Build Logic ---
 
     return Scaffold(
       backgroundColor: Colors.black,

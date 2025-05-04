@@ -7,6 +7,8 @@ class DrawerMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Drawer(
+      // Optional: Add background color matching theme
+      // backgroundColor: Theme.of(context).colorScheme.surface,
       child: SafeArea(
         child: ListView(
           padding: EdgeInsets.zero,
@@ -23,13 +25,11 @@ class DrawerMenu extends StatelessWidget {
               title: const Text('👑 Peek Premium'),
               onTap: () => context.go('/premium'),
             ),
-            /*
             ListTile(
               leading: const Icon(Icons.bar_chart),
               title: const Text('🧭 My Stats'),
               onTap: () => context.go('/stats'),
             ),
-            */
             ListTile(
               leading: const Icon(Icons.lock),
               title: const Text('🔒 Privacy & Safety'),
@@ -39,6 +39,16 @@ class DrawerMenu extends StatelessWidget {
               leading: const Icon(Icons.info_outline),
               title: const Text('❓ About Peek'),
               onTap: () => context.go('/info'),
+            ),
+            ListTile(
+              leading: const Icon(
+                  Icons.slideshow_rounded), // Example: Slideshow icon
+              title: const Text(
+                  'View Tutorial'), // Or "How Peek Works", "Show Intro"
+              onTap: () {
+                Navigator.pop(context); // Close the drawer first
+                context.go('/onboarding'); // Navigate to the onboarding route
+              },
             ),
           ],
         ),

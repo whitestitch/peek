@@ -2,49 +2,98 @@ name: peek
 description: "Peek - Anonymous photo request app"
 publish_to: 'none' # private project
 
-version: 1.0.0+1
+version: 1.0.0+9 # Consider updating build number if needed
 
 environment:
-  sdk: ^3.7.2
+  sdk: '>=3.3.0 <4.0.0' # Keep modern range
 
 dependencies:
   flutter:
     sdk: flutter
 
   # Firebase core tools
-  firebase_core: ^3.13.0
-  firebase_auth: ^5.5.2
-  cloud_firestore: ^5.6.6
-  firebase_storage: ^12.4.5
-  firebase_messaging: ^15.2.5
-  firebase_analytics: ^11.4.5
-  firebase_in_app_messaging: ^0.8.1+5
-  firebase_ui_auth: ^1.14.0
+  firebase_core: ^3.1.1 # Keep previous update
+
+  firebase_auth: ^5.5.3 # Updated patch
+  cloud_firestore: ^5.6.7 # Updated patch
+
+  firebase_storage: ^12.1.0 # Keep previous update
+  firebase_messaging: ^15.0.1 # Keep previous update
+  firebase_analytics: ^11.0.1 # Keep previous update
+  firebase_in_app_messaging: ^0.8.0 # Keep previous update
+  firebase_ui_auth: ^1.13.1 # Keep previous update
+  timeago: ^3.6.1
+  rive: ^0.13.4 # Keep previous update (Check latest safe minor if desired: ^0.13.x)
 
   # Subscriptions & payments
-  in_app_purchase: ^3.2.1
+  in_app_purchase: ^3.2.1 # Keep, check latest safe minor if desired
 
   # Local storage & UUID
-  shared_preferences: ^2.2.2
-  uuid: ^4.4.2
+  shared_preferences: ^2.2.3 # Keep previous update
+  uuid: ^4.4.0 # Keep previous update
+  # --- NOTE: Keep major version locked for now ---
+  freezed_annotation: ^2.4.2 # Keep at 2.x
 
   # Routing & state management
-  go_router: ^14.8.1
-  flutter_riverpod: ^2.6.1
-  flutter_hooks: ^0.20.5
+  # --- NOTE: Keep major version locked for now ---
+  go_router: ^14.8.1 # Keep at 14.x
+  flutter_riverpod: ^2.5.1 # Keep previous update
+  # --- NOTE: Keep major version locked for now ---
+  flutter_hooks: ^0.20.5 # Keep at 0.20.x
+  url_launcher: ^6.3.0 # Keep previous update
+  in_app_review: ^2.0.9 # Keep, check latest safe minor if desired
 
   # UI enhancements
-  google_fonts: ^6.2.1
-  flutter_spinkit: ^5.2.0
+  # google_fonts: ^6.2.1 # Keep removed
+  flutter_spinkit: ^5.2.1 # Keep previous update
   cupertino_icons: ^1.0.8
 
   # Camera / photo
-  image_picker: ^1.1.2
+  image_picker: ^1.1.2 # Keep, check latest safe minor if desired
+  camera: ^0.11.0 # Keep previous update
+  image: ^4.2.0 # Keep previous update
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^5.0.0
+  build_runner: ^2.4.11 # Keep previous update
+  # --- NOTE: Keep major version locked for now ---
+  freezed: ^2.5.3 # Keep at 2.x
+  # --- NOTE: Keep major version locked for now ---
+  flutter_lints: ^4.0.0 # Keep at 4.x
+  # --- NOTE: Keep minor version locked for now ---
+  flutter_launcher_icons: ^0.13.1 # Keep at 0.13.x
 
 flutter:
   uses-material-design: true
+
+  assets:
+    # Keep asset declarations as before
+    - assets/images/
+    - assets/icons/
+    - assets/animations/ # Changed from rive
+
+  fonts:
+    # Keep font declarations as before
+    - family: Poppins
+      fonts:
+        - asset: assets/fonts/Poppins-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Poppins-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Poppins-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Poppins-Bold.ttf
+          weight: 700
+
+# Keep launcher icon config as before
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/images/peekio.png" # <<< VERIFY PATH
+  min_sdk_android: 21
+  remove_alpha_ios: true
+
+# Keep native splash config commented out or configured
+# flutter_native_splash:
+#   ...
