@@ -61,16 +61,15 @@ class OnboardingSlide extends material.StatelessWidget {
     final bool showRiveAnimation = imageAsset.toLowerCase().endsWith('.riv');
 
     // Define CONSISTENT spacing values - vertical layout managed by Spacer/structure now
-    const double topPadding = 40.0;
-    const double spaceBelowLogo = 0;
-    const double spaceBelowImageStack = 0; // More space before text
-    const double finalBottomPadding = 50.0;
+    // final double spaceBelowLogo =
+    //     isHeroImageFullWidth ? 0 : 0; // Less space on Slide 1
+    // final double spaceBelowAnimation = isHeroImageFullWidth ? 25.0 : 40.0;
+    // final double spaceBelowImage = isHeroImageFullWidth ? 0 : 0;
+    // final double spaceBelowCentralImage = !isHeroImageFullWidth ? 0 : 0;
+    final double finalBottomSpace = isHeroImageFullWidth ? 35.0 : 35.0; // Less
 
     return material.SingleChildScrollView(
       physics: const material.BouncingScrollPhysics(),
-      padding: const material.EdgeInsets.only(
-          top: topPadding,
-          bottom: finalBottomPadding), // Apply vertical padding here
       child: material.Column(
         crossAxisAlignment:
             material.CrossAxisAlignment.center, // Center horizontally
@@ -102,26 +101,31 @@ class OnboardingSlide extends material.StatelessWidget {
             ),
           ),
           // Fixed spacing below logo
-          const material.SizedBox(height: spaceBelowLogo),
+          // material.SizedBox(height: spaceBelowImage),
 
           // 2. Hero Image (Conditional Layout)
           material.Padding(
             // Apply horizontal padding only for slide 3 (constrained hero)
-            padding: material.EdgeInsets.symmetric(
-                horizontal:
-                    (!isHeroImageFullWidth && !showRiveAnimation) ? 35.0 : 0),
+            padding: material.EdgeInsets.only(
+              left: (!isHeroImageFullWidth && !showRiveAnimation) ? 35.0 : 0,
+              right: (!isHeroImageFullWidth && !showRiveAnimation) ? 35.0 : 0,
+              bottom: isHeroImageFullWidth ? 20.0 : 0,
+            ),
+
             child: material.SizedBox(
               // Use SizedBox to constrain the height consistently
-              height:
-                  screenHeight * 0.40, // Define height for image/animation area
+              height: showRiveAnimation || !isHeroImageFullWidth
+                  ? screenHeight * 0.40
+                  : null,
               width: screenWidth, // Allow full width
               child: showRiveAnimation
                   ? // If Slide 2, show Rive Animation
                   RiveAnimation.asset(
-                      'assets/animations/onboarding_pulse_eye.riv', // <<< PATH TO YOUR RIVE FILE
-                      // Specify the animation or state machine name from your Rive file
-                      animations: const ['PulseLoop'],
-                      // or stateMachines: const ['State Machine 1'], // <<< YOUR STATE MACHINE NAME
+                      // 'assets/animations/button_underline_effect.riv',
+                      // animations: const ['button_peek_effect'],
+                      'assets/animations/onboarding_pulse_eye.riv',
+                      stateMachines: const ['State Machine 1'],
+                      // animations: const ['button_underline_effect'],
                       fit: material.BoxFit.contain, // Fit animation
                       // Optional: Add controllers, handle errors
                       onInit: (artboard) {
@@ -133,6 +137,7 @@ class OnboardingSlide extends material.StatelessWidget {
                     )
                   : // If Slide 1 or 3, show static Image
                   material.Image.asset(
+                      // height: spaceBelowCentralImage,
                       imageAsset, // Hero image path
                       // Width/Height/Fit handled by outer SizedBox/Padding
                       fit: isHeroImageFullWidth
@@ -144,12 +149,14 @@ class OnboardingSlide extends material.StatelessWidget {
             ),
           ),
           // Fixed spacing below image
-          const material.SizedBox(height: spaceBelowImageStack),
+
+          // material.SizedBox(height: spaceBelowImage),
+          // material.SizedBox(height: spaceBelowCentralImage),
 
           // 3. Text Content Area (Centered)
           material.Padding(
-            padding: const material.EdgeInsets.symmetric(
-                horizontal: 35.0), // Keep horizontal padding
+            padding: const material.EdgeInsets.only(
+                top: 30.0, left: 35.0, right: 35.0),
             child: material.Column(
               mainAxisSize: material.MainAxisSize.min,
               crossAxisAlignment: material.CrossAxisAlignment.center,
@@ -159,10 +166,10 @@ class OnboardingSlide extends material.StatelessWidget {
                   textAlign: material.TextAlign.center,
                   // Restore style from your code
                   style: textTheme.headlineSmall?.copyWith(
-                    fontWeight: material.FontWeight.w700,
+                    fontWeight: material.FontWeight.w600,
                     color: peekWhiteColor,
                     letterSpacing: 0.5,
-                    fontSize: 34,
+                    fontSize: 36,
                   ),
                 ),
                 const material.SizedBox(height: 15),
@@ -173,6 +180,7 @@ class OnboardingSlide extends material.StatelessWidget {
                   style: textTheme.titleMedium?.copyWith(
                     fontWeight: material.FontWeight.w500,
                     color: peekOnBackgroundColor.withOpacity(0.85),
+                    fontSize: 18,
                   ),
                 ),
                 if (textParagraph != null) ...[
@@ -182,8 +190,9 @@ class OnboardingSlide extends material.StatelessWidget {
                     textAlign: material.TextAlign.center,
                     // Restore style from your code
                     style: textTheme.bodyMedium?.copyWith(
-                      color: peekOnBackgroundColor.withOpacity(0.75),
-                      height: 1.5,
+                      color: peekWhiteColor.withOpacity(1),
+                      height: 1.55,
+                      fontSize: 16,
                       fontWeight: material.FontWeight.w400,
                     ),
                   ),
@@ -194,6 +203,7 @@ class OnboardingSlide extends material.StatelessWidget {
             ),
           ),
           // Bottom spacing handled by SingleChildScrollView padding
+          material.SizedBox(height: finalBottomSpace),
         ],
       ),
     );

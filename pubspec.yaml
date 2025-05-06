@@ -47,6 +47,7 @@ dependencies:
   # google_fonts: ^6.2.1 # Keep removed
   flutter_spinkit: ^5.2.1 # Keep previous update
   cupertino_icons: ^1.0.8
+  material_symbols_icons: ^4.2815.0
 
   # Camera / photo
   image_picker: ^1.1.2 # Keep, check latest safe minor if desired
@@ -86,11 +87,11 @@ flutter:
         - asset: assets/fonts/Poppins-Bold.ttf
           weight: 700
 
-# Keep launcher icon config as before
+# Launcher icon config as before
 flutter_launcher_icons:
   android: "launcher_icon"
   ios: true
-  image_path: "assets/images/peekio.png" # <<< VERIFY PATH
+  image_path: "assets/images/peekio.png"
   min_sdk_android: 21
   remove_alpha_ios: true
 

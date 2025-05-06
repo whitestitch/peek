@@ -48,7 +48,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
       'image': 'assets/images/onboarding_03.png',
       'isHeroFullWidth': false,
       'title': '100% Private',
-      'subtitle': 'No Date Saved.',
+      'subtitle': 'No Data Saved.',
       'text':
           'Peek is fully anonymous and safe.\nYour camera, your world — shared\nin the moment only.',
       'background': 'assets/images/onboarding_bg_03.jpg',

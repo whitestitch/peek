@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 const Color peekPrimaryColor = Color(0xFF0EF87A); // Deep Purple
 // const Color peekPrimaryColor = Color(0xFF6200EE);
-const Color peekSecondaryColor = Color(0xFF03DAC6); // Teal
+const Color peekSecondaryColor = Color(0xFF8B6FFF); // Teal
 const Color peekBackgroundColor = Color(0xFF121212); // Dark background
 const Color peekSurfaceColor = Color(0xFF1E1E1E); // Surface elements
 const Color peekErrorColor = Color(0xFFCF6679); // Red for errors

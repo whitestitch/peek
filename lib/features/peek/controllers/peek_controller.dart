@@ -96,9 +96,9 @@ class PeekController extends AsyncNotifier<void> {
           'requester_id_partial': fromUserId.substring(0, 8), // Partial ID
           'receiver_id_partial': receiverUid.substring(0, 8), // Partial ID
           'error': e.toString().substring(
-            0,
-            99 < e.toString().length ? 99 : e.toString().length,
-          ), // Truncated error
+                0,
+                99 < e.toString().length ? 99 : e.toString().length,
+              ), // Truncated error
         },
       );
       // ****************************************
@@ -133,6 +133,31 @@ class PeekController extends AsyncNotifier<void> {
       print('[PeekController] DEBUG: User limits reset successfully.');
     } catch (e) {
       print('[PeekController] DEBUG: Error resetting user limits: $e');
+    }
+  }
+
+  // TODO: Implement the actual logic in the repository layer.
+  Future<void> cancelPeek(String requestId) async {
+    final userId = _repo.currentUserId;
+    print(
+        "[PeekController] Received request to cancel peek $requestId for user $userId");
+    try {
+      // Option 1: Delete (Simpler)
+      await _repo.deleteRequest(requestId); // ASSUMES _repo has deleteRequest
+      print("[PeekController] Deleted peek request $requestId.");
+
+      // Option 2: Update status (More complex, allows tracking)
+      // await _repo.updateRequestStatus(requestId, 'cancelled');
+      // print("[PeekController] Updated status to 'cancelled' for request $requestId.");
+
+      // Log analytics event
+      await _analytics.logEvent(
+          name: 'peek_request_user_cancelled',
+          parameters: {'request_id_partial': requestId.substring(0, 8)});
+    } catch (e) {
+      print("❌ [PeekController] Failed to cancel peek request $requestId: $e");
+      // Handle or rethrow if needed
+      // throw e;
     }
   }
 }

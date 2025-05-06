@@ -31,6 +31,24 @@ class PeekRepository {
     print('[PeekRepository] Created peek request: $requestId');
   }
 
+  /// Deletes a peek request document from Firestore.
+  Future<void> deleteRequest(String requestId) async {
+    // <<< Add async and method body {}
+    try {
+      final docRef = firestore
+          .collection('peek_requests')
+          .doc(requestId); // Use your collection name
+      await docRef.delete();
+      print(
+          "[PeekRepository] Successfully deleted request $requestId"); // Use debugPrint
+    } catch (e) {
+      print(
+          "❌ [PeekRepository] Error deleting request $requestId: $e"); // Use debugPrint
+      // Rethrow or handle as appropriate for your repository layer
+      throw Exception("Failed to delete peek request: $e");
+    }
+  }
+
   Future<void> expireRequest(String requestId) async {
     await firestore.collection('peek_requests').doc(requestId).update({
       'status': 'expired',

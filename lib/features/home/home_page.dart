@@ -1,6 +1,6 @@
 // lib/features/home/home_page.dart
 import 'dart:async'; // For Timer
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' as material;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -10,10 +10,11 @@ import 'package:peek/shared/upgrade_prompt_dialog.dart';
 import 'package:peek/core/feature_flags.dart';
 import 'package:peek/features/peek/controllers/peek_controller.dart';
 import 'package:flutter/foundation.dart' show kDebugMode; // For debug button
+import 'package:peek/theme/colors.dart';
+import 'package:rive/rive.dart';
 
 // Import the premium status provider
 import 'package:peek/features/premium/providers/premium_controller.dart'; // Corrected typo if any
-
 import '../menu/drawer_menu.dart'; // Keep existing drawer import
 
 // --- userDataProvider (Keep as is) ---
@@ -38,7 +39,7 @@ class _HomePageState extends ConsumerState<HomePage> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    material.WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _checkPromoModal();
     });
   }
@@ -62,7 +63,7 @@ class _HomePageState extends ConsumerState<HomePage> {
           .read(premiumStatusProvider)
           .maybeWhen(data: (status) => status, orElse: () => false);
       if ((now - lastShown > sevenDaysInMillis) && mounted && !isPremium) {
-        await showDialog(
+        await material.showDialog(
           context: context,
           barrierDismissible: false,
           builder: (_) =>
@@ -119,7 +120,7 @@ class _HomePageState extends ConsumerState<HomePage> {
       }
       if (dailyPeekCount >= dailyLimit) {
         if (!mounted) return;
-        await showDialog<bool>(
+        await material.showDialog<bool>(
           context: context,
           barrierDismissible: false,
           builder: (_) => const UpgradePromptDialog(
@@ -155,7 +156,7 @@ class _HomePageState extends ConsumerState<HomePage> {
       } else if (requestId == null && mounted) {
         // FAILURE Case: Controller returned null (error occurred)
         _showErrorSnackbar('Could not start Peek. Please try again later.');
-        debugPrint(
+        material.debugPrint(
           "[HomePage] Peek request failed (controller returned null or user not mounted).",
         );
       }
@@ -171,12 +172,12 @@ class _HomePageState extends ConsumerState<HomePage> {
   void _showErrorSnackbar(String message) {
     // ... (Keep existing code) ...
     if (!mounted) return;
-    ScaffoldMessenger.of(context).removeCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.redAccent[700],
-        behavior: SnackBarBehavior.floating,
+    material.ScaffoldMessenger.of(context).removeCurrentSnackBar();
+    material.ScaffoldMessenger.of(context).showSnackBar(
+      material.SnackBar(
+        content: material.Text(message),
+        backgroundColor: material.Colors.redAccent[700],
+        behavior: material.SnackBarBehavior.floating,
         duration: const Duration(seconds: 3),
       ),
     );
@@ -214,7 +215,7 @@ class _HomePageState extends ConsumerState<HomePage> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  material.Widget build(material.BuildContext context) {
     // *** Watch premium status for UI ***
     final AsyncValue<bool> premiumStatus = ref.watch(premiumStatusProvider);
     // *** Watch user data for logic ***
@@ -280,7 +281,7 @@ class _HomePageState extends ConsumerState<HomePage> {
             /* Premium button state */
             isButtonEnabled = true;
             startButtonText = 'Start Peeking';
-            subtitle = '👑 Unlimited peeks available!';
+            subtitle = 'Unlimited peeks available!';
           } else {
             /* Free user button state & limit check */
             isButtonEnabled = true;
@@ -316,281 +317,409 @@ class _HomePageState extends ConsumerState<HomePage> {
         break;
     } // End switch
 
-    return Scaffold(
-      appBar: AppBar(
+    const String homeBackgroundPath = 'assets/images/onboarding_bg_02.jpg';
+
+    return material.Scaffold(
+      appBar: material.AppBar(
         /* ... Keep existing AppBar ... */
-        title: const Text('PEEK'),
+        title: const material.Text('Peekio'),
         elevation: 1.0,
-        actions: const [SizedBox(width: 48)],
+        actions: const [material.SizedBox(width: 48)],
+        // backgroundColor: material.Theme.of(context).bottomAppBarTheme.color ??
+        //     material.Theme.of(context).colorScheme.surface,
+        // backgroundColor: peekBackgroundColor.withOpacity(0.5),
+        backgroundColor: material.Colors.transparent,
       ),
+
       drawer: const DrawerMenu(), // Keep drawer
-      body: Center(
-        // Use premiumStatus.when for top-level loading/error of premium flag
-        child: premiumStatus.when(
-          loading: () => const CircularProgressIndicator(),
-          error: (e, _) => _buildErrorUI('Error loading status.'),
-          data: (isPremiumForUI) {
-            // isPremiumForUI used ONLY for UI elements
-            // Use userAsyncValue.when for main content based on user data snapshot
-            return userAsyncValue.when(
-              loading: () => const CircularProgressIndicator(),
-              error: (e, _) => _buildErrorUI('Error loading user data.'),
-              data: (doc) {
-                if (!doc.exists) {
-                  return _buildErrorUI("Waiting for user data...");
-                }
-                // *** FIX: Wrap Column in SingleChildScrollView ***
-                return SingleChildScrollView(
-                  // <--- ADDED THIS
-                  child: Padding(
-                    // Keep existing padding
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24.0,
-                      vertical: 30.0, // Increased vertical padding slightly
-                    ),
-                    child: Column(
-                      // The Column that was overflowing
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      // *** FIX: Added mainAxisSize ***
-                      mainAxisSize: MainAxisSize.min, // <--- ADDED THIS
-                      children: [
-                        if (kDebugMode) // Debug Button
-                          Padding(
-                            /* ... Keep debug button ... */
-                            padding: const EdgeInsets.only(bottom: 20.0),
-                            child: OutlinedButton.icon(
-                              icon: const Icon(
-                                Icons.refresh,
-                                size: 18,
-                                color: Colors.orangeAccent,
-                              ),
-                              label: const Text(
-                                "DEBUG: Reset Limits",
-                                style: TextStyle(color: Colors.orangeAccent),
-                              ),
-                              onPressed: isLoading ? null : _debugResetLimits,
-                              style: OutlinedButton.styleFrom(
-                                side: BorderSide(
-                                  color: isLoading
-                                      ? Colors.grey
-                                      : Colors.orangeAccent,
-                                ),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 5,
-                                ),
-                              ),
-                            ),
-                          ),
 
-                        // *** Use isPremiumForUI for the badge display ***
-                        _buildWelcomeArea(
-                          context,
-                          isPremiumForUI,
-                        ), // <--- PASS isPremiumForUI
+      body: material.Stack(
+        // Use Stack for layering
+        fit: material.StackFit.expand, // Make layers fill body
+        children: [
+          // --- Layer 1: Background Image ---
+          material.Image.asset(
+            homeBackgroundPath, // Use defined path
+            fit: material.BoxFit.cover, // Cover the entire area
+            errorBuilder: (context, error, stackTrace) {
+              material.debugPrint("Error loading home background: $error");
+              // Fallback solid color if image fails
+              return material.Container(color: peekBackgroundColor);
+            },
+          ),
 
-                        const SizedBox(height: 20),
-                        // Subtitle Area (logic uses data from snapshot)
-                        Container(
-                          /* ... Keep subtitle container ... */
-                          height: 24,
-                          alignment: Alignment.center,
-                          child: subtitle != null
-                              ? Text(
-                                  subtitle,
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                    color: (doc.data()?['isPremium'] == true)
-                                        ? Colors.green.shade600
-                                        : Theme.of(
-                                            context,
-                                          ).textTheme.titleMedium?.color,
+          material.Center(
+            // Use premiumStatus.when for top-level loading/error of premium flag
+            child: premiumStatus.when(
+              loading: () => const material.CircularProgressIndicator(),
+              error: (e, _) => _buildErrorUI('Error loading status.'),
+              data: (isPremiumForUI) {
+                // isPremiumForUI used ONLY for UI elements
+                // Use userAsyncValue.when for main content based on user data snapshot
+                return userAsyncValue.when(
+                  loading: () => const material.CircularProgressIndicator(),
+                  error: (e, _) => _buildErrorUI('Error loading user data.'),
+                  data: (doc) {
+                    if (!doc.exists) {
+                      return _buildErrorUI("Waiting for user data...");
+                    }
+                    // *** FIX: Wrap Column in SingleChildScrollView ***
+                    return material.SingleChildScrollView(
+                      // <--- ADDED THIS
+                      child: material.Padding(
+                        // Keep existing padding
+                        padding: const material.EdgeInsets.symmetric(
+                          horizontal: 24.0,
+                          vertical: 30.0, // Increased vertical padding slightly
+                        ),
+                        child: material.Column(
+                          // The Column that was overflowing
+                          mainAxisAlignment: material.MainAxisAlignment.center,
+                          // *** FIX: Added mainAxisSize ***
+                          mainAxisSize:
+                              material.MainAxisSize.min, // <--- ADDED THIS
+                          children: [
+                            if (kDebugMode) // Debug Button
+                              material.Padding(
+                                /* ... Keep debug button ... */
+                                padding: const material.EdgeInsets.only(
+                                    bottom: 20.0),
+                                child: material.OutlinedButton.icon(
+                                  icon: const material.Icon(
+                                    material.Icons.refresh,
+                                    size: 18,
+                                    color: material.Colors.orangeAccent,
                                   ),
-                                )
-                              : null,
-                        ),
-                        const SizedBox(height: 40),
-
-                        // Start Peeking Button (logic uses calculated state)
-                        SizedBox(
-                          /* ... Keep start peeking button ... */
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            onPressed:
-                                isButtonEnabled ? _attemptStartPeeking : null,
-                            icon: isLoading
-                                ? Container(
-                                    width: 20,
-                                    height: 20,
-                                    margin: const EdgeInsets.only(right: 8),
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2.5,
-                                      color: isButtonEnabled
-                                          ? Theme.of(
-                                              context,
-                                            ).colorScheme.onPrimary
-                                          : Colors.grey.shade400,
+                                  label: const material.Text(
+                                    "DEBUG: Reset Limits",
+                                    style: material.TextStyle(
+                                        color: material.Colors.orangeAccent),
+                                  ),
+                                  onPressed:
+                                      isLoading ? null : _debugResetLimits,
+                                  style: material.OutlinedButton.styleFrom(
+                                    side: material.BorderSide(
+                                      color: isLoading
+                                          ? material.Colors.grey
+                                          : material.Colors.orangeAccent,
                                     ),
-                                  )
-                                : const Icon(Icons.visibility_outlined),
-                            label: Text(startButtonText),
-                            style: ElevatedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 18),
-                              textStyle: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                              ),
-                              backgroundColor: isButtonEnabled
-                                  ? Theme.of(context).colorScheme.primary
-                                  : Colors.grey.shade600,
-                              foregroundColor: isButtonEnabled
-                                  ? Theme.of(context).colorScheme.onPrimary
-                                  : Colors.grey.shade400,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-
-                        // Receiver Mode Button (logic uses calculated state)
-                        SizedBox(
-                          /* ... Keep receiver mode button ... */
-                          width: double.infinity,
-                          child: OutlinedButton.icon(
-                            onPressed:
-                                isLoading ? null : () => context.go('/receive'),
-                            icon: const Icon(Icons.sensors),
-                            label: const Text('Receiver Mode'),
-                            style: OutlinedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              textStyle: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                              ),
-                              foregroundColor: isLoading
-                                  ? Colors.grey
-                                  : Theme.of(context).colorScheme.primary,
-                              side: BorderSide(
-                                color: isLoading
-                                    ? Colors.grey
-                                    : Theme.of(context).colorScheme.primary,
-                                width: 1.5,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 40),
-
-                        // TEMPORARY ONBOARD BUTTON
-                        SizedBox(
-                          /* ... Keep receiver mode button ... */
-                          width: double.infinity,
-                          child: OutlinedButton.icon(
-                            onPressed: isLoading
-                                ? null
-                                : () => context.go('/onboarding'),
-                            icon: const Icon(Icons.sensors),
-                            label: const Text('Onboarding UI'),
-                            style: OutlinedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              textStyle: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                              ),
-                              foregroundColor: isLoading
-                                  ? Colors.grey
-                                  : Theme.of(context).colorScheme.primary,
-                              side: BorderSide(
-                                color: isLoading
-                                    ? Colors.grey
-                                    : Theme.of(context).colorScheme.primary,
-                                width: 1.5,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 40),
-
-                        // *** Use isPremiumForUI for upgrade button visibility ***
-                        if (!isPremiumForUI) // <--- USE isPremiumForUI
-                          SizedBox(
-                            /* ... Keep upgrade button ... */
-                            width: double.infinity,
-                            child: ElevatedButton.icon(
-                              onPressed: isLoading
-                                  ? null
-                                  : () => context.go('/premium'),
-                              icon: const Icon(
-                                Icons.star_purple500_outlined,
-                                color: Colors.black87,
-                              ),
-                              label: const Text('Upgrade to Premium'),
-                              style: ElevatedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 16,
-                                ),
-                                textStyle: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                                backgroundColor: isLoading
-                                    ? Colors.grey.shade600
-                                    : Colors.amber.shade600,
-                                foregroundColor: isLoading
-                                    ? Colors.grey.shade400
-                                    : Colors.black87,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
+                                    padding:
+                                        const material.EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 5,
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ),
-                          ),
 
-                        // *** FIX: Removed Spacer ***
-                        // Rely on padding/SizedBox instead
-                        const SizedBox(height: 20), // Add space at bottom
-                      ],
-                    ),
-                  ),
+                            // *** Use isPremiumForUI for the badge display ***
+                            _buildWelcomeArea(
+                              context,
+                              isPremiumForUI,
+                            ), // <--- PASS isPremiumForUI
+
+                            const material.SizedBox(height: 20),
+                            // Subtitle Area (logic uses data from snapshot)
+                            material.Container(
+                              /* ... Keep subtitle container ... */
+                              height: 24,
+                              alignment: material.Alignment.center,
+                              child: subtitle != null
+                                  ? material.Text(
+                                      subtitle,
+                                      textAlign: material.TextAlign.center,
+                                      style: material.TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: material.FontWeight.w600,
+                                        color: (doc.data()?['isPremium'] ==
+                                                true)
+                                            ? material.Colors.green.shade600
+                                            : material.Theme.of(
+                                                context,
+                                              ).textTheme.titleMedium?.color,
+                                      ),
+                                    )
+                                  : null,
+                            ),
+                            const material.SizedBox(height: 10),
+
+                            material.SizedBox(
+                              // Define the total area for the Stack
+                              // Make this size slightly larger than the button to show the animation edges
+                              width: 300.0,
+                              height: 300.0,
+                              child: material.Stack(
+                                // Use Stack for layering
+                                alignment: material.Alignment.center,
+                                children: [
+                                  // --- Layer 1: Rive Animation (Background) ---
+                                  // Positioned.fill ensures it tries to fill the parent SizedBox
+                                  material.SizedBox(
+                                    width: 300,
+                                    height: 300,
+                                    child: RiveAnimation.asset(
+                                      'assets/animations/button_underline_effect.riv', // <<< PATH TO RIVE
+                                      // stateMachines: const ['State Machine 1'],
+                                      // animations: const ['button_underline_effect'],
+                                      animations: const ['button_peek_effect'],
+                                      fit: material.BoxFit.contain,
+                                      onInit: (artboard) {},
+                                      placeHolder: const material
+                                          .SizedBox.shrink(), // Empty placeholder
+                                    ),
+                                  ),
+
+                                  // Start Peeking Button (logic uses calculated state)
+                                  material.SizedBox(
+                                    // 1. Existing Circular Button (Keep As Is)
+                                    width: 140.0,
+                                    height: 140.0,
+                                    child: material.ElevatedButton(
+                                      onPressed: isButtonEnabled
+                                          ? _attemptStartPeeking
+                                          : null, // Uses existing logic
+                                      style: material.ElevatedButton.styleFrom(
+                                        alignment: material.Alignment.center,
+                                        shape: const material.CircleBorder(),
+                                        padding: material.EdgeInsets.zero,
+                                        backgroundColor: isButtonEnabled
+                                            ? peekSecondaryColor
+                                                .withOpacity(0.1)
+                                            : peekSurfaceColor.withOpacity(0.5),
+                                        foregroundColor:
+                                            isButtonEnabled // Affects default color of child text/icon if not overridden
+                                                ? peekOnPrimaryColor
+                                                : peekOnSurfaceColor
+                                                    .withOpacity(0.6),
+                                        elevation: isButtonEnabled ? 4.0 : 0.0,
+                                        disabledBackgroundColor:
+                                            peekSurfaceColor.withOpacity(0.5),
+                                        // No foreground needed if child handles its own color
+                                      ),
+                                      // --- Child Logic based on isLoading and isCooldownActive ---
+                                      child: isLoading
+                                          ? const material.SizedBox(
+                                              // Consistent Loading indicator
+                                              width: 22,
+                                              height: 22,
+                                              child: material
+                                                  .CircularProgressIndicator(
+                                                strokeWidth: 3.0,
+                                                color:
+                                                    peekOnPrimaryColor, // Use theme color
+                                              ),
+                                            )
+                                          : isCooldownActive // <<< CHECK COOLDOWN FLAG
+                                              ? material.Text(
+                                                  // <<< SHOW COOLDOWN TEXT
+                                                  // Extract remaining seconds calculation (ensure cooldownRemaining is available)
+                                                  "${(cooldownRemaining.inSeconds >= 0) ? cooldownRemaining.inSeconds + 1 : 1}s",
+                                                  style: material.TextStyle(
+                                                    fontSize: 34, // Adjust size
+                                                    fontWeight: material
+                                                        .FontWeight.w600,
+                                                    color: peekOnSurfaceColor
+                                                        .withOpacity(
+                                                            0.8), // Muted cooldown text color
+                                                  ),
+                                                  textAlign:
+                                                      material.TextAlign.center,
+                                                )
+                                              : material.Padding(
+                                                  // Add padding around the image inside the button
+                                                  padding: const material
+                                                      .EdgeInsets.all(0),
+                                                  child: material.Image.asset(
+                                                      'assets/images/peek_button_eye.png',
+                                                      fit: material.BoxFit
+                                                          .contain, // Ensure image fits within padding
+                                                      // Optional: Apply color based on enabled state if the image is mono-color
+                                                      color: isButtonEnabled
+                                                          ? peekOnPrimaryColor // Color for enabled state
+                                                          : peekOnSurfaceColor
+                                                              .withOpacity(
+                                                                  0.5), // Color for disabled state
+                                                      errorBuilder: (context,
+                                                          error, stackTrace) {
+                                                    // Add the missing closing parenthesis to debugPrint
+                                                    material.debugPrint(
+                                                        "Error loading button icon: $error");
+
+                                                    // 2. Return the fallback widget
+                                                    return material.Icon(
+                                                      // This is the widget to return
+                                                      material
+                                                          .Icons.error_outline,
+                                                      color: isButtonEnabled
+                                                          ? peekOnPrimaryColor
+                                                          : peekOnSurfaceColor
+                                                              .withOpacity(0.5),
+                                                      size:
+                                                          120.0, // Adjust size
+                                                    );
+                                                  }),
+                                                ),
+                                    ),
+                                  ),
+
+                                  // const material.SizedBox(height: 10),
+                                ],
+                              ),
+                            ),
+
+                            const material.SizedBox(height: 10),
+
+                            // *** Use isPremiumForUI for upgrade button visibility ***
+                            if (!isPremiumForUI)
+                              material.SizedBox(
+                                width: double.infinity,
+                                child: material.ElevatedButton.icon(
+                                  onPressed: isLoading
+                                      ? null
+                                      : () => context.go('/premium'),
+                                  icon: const material.Icon(
+                                      material.Icons.star_purple500_outlined),
+                                  label:
+                                      const material.Text('Upgrade to Premium'),
+                                  style: material.ElevatedButton.styleFrom(
+                                    padding:
+                                        const material.EdgeInsets.symmetric(
+                                      vertical: 16,
+                                    ),
+                                    textStyle: const material.TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: material.FontWeight.bold,
+                                    ),
+                                    backgroundColor: isLoading
+                                        ? material.Colors.grey.shade600
+                                        : material.Colors.amber.shade600,
+                                    foregroundColor: isLoading
+                                        ? material.Colors.grey.shade400
+                                        : material.Colors.black87,
+                                    shape: material.RoundedRectangleBorder(
+                                      borderRadius:
+                                          material.BorderRadius.circular(100),
+                                    ),
+                                  ),
+                                ),
+                              ),
+
+                            if (!isPremiumForUI)
+                              const material.SizedBox(height: 16),
+
+                            // Receiver Mode Button (logic uses calculated state)
+                            material.SizedBox(
+                              /* ... Keep receiver mode button ... */
+                              width: double.infinity,
+                              child: material.OutlinedButton.icon(
+                                onPressed: isLoading
+                                    ? null
+                                    : () => context.go('/receive'),
+                                icon:
+                                    const material.Icon(material.Icons.sensors),
+                                label: const material.Text('Receiver Mode'),
+                                style: material.OutlinedButton.styleFrom(
+                                  padding: const material.EdgeInsets.symmetric(
+                                      vertical: 16),
+                                  textStyle: const material.TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: material.FontWeight.bold,
+                                  ),
+                                  foregroundColor: isLoading
+                                      ? material.Colors.grey
+                                      : material.Theme.of(context)
+                                          .colorScheme
+                                          .primary,
+                                  side: material.BorderSide(
+                                    color: isLoading
+                                        ? material.Colors.grey
+                                        : material.Theme.of(context)
+                                            .colorScheme
+                                            .primary,
+                                    width: 1.5,
+                                  ),
+                                  shape: material.RoundedRectangleBorder(
+                                    borderRadius:
+                                        material.BorderRadius.circular(12),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const material.SizedBox(height: 20),
+
+                            // TEMPORARY ONBOARD BUTTON
+                            material.SizedBox(
+                              width: double.infinity,
+                              child: material.OutlinedButton.icon(
+                                onPressed: isLoading
+                                    ? null
+                                    : () => context.go('/onboarding'),
+                                icon: const material.Icon(
+                                    material.Icons.slideshow), // Changed icon
+                                label: const material.Text(
+                                    'View Tutorial'), // Changed label
+                                style: material.OutlinedButton.styleFrom(
+                                  padding: const material.EdgeInsets.symmetric(
+                                      vertical: 16),
+                                  textStyle: const material.TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: material.FontWeight.bold,
+                                  ),
+                                  foregroundColor: isLoading
+                                      ? material.Colors.grey
+                                      : material.Theme.of(context)
+                                          .colorScheme
+                                          .primary,
+                                  side: material.BorderSide(
+                                    color: isLoading
+                                        ? material.Colors.grey
+                                        : material.Theme.of(context)
+                                            .colorScheme
+                                            .primary,
+                                    width: 1.5,
+                                  ),
+                                  shape: material.RoundedRectangleBorder(
+                                    borderRadius:
+                                        material.BorderRadius.circular(12),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            // const material.SizedBox(height: 40),
+                          ],
+                        ),
+                      ),
+                    );
+                    // *** End FIX ***
+                  },
                 );
-                // *** End FIX ***
               },
-            );
-          },
-        ),
+            ),
+          ),
+        ],
       ),
 
-      bottomNavigationBar: BottomNavigationBar(
+      bottomNavigationBar: material.BottomNavigationBar(
         /* ... Keep existing BottomNavBar ... */
-        items: const <BottomNavigationBarItem>[
-          BottomNavigationBarItem(
-            icon: Icon(Icons.visibility_outlined),
-            activeIcon: Icon(Icons.visibility),
+        items: const <material.BottomNavigationBarItem>[
+          material.BottomNavigationBarItem(
+            icon: material.Icon(material.Icons.visibility_outlined),
+            activeIcon: material.Icon(material.Icons.visibility),
             label: 'Peek',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.settings_outlined),
-            activeIcon: Icon(Icons.settings),
+          material.BottomNavigationBarItem(
+            icon: material.Icon(material.Icons.settings_outlined),
+            activeIcon: material.Icon(material.Icons.settings),
             label: 'Settings',
           ),
         ],
         currentIndex: _selectedIndex,
-        selectedItemColor: Theme.of(context).colorScheme.primary,
-        unselectedItemColor: Colors.grey.shade600,
+        selectedItemColor: material.Theme.of(context).colorScheme.primary,
+        unselectedItemColor: material.Colors.grey.shade600,
         onTap: _onItemTapped,
-        backgroundColor: Theme.of(context).bottomAppBarTheme.color ??
-            Theme.of(context).colorScheme.surface,
-        type: BottomNavigationBarType.fixed,
+        backgroundColor: material.Theme.of(context).bottomAppBarTheme.color ??
+            material.Theme.of(context).colorScheme.surface,
+        type: material.BottomNavigationBarType.fixed,
         showUnselectedLabels: false,
         showSelectedLabels: true,
       ),
@@ -598,19 +727,20 @@ class _HomePageState extends ConsumerState<HomePage> {
   }
 
   // --- _buildErrorUI (Keep as is) ---
-  Widget _buildErrorUI(String message) {
+  material.Widget _buildErrorUI(String message) {
     /* ... */
-    return Padding(
-      padding: const EdgeInsets.all(30.0),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+    return material.Padding(
+      padding: const material.EdgeInsets.all(30.0),
+      child: material.Column(
+        mainAxisAlignment: material.MainAxisAlignment.center,
         children: [
-          const Icon(Icons.error_outline, color: Colors.redAccent, size: 40),
-          const SizedBox(height: 16),
-          Text(
+          const material.Icon(material.Icons.error_outline,
+              color: material.Colors.redAccent, size: 40),
+          const material.SizedBox(height: 16),
+          material.Text(
             message,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 16),
+            textAlign: material.TextAlign.center,
+            style: const material.TextStyle(fontSize: 16),
           ),
         ],
       ),
@@ -618,73 +748,103 @@ class _HomePageState extends ConsumerState<HomePage> {
   }
 
   // --- MODIFIED: _buildWelcomeArea (Adds Premium Badge) ---
-  Widget _buildWelcomeArea(BuildContext context, bool isPremiumForUI) {
+  material.Widget _buildWelcomeArea(
+      material.BuildContext context, bool isPremiumForUI) {
     // Accept premium status
     final isAnonymous = FirebaseAuth.instance.currentUser?.isAnonymous ?? true;
     final userEmail = FirebaseAuth.instance.currentUser?.email;
 
+    const String peekImagePath = 'assets/images/welcome_logo.png';
+
     // *** UPDATED: Logic for Badge Display ***
     if (isPremiumForUI && !isAnonymous) {
       // Show badge only if premium AND not anonymous
-      return Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.center,
+      return material.Row(
+        mainAxisAlignment: material.MainAxisAlignment.center,
+        crossAxisAlignment: material.CrossAxisAlignment.center,
         children: [
-          Text(
+          material.Text(
             // Welcome message
             'Welcome Back!',
-            textAlign: TextAlign.center,
-            style: Theme.of(
+            textAlign: material.TextAlign.center,
+            style: material.Theme.of(
               context,
-            ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w600),
+            )
+                .textTheme
+                .headlineMedium
+                ?.copyWith(fontWeight: material.FontWeight.w600),
           ),
-          const SizedBox(width: 8),
-          Chip(
+          const material.SizedBox(width: 8),
+          material.Chip(
             // Premium badge
-            avatar: const Icon(
-              Icons.star_rounded,
+            avatar: const material.Icon(
+              material.Icons.star_rounded,
               size: 16,
-              color: Colors.black87,
+              color: material.Colors.black87,
             ),
-            label: const Text('Premium'),
-            labelStyle: const TextStyle(
+            label: const material.Text('Premium'),
+            labelStyle: const material.TextStyle(
               fontSize: 11,
-              fontWeight: FontWeight.bold,
-              color: Colors.black87,
+              fontWeight: material.FontWeight.bold,
+              color: material.Colors.black87,
             ),
-            backgroundColor: Colors.amber.shade600,
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
-            visualDensity: VisualDensity.compact,
-            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            backgroundColor: material.Colors.amber.shade600,
+            padding:
+                const material.EdgeInsets.symmetric(horizontal: 6, vertical: 0),
+            visualDensity: material.VisualDensity.compact,
+            materialTapTargetSize: material.MaterialTapTargetSize.shrinkWrap,
           ),
         ],
       );
     }
 
     // --- Fallback: Non-Premium or Anonymous Title/Subtitle Logic ---
-    String titleText = isAnonymous ? 'Welcome to Peek 👀' : 'Welcome Back!';
+    String titleText = isAnonymous ? 'Welcome to Peekio' : 'Welcome Back!';
     String? subtitle = isAnonymous
         ? 'You\'re browsing as a guest.'
         : userEmail; // Show email only if known user and not premium
 
-    return Column(
+    return material.Column(
       // Use Column for standard title/subtitle layout
       children: [
-        Text(
+        material.Padding(
+          padding: const material.EdgeInsets.only(
+              bottom: 5), // Add space below the image
+          child: material.Image.asset(
+            // Use the defined path
+            peekImagePath,
+            height: 72,
+            width: 72,
+            fit: material.BoxFit.contain, // Ensure image fits within bounds
+            errorBuilder: (context, error, stackTrace) {
+              material.debugPrint(
+                  "Error loading welcome image: $peekImagePath - $error");
+              return const material.SizedBox(
+                  height: 60); // Placeholder space on error
+            },
+          ),
+        ),
+        material.Text(
           titleText,
-          textAlign: TextAlign.center,
-          style: Theme.of(
+          textAlign: material.TextAlign.center,
+          style: material.Theme.of(
             context,
-          ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w600),
+          ).textTheme.headlineMedium?.copyWith(
+                fontWeight: material.FontWeight.w600,
+                fontSize: 35,
+              ),
         ),
         if (subtitle != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 4.0),
-            child: Text(
+          material.Padding(
+            padding: const material.EdgeInsets.only(top: 10.0),
+            child: material.Text(
               subtitle,
-              style: Theme.of(
+              style: material.Theme.of(
                 context,
-              ).textTheme.bodyMedium?.copyWith(color: Colors.grey.shade600),
+              ).textTheme.bodyMedium?.copyWith(
+                    color: material.Colors.grey.shade600,
+                    fontSize: 16,
+                  ),
             ),
           ),
       ],

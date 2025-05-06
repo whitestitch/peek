@@ -4,13 +4,16 @@ import 'package:go_router/go_router.dart';
 
 // --- Imports exactly as you provided ---
 import '../features/home/home_page.dart';
-import '../features/peek/peeking_page.dart';
+// import '../features/peek/peeking_page.dart';
 import '../features/peek/photo_capture_page.dart';
 import '../features/peek/splash_page.dart';
 import '../features/peek/peek_receiver_page.dart';
 import '../features/peek/peek_image_view.dart';
 import '../features/peek/pages/peek_wait_page.dart';
 import '../features/peek/pages/peek_feedback_page.dart';
+import '../features/peek/peek_accepted_page.dart';
+import '../features/peek/peek_declined_page.dart';
+import '../features/peek/peek_timed_out_page.dart';
 import '../features/auth/upgrade_account.dart';
 import '../features/premium/pages/premium_page.dart';
 import '../features/menu/privacy_page.dart';
@@ -36,17 +39,17 @@ GoRouter createRouter(GlobalKey<NavigatorState> rootNavigatorKey,
         builder: (context, state) => const OnboardingPage(),
       ),
 
-      GoRoute(
-        path: '/peek/:requestId',
-        name: 'peeking',
-        builder: (context, state) {
-          final requestId = state.pathParameters['requestId'];
-          if (requestId == null) {
-            return _errorScreen('❌ Missing requestId');
-          }
-          return PeekingPage(requestId: requestId);
-        },
-      ),
+      // GoRoute(
+      //   path: '/peek/:requestId',
+      //   name: 'peeking',
+      //   builder: (context, state) {
+      //     final requestId = state.pathParameters['requestId'];
+      //     if (requestId == null) {
+      //       return _errorScreen('❌ Missing requestId');
+      //     }
+      //     return PeekingPage(requestId: requestId);
+      //   },
+      // ),
       GoRoute(
         path: '/receive',
         name: 'receive',
@@ -62,6 +65,35 @@ GoRouter createRouter(GlobalKey<NavigatorState> rootNavigatorKey,
               : _errorScreen('❌ Missing requestId');
         },
       ),
+
+      GoRoute(
+        path: '/peek-accepted',
+        name: 'peek-accepted',
+        builder: (context, state) {
+          final requestId = state.uri.queryParameters['requestId']!;
+          final imageUrl = state.uri.queryParameters['imageUrl']!;
+          return PeekAcceptedPage(requestId: requestId, imageUrl: imageUrl);
+        },
+      ),
+
+      GoRoute(
+        path: '/peek-declined', // Corrected path to match navigation call
+        name: 'peek-declined',
+        builder: (context, state) {
+          // PeekDeclinedPage does not require requestId or imageUrl
+          return const PeekDeclinedPage();
+        },
+      ),
+
+      GoRoute(
+        path: '/peek-timed-out', // Path for the new timed-out page
+        name: 'peek-timed-out', // Route name
+        builder: (context, state) {
+          // This page doesn't require parameters from the route
+          return const PeekTimedOutPage();
+        },
+      ),
+
       GoRoute(
         path: '/splash',
         name: 'splash',

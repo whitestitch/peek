@@ -230,10 +230,24 @@ class _PeekAppState extends ConsumerState<PeekApp> {
         brightness: Brightness.dark,
         fontFamily: 'Poppins', // Set default font family from pubspec.yaml
         // Define the Color Scheme using imported constants from theme/colors.dart
+
+        // ICONS
+        useMaterial3: true,
+        // Global Icon Defaults
+        iconTheme: const IconThemeData(
+          weight: 500, // 100 (thin) … 700 (bold)
+          fill: 0, // 0 = outline, 1 = filled
+          grade: 0, // –50 … 200
+          opticalSize: 48, // best at 20–48dp
+          size: 24, // default icon size (optional)
+          color: Colors.blueAccent, // default icon color
+        ),
+
+        // THEME COLOURS
         colorScheme: const ColorScheme(
           brightness: Brightness.dark,
           primary: peekPrimaryColor,
-          onPrimary: peekOnPrimaryColor,
+          onPrimary: peekSurfaceColor,
           secondary: peekSecondaryColor,
           onSecondary: peekOnSecondaryColor,
           error: peekErrorColor,
@@ -249,25 +263,25 @@ class _PeekAppState extends ConsumerState<PeekApp> {
         // --- Customize Specific Component Themes ---
         scaffoldBackgroundColor: peekBackgroundColor,
 
-        appBarTheme: AppBarTheme(
+        appBarTheme: const AppBarTheme(
           backgroundColor: Colors.transparent, // Make AppBar transparent
           foregroundColor: peekOnBackgroundColor, // Title/icon color
           elevation: 0, // No shadow for transparent AppBar
           centerTitle: true, // Example: Center align title
-          titleTextStyle: const TextStyle(
+          titleTextStyle: TextStyle(
             fontFamily: 'Poppins', // Explicitly set font if needed
             fontSize: 20,
             fontWeight: FontWeight.w600, // SemiBold for titles
             color: peekOnBackgroundColor,
           ),
-          iconTheme: const IconThemeData(color: peekOnBackgroundColor),
-          actionsIconTheme: const IconThemeData(color: peekOnBackgroundColor),
+          iconTheme: IconThemeData(color: peekOnBackgroundColor),
+          actionsIconTheme: IconThemeData(color: peekOnBackgroundColor),
         ),
 
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
             backgroundColor: peekPrimaryColor,
-            foregroundColor: peekOnPrimaryColor,
+            foregroundColor: peekSurfaceColor,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(30),
             ), // More rounded
@@ -416,8 +430,6 @@ class _PeekAppState extends ConsumerState<PeekApp> {
             fontFamily: 'Poppins',
           ),
         ),
-
-        useMaterial3: true, // Keep Material 3 enabled
       ),
       // --- END OF Theme ---
     );
