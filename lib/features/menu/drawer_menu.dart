@@ -1,37 +1,122 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:peek/theme/colors.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:peek/features/premium/providers/premium_controller.dart';
 
-class DrawerMenu extends StatelessWidget {
+import 'package:firebase_auth/firebase_auth.dart';
+
+class DrawerMenu extends ConsumerWidget {
   const DrawerMenu({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final AsyncValue<bool> premiumStatusAsync =
+        ref.watch(premiumStatusProvider);
+    final bool isPremium = premiumStatusAsync.maybeWhen(
+      data: (status) => status,
+      orElse: () =>
+          false, // Default to non-premium if loading/error for UI purposes
+    );
+
     return Drawer(
+      backgroundColor: peekBackgroundColor,
       // Optional: Add background color matching theme
       // backgroundColor: Theme.of(context).colorScheme.surface,
       child: SafeArea(
         child: ListView(
           padding: EdgeInsets.zero,
           children: [
-            DrawerHeader(
-              decoration: BoxDecoration(
-                color: peekSurfaceColor,
+            Container(
+              height: 80.0, // Reduced height for a more compact header
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0),
+              decoration: const BoxDecoration(
+                color: peekSurfaceColor, // Color for the header background
+                // Optional: add a bottom border if desired
+                // border: Border(
+                //   bottom: BorderSide(color: Colors.grey.shade700, width: 0.5),
+                // ),
               ),
-              child: const Text(
-                '☰ MENU',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              child: const Align(
+                alignment: Alignment.centerLeft, // Align text to the left
+                child: Text(
+                  'Peekio Menu',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w600,
+                    color: peekOnSurfaceColor,
+                  ),
+                ),
               ),
             ),
+
             ListTile(
               leading: const Icon(Icons.star),
               title: const Text('Peek Premium'),
               onTap: () => context.go('/premium'),
             ),
+
+            // ListTile(
+            //   leading: Icon(
+            //     Icons.bar_chart,
+            //     // Grey out icon if not premium
+            //     color: isPremium
+            //         ? Theme.of(context).iconTheme.color
+            //         : Colors.grey.shade600,
+            //   ),
+            //   title: Text(
+            //     'My Stats',
+            //     style: TextStyle(
+            //       // Grey out text if not premium
+            //       color: isPremium ? null : Colors.grey.shade600,
+            //     ),
+            //   ),
+            //   // Disable onTap and show a message if not premium
+            //   onTap: isPremium
+            //       ? () {
+            //           Navigator.pop(context); // Close drawer
+            //           context.go('/stats');
+            //         }
+            //       : () {
+            //           Navigator.pop(context); // Close drawer
+            //           ScaffoldMessenger.of(context).showSnackBar(
+            //             SnackBar(
+            //               content: const Text(
+            //                   'My Stats is a Premium feature. Upgrade to view.'),
+            //               action: SnackBarAction(
+            //                 label: 'UPGRADE',
+            //                 onPressed: () => context.go('/premium'),
+            //               ),
+            //               duration: const Duration(seconds: 3),
+            //             ),
+            //           );
+            //         },
+            //   // Optional: Add a trailing lock icon if not premium
+            //   trailing: !isPremium
+            //       ? Icon(Icons.lock_outline,
+            //           color: Colors.grey.shade600, size: 20)
+            //       : null,
+            //   enabled:
+            //       isPremium, // Visually indicates if the tile is interactive
+            // ),
+
             ListTile(
-              leading: const Icon(Icons.bar_chart),
-              title: const Text('My Stats'),
-              onTap: () => context.go('/stats'),
+                leading: const Icon(Icons.bar_chart),
+                title: const Text('My Stats'),
+                onTap: () {
+                  Navigator.pop(context); // Close drawer
+                  context.go('/stats');
+                }),
+            ListTile(
+              // leading: Icon(Icons.settings_outlined,
+              //     color: Theme.of(context).iconTheme.color),
+              leading: const Icon(Icons.settings_outlined),
+              title: const Text('Settings'),
+              onTap: () {
+                Navigator.pop(context);
+                context.go('/settings'); // Assuming you have a /settings route
+              },
             ),
             ListTile(
               leading: const Icon(Icons.lock),
@@ -53,6 +138,7 @@ class DrawerMenu extends StatelessWidget {
                 context.go('/onboarding'); // Navigate to the onboarding route
               },
             ),
+            // const Divider(),
           ],
         ),
       ),

@@ -91,16 +91,16 @@ class _PeekAcceptedPageState extends material.State<PeekAcceptedPage> {
                 children: [
                   // --- Primary Animation Placeholder ---
                   material.Container(
-                    width: 150,
-                    height: 150,
-                    decoration: material.BoxDecoration(
-                      color: peekPrimaryColor.withOpacity(0.5),
+                    width: 120,
+                    height: 120,
+                    decoration: const material.BoxDecoration(
+                      color: peekPrimaryColor,
                       shape: material.BoxShape.circle,
                     ),
                     child: const material.Icon(
-                      material.Icons.check_circle_outline_rounded,
-                      color: peekWhiteColor,
-                      size: 80,
+                      material.Icons.timelapse,
+                      color: peekBackgroundColor,
+                      size: 60,
                     ),
                   ),
                   const material.SizedBox(height: 32),

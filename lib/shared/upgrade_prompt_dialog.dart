@@ -18,8 +18,7 @@ class UpgradePromptDialog extends StatelessWidget {
       FirebaseAnalytics.instance.logEvent(
         name: 'upgrade_prompt_shown',
         parameters: {
-          'reason':
-              reason?.toString().split('.').last ??
+          'reason': reason?.toString().split('.').last ??
               'unknown', // 'periodic' or 'dailyLimitReached'
         },
       );

@@ -2,162 +2,218 @@
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:uuid/uuid.dart';
-import 'package:peek/features/home/home_page.dart'; // Import needed for userDataProvider invalidation
+// import 'package:uuid/uuid.dart'; // Uuid is no longer used here if Cloud Function generates ID
+
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:flutter/foundation.dart'; // For debugPrint
+
+// Import for userDataProvider
+import 'package:peek/features/home/home_page.dart';
 
 import '../data/peek_repository.dart';
-import '../providers/peek_providers.dart';
+import '../providers/peek_providers.dart'; // Assuming peekRepositoryProvider is defined here
 
-final peekControllerProvider = AsyncNotifierProvider<PeekController, void>(
-  PeekController.new,
-);
+@immutable
+class PeekControllerState {
+  final bool isLoading;
+  final String? error;
 
-class PeekController extends AsyncNotifier<void> {
-  late final PeekRepository _repo;
-  // *** ADDED Analytics instance ***
+  const PeekControllerState({this.isLoading = false, this.error});
+
+  PeekControllerState copyWith({bool? isLoading, String? error}) {
+    return PeekControllerState(
+      isLoading: isLoading ?? this.isLoading,
+      error: error,
+    );
+  }
+}
+
+final peekControllerProvider =
+    StateNotifierProvider<PeekController, PeekControllerState>((ref) {
+  return PeekController(
+    ref.read(peekRepositoryProvider),
+    FirebaseAuth.instance,
+    FirebaseFunctions.instanceFor(
+        region: "us-central1"), // Match your function's region
+    ref,
+    FirebaseFirestore.instance,
+  );
+});
+
+class PeekController extends StateNotifier<PeekControllerState> {
+  final PeekRepository _repo;
   final FirebaseAnalytics _analytics = FirebaseAnalytics.instance;
+  final FirebaseAuth _auth;
+  final FirebaseFunctions _functions;
+  final Ref _ref;
+  final FirebaseFirestore _firestore;
 
+  PeekController(
+    this._repo,
+    this._auth,
+    this._functions,
+    this._ref,
+    this._firestore,
+  ) : super(const PeekControllerState());
+
+  // build method from AsyncNotifier is not typically used in StateNotifier
+  // unless for specific initial async setup.
   @override
   Future<void> build() async {
-    _repo = ref.read(peekRepositoryProvider);
-    // Initialization logic for the AsyncNotifier state remains the same
+    // For StateNotifier, this method isn't standard unless for specific patterns.
   }
 
-  /// Creates a peek request in Firestore and updates user stats.
-  /// Logs analytics events for success or failure.
   Future<String?> createPeekRequestAndUpdateStats({
-    required String receiverUid,
     required bool needsDailyReset,
   }) async {
-    state = const AsyncLoading(); // Indicate loading state
-    final fromUserId = _repo.currentUserId;
+    state = state.copyWith(isLoading: true, error: null);
+    // final fromUserId = _auth.currentUser?.uid;
+    final currentUser = _auth.currentUser;
 
-    // Check if user is logged in
-    if (fromUserId == null) {
-      print('❌ [PeekController] Error: User not logged in.');
-      state = AsyncError(
-        'User not logged in',
-        StackTrace.current,
-      ); // Set error state
-      // *** ADDED: Log peek creation error event (Auth) ***
-      // Using await here, although could be fire-and-forget if preferred
+    if (currentUser == null) {
+      debugPrint('❌ [PeekController] Error: User not logged in.');
+      state = state.copyWith(isLoading: false, error: "User not logged in.");
       await _analytics.logEvent(
         name: 'peek_request_failed',
         parameters: {'reason': 'user_not_logged_in'},
       );
-      // ****************************************
-      return null; // Cannot create request
+      return null;
     }
-
-    // Generate request details
-    final requestId = const Uuid().v4();
-    final now = Timestamp.now();
-    final expiresAt = Timestamp.fromDate(
-      now.toDate().add(const Duration(seconds: 30)), // 30-second expiry
-    );
+    final fromUserId = currentUser.uid;
 
     try {
-      // Call repository methods
-      await _repo.createRequest(
-        requestId: requestId,
-        from: fromUserId,
-        to: receiverUid,
-        createdAt: now,
-        expiresAt: expiresAt,
-      );
-      await _repo.updateUserPeekStats(
-        fromUserId,
-        needsDailyReset: needsDailyReset,
-      );
+      debugPrint(
+          "[PeekController] Attempting to refresh ID token for user: $fromUserId");
+      await currentUser.getIdToken(true); // true forces a refresh
+      debugPrint("[PeekController] ID token refreshed successfully.");
 
-      // *** ADDED: Log successful peek creation event ***
-      await _analytics.logEvent(
-        name: 'peek_request_created',
-        parameters: {
-          'request_id_partial': requestId.substring(0, 8), // Log partial ID
-          // Optional: Include more context if available and useful
-          // 'needs_daily_reset': needsDailyReset.toString(),
-        },
-      );
-      // ***********************************
+      debugPrint(
+          "[PeekController] Calling 'initiatePeekRequest' Cloud Function for user: $fromUserId");
+      final HttpsCallable callable =
+          _functions.httpsCallable('initiatePeekRequest');
 
-      state = const AsyncData(null); // Set success state
-      print('✅ Peek request $requestId created and user stats updated.');
-      return requestId; // Return the new request ID
+      final HttpsCallableResult result =
+          await callable.call<Map<String, dynamic>>({
+        // Pass any client-side data if your function expects it.
+        // If it only needs the authenticated user, the data map can be empty,
+        // as senderUid is derived from context.auth in the Cloud Function.
+      });
+
+      final Map<String, dynamic> responseData =
+          result.data as Map<String, dynamic>;
+
+      if (responseData['success'] == true &&
+          responseData['peekRequestId'] != null) {
+        final String peekRequestId = responseData['peekRequestId'] as String;
+
+        debugPrint(
+            "[PeekController] Cloud Function success. PeekRequestId: $peekRequestId. Updating sender stats.");
+
+        final userDocRef = _firestore.collection('users').doc(fromUserId);
+        Map<String, dynamic> statsUpdate = {
+          'lastPeekRequestTimestamp': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        };
+
+        final userSnapshot = await userDocRef.get();
+        // Ensure isPremium check is robust
+        final bool isUserPremium = userSnapshot.exists &&
+            (userSnapshot.data()?['isPremium'] as bool? ?? false);
+
+        if (!isUserPremium) {
+          statsUpdate['dailyPeekCount'] = FieldValue.increment(1);
+          if (needsDailyReset) {
+            statsUpdate['peekCountLastReset'] = FieldValue.serverTimestamp();
+          }
+        }
+        await userDocRef.update(statsUpdate);
+        debugPrint(
+            "[PeekController] Sender stats updated for user: $fromUserId");
+
+        state = state.copyWith(isLoading: false);
+        return peekRequestId;
+      } else {
+        final String errorMessage = responseData['message'] as String? ??
+            "Failed to initiate Peek via Cloud Function.";
+        debugPrint(
+            "[PeekController] Cloud Function returned error or no peekRequestId. Message: $errorMessage");
+        state = state.copyWith(isLoading: false, error: errorMessage);
+        return null;
+      }
+    } on FirebaseFunctionsException catch (e, st) {
+      debugPrint(
+          "FirebaseFunctionsException calling initiatePeekRequest: ${e.code} - ${e.message}\nStack: $st");
+      state = state.copyWith(
+          isLoading: false,
+          error: e.message ?? "Cloud function error. Please try again.");
+      return null;
     } catch (e, st) {
-      print('❌ Error during peek creation/stat update: $e');
-      state = AsyncError(e, st); // Set error state with stack trace
-
-      // *** ADDED: Log general peek creation error event ***
-      await _analytics.logEvent(
-        name: 'peek_request_failed',
-        parameters: {
-          'reason': 'creation_exception',
-          'requester_id_partial': fromUserId.substring(0, 8), // Partial ID
-          'receiver_id_partial': receiverUid.substring(0, 8), // Partial ID
-          'error': e.toString().substring(
-                0,
-                99 < e.toString().length ? 99 : e.toString().length,
-              ), // Truncated error
-        },
-      );
-      // ****************************************
-      return null; // Indicate failure
+      debugPrint("Error in createPeekRequestAndUpdateStats: $e\nStack: $st");
+      state = state.copyWith(
+          isLoading: false,
+          error: "An unexpected error occurred while initiating Peek.");
+      return null;
     }
   }
 
-  // --- expirePeek (Keep as before, analytics logging could be added here if needed) ---
   Future<void> expirePeek(String requestId) async {
+    if (requestId.isEmpty) {
+      debugPrint("[PeekController] expirePeek: requestId is empty.");
+      return;
+    }
     try {
       await _repo.expireRequest(requestId);
-      print('[PeekController] Peek expired via controller: $requestId');
-      // Optional Analytics: Log peek expiration
-      // await _analytics.logEvent(name: 'peek_request_expired', parameters: {'request_id_partial': requestId.substring(0, 8)});
+      debugPrint('[PeekController] Peek expired via controller: $requestId');
+      await _analytics
+          .logEvent(name: 'peek_request_expired_client', parameters: {
+        'request_id_partial':
+            requestId.length > 8 ? requestId.substring(0, 8) : requestId
+      });
     } catch (e) {
-      print('[PeekController] Failed to expire peek $requestId: $e');
-      // Optional Analytics: Log expiration failure
-      // await _analytics.logEvent(name: 'peek_request_expire_failed', parameters: {'request_id_partial': requestId.substring(0, 8), 'error': e.toString()...});
+      debugPrint('[PeekController] Failed to expire peek $requestId: $e');
+      await _analytics
+          .logEvent(name: 'peek_request_expire_failed_client', parameters: {
+        'request_id_partial':
+            requestId.length > 8 ? requestId.substring(0, 8) : requestId,
+        'error': e
+            .toString()
+            .substring(0, (e.toString().length > 99 ? 99 : e.toString().length))
+      });
     }
   }
 
-  // --- debugResetUserLimits (Keep as before) ---
   Future<void> debugResetUserLimits() async {
-    final userId = _repo.currentUserId;
+    final userId = _auth.currentUser?.uid;
     if (userId == null) {
-      print('[PeekController] DEBUG: Cannot reset limits, user is null.');
+      debugPrint('[PeekController] DEBUG: Cannot reset limits, user is null.');
       return;
     }
     try {
       await _repo.resetUserPeekLimits(userId);
-      ref.invalidate(userDataProvider); // Invalidate to refresh UI
-      print('[PeekController] DEBUG: User limits reset successfully.');
+      _ref.invalidate(userDataProvider);
+      debugPrint(
+          '[PeekController] DEBUG: User limits reset successfully for $userId.');
     } catch (e) {
-      print('[PeekController] DEBUG: Error resetting user limits: $e');
+      debugPrint('[PeekController] DEBUG: Error resetting user limits: $e');
     }
   }
 
-  // TODO: Implement the actual logic in the repository layer.
   Future<void> cancelPeek(String requestId) async {
-    final userId = _repo.currentUserId;
-    print(
+    final userId = _auth.currentUser?.uid;
+    debugPrint(
         "[PeekController] Received request to cancel peek $requestId for user $userId");
     try {
-      // Option 1: Delete (Simpler)
-      await _repo.deleteRequest(requestId); // ASSUMES _repo has deleteRequest
-      print("[PeekController] Deleted peek request $requestId.");
-
-      // Option 2: Update status (More complex, allows tracking)
-      // await _repo.updateRequestStatus(requestId, 'cancelled');
-      // print("[PeekController] Updated status to 'cancelled' for request $requestId.");
-
-      // Log analytics event
-      await _analytics.logEvent(
-          name: 'peek_request_user_cancelled',
-          parameters: {'request_id_partial': requestId.substring(0, 8)});
+      await _repo.deleteRequest(requestId);
+      debugPrint("[PeekController] Deleted peek request $requestId.");
+      await _analytics
+          .logEvent(name: 'peek_request_user_cancelled', parameters: {
+        'request_id_partial':
+            requestId.length > 8 ? requestId.substring(0, 8) : requestId
+      });
     } catch (e) {
-      print("❌ [PeekController] Failed to cancel peek request $requestId: $e");
-      // Handle or rethrow if needed
-      // throw e;
+      debugPrint(
+          "❌ [PeekController] Failed to cancel peek request $requestId: $e");
     }
   }
 }

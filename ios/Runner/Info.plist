@@ -67,5 +67,12 @@
 		<string>fetch</string>
 		<string>remote-notification</string>
 	</array>
+	<!-- Purpose string for always-on location access -->
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>
+  		Peek uses your location—even when the app is in the background—to share your general area (city/region) with others when you send a Peek, if you enable this feature.
+	</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Peek uses your location to show where Peeks are approximately sent from.</string>
 </dict>
 </plist>

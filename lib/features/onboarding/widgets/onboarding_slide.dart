@@ -1,16 +1,15 @@
 // lib/features/onboarding/widgets/onboarding_slide.dart
 import 'package:flutter/material.dart' as material;
 import 'package:peek/theme/colors.dart';
-// import 'dart:math' as math;
-// import 'pulse_transition.dart';
 import 'package:rive/rive.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 class OnboardingSlide extends material.StatelessWidget {
-  final String logoAsset; // e.g., 'assets/logo/peek_logo_main.png'
-  final String imageAsset; // e.g., 'assets/images/onboarding_slide1.png'
+  final String logoAsset;
+  final String imageAsset;
   final String title;
   final String subtitle;
-  final String? textParagraph; // Nullable for slide 1
+  final String? textParagraph;
   final bool isHeroImageFullWidth;
 
   const OnboardingSlide(
@@ -33,19 +32,16 @@ class OnboardingSlide extends material.StatelessWidget {
     final double? placeholderWidth = isFullWidth ? screenWidth : null;
 
     return material.Container(
-        // <<< Use prefix
         width: placeholderWidth,
         height: placeholderHeight,
         constraints: isFullWidth
             ? null
-            : material.BoxConstraints(
-                maxWidth: screenWidth * 0.8), // <<< Use prefix
+            : material.BoxConstraints(maxWidth: screenWidth * 0.8),
         color: isOverlay
             ? material.Colors.red.withOpacity(0.1)
             : material.Colors.grey.shade900.withOpacity(0.5),
         child: material.Center(
-            // <<< Use prefix
-            child: material.Icon(material.Icons.error_outline, // <<< Use prefix
+            child: material.Icon(material.Icons.error_outline,
                 color: isOverlay
                     ? material.Colors.red.withOpacity(0.6)
                     : material.Colors.redAccent,
@@ -59,14 +55,40 @@ class OnboardingSlide extends material.StatelessWidget {
     final screenHeight = material.MediaQuery.of(context).size.height;
 
     final bool showRiveAnimation = imageAsset.toLowerCase().endsWith('.riv');
-
-    // Define CONSISTENT spacing values - vertical layout managed by Spacer/structure now
-    // final double spaceBelowLogo =
-    //     isHeroImageFullWidth ? 0 : 0; // Less space on Slide 1
-    // final double spaceBelowAnimation = isHeroImageFullWidth ? 25.0 : 40.0;
-    // final double spaceBelowImage = isHeroImageFullWidth ? 0 : 0;
-    // final double spaceBelowCentralImage = !isHeroImageFullWidth ? 0 : 0;
     final double finalBottomSpace = isHeroImageFullWidth ? 35.0 : 35.0; // Less
+
+    material.Widget logoWidget;
+    if (logoAsset.toLowerCase().endsWith('.svg')) {
+      logoWidget = SvgPicture.asset(
+        logoAsset,
+        height: 30, // Match existing Image.asset height
+        // width: 100, // Optional: specify width if needed
+        colorFilter: const material.ColorFilter.mode(
+            // Apply color if your SVG is single-color and needs theming
+            peekWhiteColor, // Or any color you want the SVG to be
+            material.BlendMode.srcIn),
+        placeholderBuilder: (material.BuildContext context) =>
+            const material.SizedBox(
+                width: 30,
+                height: 30,
+                child: material.CircularProgressIndicator(
+                  strokeWidth: 2.0,
+                  color: peekWhiteColor,
+                )),
+      );
+    } else {
+      logoWidget = material.Image.asset(
+        logoAsset,
+        height: 30,
+        gaplessPlayback: true,
+        errorBuilder: (context, error, stackTrace) {
+          material.debugPrint("Error loading logo asset ($logoAsset): $error");
+          return const material.Icon(material.Icons.broken_image,
+              size: 30,
+              color: peekWhiteColor); // Fallback for raster image errors
+        },
+      );
+    }
 
     return material.SingleChildScrollView(
       physics: const material.BouncingScrollPhysics(),
@@ -78,15 +100,20 @@ class OnboardingSlide extends material.StatelessWidget {
           material.Align(
             alignment: material.Alignment.centerLeft,
             child: material.Padding(
-              padding:
-                  const material.EdgeInsets.only(left: 35.0), // Indent left
+              padding: const material.EdgeInsets.only(
+                  left: 35.0, top: 35.0), // Indent left
               child: material.Row(
                 mainAxisSize: material.MainAxisSize.min,
                 crossAxisAlignment: material.CrossAxisAlignment.center,
                 children: [
-                  material.Image.asset(logoAsset,
-                      height: 30, gaplessPlayback: true),
-                  const material.SizedBox(width: 10),
+                  logoWidget,
+                  // material.Image.asset(
+                  //   logoAsset,
+                  //     height: 30, gaplessPlayback: true),
+                  const material.SizedBox(
+                    width: 12,
+                    height: 12,
+                  ),
                   material.Text(
                     "Peekio",
                     style: textTheme.titleLarge?.copyWith(

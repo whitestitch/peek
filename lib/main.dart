@@ -6,32 +6,33 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:in_app_purchase/in_app_purchase.dart'; // Needed for IAP
+import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:go_router/go_router.dart';
 
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:flutter/foundation.dart'
+    show kDebugMode, defaultTargetPlatform, TargetPlatform;
+
+import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:peek/features/onboarding/providers/onboarding_provider.dart';
+import 'package:peek/theme/colors.dart';
+import 'firebase_options.dart'; // Make sure this file is up-to-date
+import 'core/router.dart';
+import 'services/notification_service.dart';
 
-import 'package:peek/theme/colors.dart'; // adjust if app name or path differs
-
-import 'firebase_options.dart'; // Ensure this path is correct
-import 'core/router.dart'; // Ensure this path is correct
-import 'services/notification_service.dart'; // Ensure this path is correct
-
-// --- ADDED: Import for initializeCameras ---
-// Make sure the path is correct relative to main.dart
+// Assuming initializeCameras is defined in photo_capture_page.dart or a utility file
 import 'features/peek/photo_capture_page.dart';
+import 'package:peek/core/firestore_service.dart';
+import 'package:peek/features/peek/providers/peek_providers.dart'; // For navigatorKeyProvider
+import 'core/root_realtime_listener.dart';
 
-// -----------------------------------------
+final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
-final rootNavigatorKey = GlobalKey<NavigatorState>();
-
-// --- Background Handler (Keep as is) ---
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  // Your existing background handler code...
   debugPrint("--- Background Handler Started ---");
+  // Crucial: Ensure Firebase is initialized in this background isolate
   if (Firebase.apps.isEmpty) {
     try {
       await Firebase.initializeApp(
@@ -42,47 +43,59 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       debugPrint("❌ Error initializing Firebase in Background Handler: $e");
     }
   } else {
-    debugPrint(
-      "ℹ️ Firebase already initialized in Background Handler isolate.",
-    );
+    debugPrint("ℹ️ Firebase already initialized for Background Handler.");
   }
   debugPrint("📨 [BG Handler] Message received: ${message.messageId}");
-  debugPrint("   Data: ${message.data}");
+  if (message.data.isNotEmpty) {
+    debugPrint("   Data: ${message.data}");
+  }
 }
-// ---------------------------------------------------------
 
 Future<void> main() async {
-  debugPrint("--- main() Started ---");
-  // REQUIRED: Needs to be called BEFORE camera/Firebase initialization
+  // 1. Ensure Flutter bindings are initialized
   WidgetsFlutterBinding.ensureInitialized();
-  debugPrint("WidgetsFlutterBinding initialized.");
+  debugPrint("--- main() Started: WidgetsFlutterBinding initialized.");
 
-  // --- Firebase Initialization (Keep as is) ---
-  debugPrint("Checking Firebase initialization status...");
-  if (Firebase.apps.isEmpty) {
-    try {
+  // 2. Initialize Firebase (ONLY ONCE)
+  debugPrint("Attempting Firebase.initializeApp()...");
+  bool firebaseInitializedSuccessfully = false;
+  try {
+    // Check if Firebase has already been initialized.
+    // This is the primary guard against the "duplicate-app" error.
+    if (Firebase.apps.isEmpty) {
       await Firebase.initializeApp(
         options: DefaultFirebaseOptions.currentPlatform,
       );
-      debugPrint("✅ Firebase initialized successfully in main.");
-    } catch (e) {
-      debugPrint("❌ Error initializing Firebase in main: $e");
+      debugPrint(
+          "✅ Firebase.initializeApp() successful in main (Firebase.apps was empty).");
+      firebaseInitializedSuccessfully = true;
+    } else {
+      debugPrint(
+          "ℹ️ Firebase.initializeApp() skipped, Firebase.apps was not empty. Default app: ${Firebase.app().name}");
+      firebaseInitializedSuccessfully = true;
     }
-  } else {
-    debugPrint("ℹ️ Firebase already initialized in main isolate.");
+  } catch (e) {
+    if (e is FirebaseException && e.code == 'duplicate-app') {
+      debugPrint(
+          "❌ Firebase.initializeApp() threw 'duplicate-app' error even after checking Firebase.apps.isEmpty. This is unusual for a clean build.");
+      firebaseInitializedSuccessfully =
+          true; // Still assume an app instance is available
+    } else {
+      debugPrint(
+          "❌ CRITICAL: Error during Firebase.initializeApp() in main: $e");
+    }
   }
-  // --- END OF FIREBASE INIT ---
 
-  // --- ADDED: Initialize Cameras (Ensure this is called early) ---
-  debugPrint("Initializing cameras...");
-  await initializeCameras(); // Await the camera initialization
-  debugPrint("✅ Camera list initialized.");
-  // -------------------------------
+  debugPrint("Current Firebase apps count: ${Firebase.apps.length}");
+  if (Firebase.apps.isNotEmpty) {
+    debugPrint("Default Firebase app name: ${Firebase.app().name}");
+  }
 
-  // --- Authentication (Keep as is) ---
-  debugPrint("Checking user authentication state...");
+  // Handle User Authentication
+  debugPrint("Checking user authentication state (post-Firebase init)...");
   try {
     if (FirebaseAuth.instance.currentUser == null) {
+      debugPrint("No current user, attempting anonymous sign-in...");
       await FirebaseAuth.instance.signInAnonymously();
       debugPrint(
         "✅ Signed in anonymously: ${FirebaseAuth.instance.currentUser?.uid}",
@@ -95,71 +108,104 @@ Future<void> main() async {
   } catch (e) {
     debugPrint("❌ Anonymous sign-in failed: $e");
   }
-  // --- END OF AUTH ---
 
-  // --- Register Background Handler (Keep as is) ---
-  debugPrint("Registering background message handler...");
-  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
-  // -----------------------------------------
+  // Log current Firebase app status for diagnostics
+  debugPrint("Current Firebase apps count: ${Firebase.apps.length}");
+  if (Firebase.apps.isNotEmpty) {
+    debugPrint("Default Firebase app name: ${Firebase.app().name}");
+    // You can add more details if needed:
+    // debugPrint("Default Firebase app options: ${Firebase.app().options.asMap}");
+  }
 
-  String determinedInitialRoute = '/'; // Default to home
+  // Log current Firebase app status
+  debugPrint("Current Firebase apps count: ${Firebase.apps.length}");
+  if (Firebase.apps.isNotEmpty) {
+    debugPrint("Default Firebase app name: ${Firebase.app().name}");
+  }
+
+  if (kDebugMode && firebaseInitializedSuccessfully) {
+    try {
+      // Use 10.0.2.2 for Android emulator to connect to localhost of the host machine.
+      // For iOS simulator, 'localhost' or '127.0.0.1' usually works.
+      // For physical devices, you'd need to use your computer's local network IP.
+      final String host = defaultTargetPlatform == TargetPlatform.android
+          ? '10.0.2.2'
+          : 'localhost';
+
+      debugPrint("🔧 Configuring Firebase Emulators to use host: $host");
+
+      FirebaseFirestore.instance.useFirestoreEmulator(host, 8080);
+      debugPrint("   Firestore Emulator -> $host:8080");
+
+      await FirebaseAuth.instance.useAuthEmulator(host, 9099);
+      debugPrint("   Auth Emulator      -> $host:9099");
+
+      // Configure the default instance and the regional instance if you use it
+      FirebaseFunctions.instance.useFunctionsEmulator(host, 5001);
+      FirebaseFunctions.instanceFor(region: "us-central1")
+          .useFunctionsEmulator(host, 5001);
+      debugPrint(
+          "   Functions Emulator -> $host:5001 (for default and us-central1)");
+
+      // If using Firebase Storage Emulator:
+      // await FirebaseStorage.instance.useStorageEmulator(host, 9199);
+      // debugPrint("   Storage Emulator   -> $host:9199");
+
+      debugPrint("✅ Firebase Emulators configured.");
+    } catch (e) {
+      debugPrint("❌ Error configuring Firebase Emulators: $e");
+      // This is a critical setup error for development if emulators are intended.
+    }
+  }
+
+  // Only proceed with Firebase-dependent services if initialization was successful
+  if (firebaseInitializedSuccessfully) {
+    debugPrint("Initializing cameras (post-Firebase init)...");
+
+    debugPrint("Initializing cameras...");
+    await initializeCameras();
+    debugPrint("✅ Camera list initialized.");
+
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+    debugPrint("Firebase background message handler registered.");
+  } else {
+    debugPrint(
+        "⚠️ Firebase did not initialize successfully. App functionality may be severely limited.");
+    // Consider showing an error UI to the user here.
+  }
+
+  String determinedInitialRoute = '/';
   try {
     final prefs = await SharedPreferences.getInstance();
-    // Use the key constant imported from onboarding_provider.dart
     final bool onboardingComplete =
         prefs.getBool(onboardingCompleteKey) ?? false;
-
     if (!onboardingComplete) {
-      debugPrint(
-          "[main] Onboarding not complete. Setting initial route to /onboarding");
       determinedInitialRoute = '/onboarding';
-    } else {
-      debugPrint("[main] Onboarding complete. Setting initial route to /");
-      determinedInitialRoute = '/'; // Explicitly set to home
     }
+    debugPrint(
+        "[main] Onboarding complete: $onboardingComplete, Initial route: $determinedInitialRoute");
   } catch (e) {
     debugPrint(
-        "❌ Error checking onboarding status in main: $e. Defaulting to /");
-    determinedInitialRoute = '/'; // Default home on error
+        "❌ Error checking onboarding status: $e. Defaulting to '$determinedInitialRoute'");
   }
 
-  // --- Create Router (Keep as is) ---
-  // debugPrint("Creating GoRouter...");
-  // final router = createRouter(rootNavigatorKey);
-
-  // Create Router AFTER determining route
-  debugPrint("Creating GoRouter with initial route: $determinedInitialRoute");
-  // Pass the determined initialRoute directly to createRouter
-  // Ensure createRouter accepts the named parameter 'initialLocation'
-  final router =
+  final GoRouter router =
       createRouter(rootNavigatorKey, initialLocation: determinedInitialRoute);
+  debugPrint("GoRouter created with initial route: $determinedInitialRoute");
 
-  // ---------------------------------
-
-  // --- Initialize NotificationService (Keep as is) ---
-  debugPrint("Initializing NotificationService...");
-  final notificationService = NotificationService();
-  try {
-    await notificationService.initialize(router);
-    debugPrint("✅ NotificationService initialized.");
-    await notificationService.checkForInitialMessage();
-    debugPrint("✅ Initial notification message check complete.");
-  } catch (e) {
-    debugPrint("❌ Error during NotificationService setup: $e");
-  }
-  // --- End of NotificationService Setup ---
-
-  // --- Run App (Keep as is) ---
-  debugPrint("Running app...");
-  // Pass the router instance to PeekApp
-  runApp(ProviderScope(child: PeekApp(router: router)));
-  debugPrint("--- main() Finished ---");
+  runApp(
+    ProviderScope(
+      overrides: [
+        navigatorKeyProvider.overrideWithValue(rootNavigatorKey),
+      ],
+      child: PeekApp(router: router),
+    ),
+  );
+  debugPrint("--- main() Finished: runApp called ---");
 }
 
-// --- Root App Widget (PeekApp) and _PeekAppState (RESTORED) ---
-// The widget that holds the MaterialApp.router and initializes IAP
 class PeekApp extends ConsumerStatefulWidget {
-  final GoRouter router; // Accept the router instance
+  final GoRouter router;
   const PeekApp({super.key, required this.router});
 
   @override
@@ -168,16 +214,59 @@ class PeekApp extends ConsumerStatefulWidget {
 
 class _PeekAppState extends ConsumerState<PeekApp> {
   StreamSubscription<List<PurchaseDetails>>? _purchaseSubscription;
-
   final FirebaseAnalytics _analytics = FirebaseAnalytics.instance;
 
   @override
   void initState() {
     super.initState();
-    _initializeIAPListener(); // Start listening for IAP events
-    debugPrint(
-      "🛒 IAP Listener initialization attempted in PeekApp initState.",
-    );
+    debugPrint("[PeekApp] initState called.");
+    _initializeIAPListener();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _ensureUserSetupAndNotifications();
+      }
+    });
+  }
+
+  Future<void> _ensureUserSetupAndNotifications() async {
+    if (!mounted) return;
+    debugPrint("[PeekApp] _ensureUserSetupAndNotifications called.");
+
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser != null) {
+      debugPrint(
+          "[PeekApp] Ensuring display name for user: ${currentUser.uid}");
+      try {
+        final firestoreService = ref.read(firestoreServiceProvider);
+        await firestoreService.ensureDisplayNameExists();
+        debugPrint(
+            "[PeekApp] ensureDisplayNameExists completed for ${currentUser.uid}.");
+      } catch (e) {
+        debugPrint(
+            "❌ Error in _ensureUserSetupAndNotifications (ensureDisplayNameExists): $e");
+      }
+    } else {
+      debugPrint(
+          "[PeekApp] User not authenticated in _ensureUserSetupAndNotifications.");
+    }
+
+    if (mounted) {
+      await _initializeNotificationService();
+    }
+  }
+
+  Future<void> _initializeNotificationService() async {
+    if (!mounted) return;
+    debugPrint("[PeekApp] Initializing NotificationService...");
+    final notificationService = NotificationService();
+    try {
+      await notificationService.initialize(widget.router);
+      debugPrint("[PeekApp] ✅ NotificationService initialized.");
+      await notificationService.checkForInitialMessage();
+      debugPrint("[PeekApp] ✅ Initial notification message check complete.");
+    } catch (e) {
+      debugPrint("❌ Error during NotificationService setup in PeekApp: $e");
+    }
   }
 
   /// Sets up the listener for In-App Purchase updates.
@@ -193,7 +282,10 @@ class _PeekAppState extends ConsumerState<PeekApp> {
     _purchaseSubscription = InAppPurchase.instance.purchaseStream.listen(
       (purchaseDetailsList) {
         // Pass the context directly here as _PeekAppState has access to it
-        _handlePurchaseUpdates(purchaseDetailsList, context);
+        if (mounted) {
+          // Check mounted before using context
+          _handlePurchaseUpdates(purchaseDetailsList, context);
+        }
       },
       onDone: () {
         debugPrint('🛒 Purchase stream closed');
@@ -220,218 +312,200 @@ class _PeekAppState extends ConsumerState<PeekApp> {
     // Provide the router configuration to MaterialApp.router
     // Inside main.dart or your App widget's build method
 
-    return MaterialApp.router(
-      title: 'PEEK',
-      debugShowCheckedModeBanner: false,
-      // Just pass the router. It already knows its initialLocation.
-      routerConfig: widget.router,
-      // Apply the Theme using imported colors and Poppins font
-      theme: ThemeData(
-        brightness: Brightness.dark,
-        fontFamily: 'Poppins', // Set default font family from pubspec.yaml
-        // Define the Color Scheme using imported constants from theme/colors.dart
+    return RootRealtimeListener(
+      child: MaterialApp.router(
+        title: 'PEEK',
+        debugShowCheckedModeBanner: false,
+        routerConfig: widget.router, // Use the router passed from main()
 
-        // ICONS
-        useMaterial3: true,
-        // Global Icon Defaults
-        iconTheme: const IconThemeData(
-          weight: 500, // 100 (thin) … 700 (bold)
-          fill: 0, // 0 = outline, 1 = filled
-          grade: 0, // –50 … 200
-          opticalSize: 48, // best at 20–48dp
-          size: 24, // default icon size (optional)
-          color: Colors.blueAccent, // default icon color
-        ),
-
-        // THEME COLOURS
-        colorScheme: const ColorScheme(
+        theme: ThemeData(
           brightness: Brightness.dark,
-          primary: peekPrimaryColor,
-          onPrimary: peekSurfaceColor,
-          secondary: peekSecondaryColor,
-          onSecondary: peekOnSecondaryColor,
-          error: peekErrorColor,
-          onError: peekOnErrorColor,
-          background: peekBackgroundColor,
-          onBackground: peekOnBackgroundColor,
-          surface: peekSurfaceColor, // Used for Cards, Dialogs, AppBars etc.
-          onSurface: peekOnSurfaceColor, // Text/icons on surfaces
-          tertiary: peekAccentColor, // Added example using Accent
-          onTertiary: Colors.black, // Example for Accent
-        ),
-
-        // --- Customize Specific Component Themes ---
-        scaffoldBackgroundColor: peekBackgroundColor,
-
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Colors.transparent, // Make AppBar transparent
-          foregroundColor: peekOnBackgroundColor, // Title/icon color
-          elevation: 0, // No shadow for transparent AppBar
-          centerTitle: true, // Example: Center align title
-          titleTextStyle: TextStyle(
-            fontFamily: 'Poppins', // Explicitly set font if needed
-            fontSize: 20,
-            fontWeight: FontWeight.w600, // SemiBold for titles
-            color: peekOnBackgroundColor,
+          fontFamily: 'Poppins',
+          useMaterial3: true,
+          iconTheme: const IconThemeData(
+            weight: 500,
+            fill: 0,
+            grade: 0,
+            opticalSize: 48,
+            size: 24,
+            color: peekAccentColor,
           ),
-          iconTheme: IconThemeData(color: peekOnBackgroundColor),
-          actionsIconTheme: IconThemeData(color: peekOnBackgroundColor),
-        ),
-
-        elevatedButtonTheme: ElevatedButtonThemeData(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: peekPrimaryColor,
-            foregroundColor: peekSurfaceColor,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(30),
-            ), // More rounded
-            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
-            textStyle: const TextStyle(
-              fontFamily: 'Poppins',
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-            ), // SemiBold
-            elevation: 2,
+          colorScheme: const ColorScheme(
+            brightness: Brightness.dark,
+            primary: peekPrimaryColor,
+            onPrimary: peekSurfaceColor,
+            secondary: peekSecondaryColor,
+            onSecondary: peekOnSecondaryColor,
+            error: peekErrorColor,
+            onError: peekOnErrorColor,
+            background: peekBackgroundColor,
+            onBackground: peekOnBackgroundColor,
+            surface: peekSurfaceColor,
+            onSurface: peekOnSurfaceColor,
+            tertiary: peekAccentColor,
+            onTertiary: Colors.black,
           ),
-        ),
-
-        outlinedButtonTheme: OutlinedButtonThemeData(
-          style: OutlinedButton.styleFrom(
-            foregroundColor: peekPrimaryColor,
-            side: const BorderSide(color: peekPrimaryColor, width: 1.5),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(30),
-            ), // Match ElevatedButton
-            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
-            textStyle: const TextStyle(
+          scaffoldBackgroundColor: peekBackgroundColor,
+          appBarTheme: const AppBarTheme(
+            backgroundColor: Colors.transparent,
+            foregroundColor: peekOnBackgroundColor,
+            elevation: 0,
+            centerTitle: true,
+            titleTextStyle: TextStyle(
               fontFamily: 'Poppins',
-              fontSize: 16,
+              fontSize: 20,
               fontWeight: FontWeight.w600,
+              color: peekOnBackgroundColor,
+            ),
+            iconTheme: IconThemeData(color: peekOnBackgroundColor),
+            actionsIconTheme: IconThemeData(color: peekOnBackgroundColor),
+          ),
+          elevatedButtonTheme: ElevatedButtonThemeData(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: peekPrimaryColor,
+              foregroundColor: peekSurfaceColor,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(30),
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+              textStyle: const TextStyle(
+                fontFamily: 'Poppins',
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+              elevation: 2,
+            ),
+          ),
+          outlinedButtonTheme: OutlinedButtonThemeData(
+            style: OutlinedButton.styleFrom(
+              foregroundColor: peekPrimaryColor,
+              side: const BorderSide(color: peekPrimaryColor, width: 1.5),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(30),
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+              textStyle: const TextStyle(
+                fontFamily: 'Poppins',
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          textButtonTheme: TextButtonThemeData(
+            style: TextButton.styleFrom(
+              foregroundColor: peekSecondaryColor,
+              textStyle: const TextStyle(
+                fontFamily: 'Poppins',
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          chipTheme: ChipThemeData(
+            backgroundColor: peekSurfaceColor.withOpacity(0.8),
+            labelStyle: TextStyle(
+              color: peekOnSurfaceColor.withOpacity(0.9),
+              fontFamily: 'Poppins',
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+            ),
+            iconTheme: IconThemeData(
+              color: peekOnSurfaceColor.withOpacity(0.9),
+              size: 16,
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            side: BorderSide.none,
+          ),
+          snackBarTheme: SnackBarThemeData(
+            backgroundColor: peekSurfaceColor,
+            contentTextStyle: const TextStyle(
+              color: peekOnSurfaceColor,
+              fontFamily: 'Poppins',
+            ),
+            actionTextColor: peekSecondaryColor,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            elevation: 4,
+          ),
+          dialogTheme: DialogTheme(
+            backgroundColor: peekSurfaceColor,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            titleTextStyle: const TextStyle(
+              fontFamily: 'Poppins',
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: peekOnSurfaceColor,
+            ),
+            contentTextStyle: const TextStyle(
+              fontFamily: 'Poppins',
+              fontSize: 14,
+              color: peekOnSurfaceColor,
+            ),
+          ),
+          bottomNavigationBarTheme: BottomNavigationBarThemeData(
+            backgroundColor: peekSurfaceColor,
+            selectedItemColor: peekPrimaryColor,
+            unselectedItemColor: Colors.grey.shade600,
+            selectedLabelStyle: const TextStyle(
+              fontWeight: FontWeight.w600,
+              fontFamily: 'Poppins',
+              fontSize: 12,
+            ),
+            unselectedLabelStyle: const TextStyle(
+              fontFamily: 'Poppins',
+              fontSize: 12,
+            ),
+            type: BottomNavigationBarType.fixed,
+            showUnselectedLabels: false,
+            showSelectedLabels: true,
+            elevation: 4,
+          ),
+          textTheme: const TextTheme(
+            displayLarge: TextStyle(
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.5,
+            ),
+            headlineMedium: TextStyle(fontWeight: FontWeight.w600),
+            titleMedium: TextStyle(fontWeight: FontWeight.w500),
+            bodyMedium: TextStyle(fontWeight: FontWeight.w400, height: 1.4),
+            labelLarge: TextStyle(fontWeight: FontWeight.w600),
+            labelMedium: TextStyle(fontWeight: FontWeight.w500),
+          ).apply(
+            bodyColor: peekOnBackgroundColor,
+            displayColor: peekOnBackgroundColor.withOpacity(0.9),
+          ),
+          inputDecorationTheme: InputDecorationTheme(
+            filled: true,
+            fillColor: peekSurfaceColor.withOpacity(0.5),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: peekPrimaryColor, width: 1.5),
+            ),
+            labelStyle: TextStyle(
+              color: peekOnSurfaceColor.withOpacity(0.7),
+              fontFamily: 'Poppins',
+            ),
+            hintStyle: TextStyle(
+              color: Colors.grey.shade600,
+              fontFamily: 'Poppins',
             ),
           ),
         ),
-
-        textButtonTheme: TextButtonThemeData(
-          style: TextButton.styleFrom(
-            foregroundColor: peekSecondaryColor, // Use secondary color
-            textStyle: const TextStyle(
-              fontFamily: 'Poppins',
-              fontWeight: FontWeight.w500,
-            ), // Medium
-          ),
-        ),
-
-        chipTheme: ChipThemeData(
-          backgroundColor: peekSurfaceColor.withOpacity(0.8),
-          labelStyle: TextStyle(
-            color: peekOnSurfaceColor.withOpacity(0.9),
-            fontFamily: 'Poppins',
-            fontSize: 11,
-            fontWeight: FontWeight.w500,
-          ), // Medium
-          iconTheme: IconThemeData(
-            color: peekOnSurfaceColor.withOpacity(0.9),
-            size: 16,
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          side: BorderSide.none,
-        ),
-
-        snackBarTheme: SnackBarThemeData(
-          backgroundColor: peekSurfaceColor,
-          contentTextStyle: const TextStyle(
-            color: peekOnSurfaceColor,
-            fontFamily: 'Poppins',
-          ),
-          actionTextColor: peekSecondaryColor,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          elevation: 4,
-        ),
-
-        dialogTheme: DialogTheme(
-          backgroundColor: peekSurfaceColor,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          titleTextStyle: const TextStyle(
-            fontFamily: 'Poppins',
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: peekOnSurfaceColor,
-          ),
-          contentTextStyle: const TextStyle(
-            fontFamily: 'Poppins',
-            fontSize: 14,
-            color: peekOnSurfaceColor,
-          ),
-        ),
-
-        bottomNavigationBarTheme: BottomNavigationBarThemeData(
-          backgroundColor: peekSurfaceColor,
-          selectedItemColor: peekPrimaryColor,
-          unselectedItemColor: Colors.grey.shade600,
-          selectedLabelStyle: const TextStyle(
-            fontWeight: FontWeight.w600,
-            fontFamily: 'Poppins',
-            fontSize: 12,
-          ),
-          unselectedLabelStyle: const TextStyle(
-            fontFamily: 'Poppins',
-            fontSize: 12,
-          ),
-          type: BottomNavigationBarType.fixed,
-          showUnselectedLabels: false,
-          showSelectedLabels: true,
-          elevation: 4,
-        ),
-
-        textTheme: const TextTheme(
-          displayLarge: TextStyle(
-            fontWeight: FontWeight.w700,
-            letterSpacing: -0.5,
-          ),
-          headlineMedium: TextStyle(fontWeight: FontWeight.w600),
-          titleMedium: TextStyle(fontWeight: FontWeight.w500),
-          bodyMedium: TextStyle(fontWeight: FontWeight.w400, height: 1.4),
-          labelLarge: TextStyle(fontWeight: FontWeight.w600), // Button text
-          labelMedium: TextStyle(fontWeight: FontWeight.w500),
-        ).apply(
-          bodyColor: peekOnBackgroundColor,
-          displayColor: peekOnBackgroundColor.withOpacity(0.9),
-        ),
-
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: peekSurfaceColor.withOpacity(0.5),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide.none,
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide.none,
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: peekPrimaryColor, width: 1.5),
-          ),
-          labelStyle: TextStyle(
-            color: peekOnSurfaceColor.withOpacity(0.7),
-            fontFamily: 'Poppins',
-          ),
-          hintStyle: TextStyle(
-            color: Colors.grey.shade600,
-            fontFamily: 'Poppins',
-          ),
-        ),
       ),
-      // --- END OF Theme ---
     );
   }
 

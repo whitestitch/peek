@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:peek/features/onboarding/providers/onboarding_provider.dart';
 import 'package:peek/features/onboarding/widgets/onboarding_slide.dart';
-import 'package:peek/theme/colors.dart'; // Import colors
+import 'package:peek/theme/colors.dart';
 
 class OnboardingPage extends ConsumerStatefulWidget {
   const OnboardingPage({super.key});
@@ -24,7 +24,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
   // Define slide content here
   final List<Map<String, dynamic>> slides = [
     {
-      'logo': 'assets/images/peekio.png',
+      'logo': 'assets/images/peekio_logo.svg',
       'image': 'assets/images/onboarding_01.png',
       'isHeroFullWidth': true,
       'title': 'View the world as another does.',
@@ -33,7 +33,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
       'background': 'assets/images/onboarding_bg_01.jpg',
     },
     {
-      'logo': 'assets/images/peekio.png',
+      'logo': 'assets/images/peekio_logo.svg',
       // 'image': 'assets/images/onboarding_02.png',
       'image': 'assets/animations/onboarding_pulse_eye.riv',
       'isHeroFullWidth': false,
@@ -44,7 +44,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
       'background': 'assets/images/onboarding_bg_02.jpg',
     },
     {
-      'logo': 'assets/images/peekio.png',
+      'logo': 'assets/images/peekio_logo.svg',
       'image': 'assets/images/onboarding_03.png',
       'isHeroFullWidth': false,
       'title': '100% Private',
