@@ -29,7 +29,9 @@ import '../features/peek/peek_sent_confirmation_page.dart';
 import '../core/widgets/app_shell.dart';
 
 // This key is for the Navigator within the ShellRoute
-final GlobalKey<NavigatorState> _shellNavigatorKey =
+// final GlobalKey<NavigatorState> _shellNavigatorKey =
+//     GlobalKey<NavigatorState>(debugLabel: 'shell');
+final GlobalKey<NavigatorState> shellNavigatorKey =
     GlobalKey<NavigatorState>(debugLabel: 'shell');
 
 // HIDE TOP APPBAR WIDGET
@@ -106,8 +108,7 @@ GoRouter createRouter(GlobalKey<NavigatorState> rootNavigatorKey,
     debugLogDiagnostics: true,
     routes: [
       ShellRoute(
-        navigatorKey:
-            _shellNavigatorKey, // Key for the shell's nested navigator
+        navigatorKey: shellNavigatorKey,
         builder: (BuildContext context, GoRouterState state, Widget child) {
           // The AppShell widget builds the Scaffold with BottomNavigationBar
           // 'child' is the widget for the current nested route (e.g., HomePage, StatsPage)

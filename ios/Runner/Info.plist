@@ -24,23 +24,35 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>FirebaseAppDelegateProxyEnabled</key>
+	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
-
-	<key>NSCameraUsageDescription</key>
-	<string>We need camera access so you can take a Peek photo.</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Used for uploading your Peek image.</string>
-	<key>UIApplicationSupportsIndirectInputEvents</key>
-	<true/>
-
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>Needed to enable Flutter debugging features like hot reload and DevTools.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_dartobservatory._tcp</string>
 	</array>
-
+	<key>NSCameraUsageDescription</key>
+	<string>We need camera access so you can take a Peek photo.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Needed to enable Flutter debugging features like hot reload and DevTools.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>
+  		Peek uses your location—even when the app is in the background—to share your general area (city/region) with others when you send a Peek, if you enable this feature.
+	</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Peek uses your location to show where Peeks are approximately sent from.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Peek needs microphone access to capture audio along with photos (optional, but required by camera package).</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Used for uploading your Peek image.</string>
+	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+		<string>remote-notification</string>
+	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
@@ -58,21 +70,5 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Peek needs microphone access to capture audio along with photos (optional, but required by camera package).</string>
-	<key>FirebaseAppDelegateProxyEnabled</key>
-	<false/>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>fetch</string>
-		<string>remote-notification</string>
-	</array>
-	<!-- Purpose string for always-on location access -->
-	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>
-  		Peek uses your location—even when the app is in the background—to share your general area (city/region) with others when you send a Peek, if you enable this feature.
-	</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Peek uses your location to show where Peeks are approximately sent from.</string>
 </dict>
 </plist>

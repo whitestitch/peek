@@ -95,7 +95,10 @@ class _HomePageState extends ConsumerState<HomePage> {
       return;
     }
     final userData = userDocSnapshot.data()!;
-    final isPremium = userData['isPremium'] == true;
+    final bool hasSubscription = userData['isSubscription'] as bool? ?? false;
+    final bool isPremium =
+        (userData['isPremium'] as bool? ?? false) || hasSubscription;
+
     const dailyLimit = 3;
     const cooldownDuration = Duration(seconds: 5);
     final lastPeekTimestamp =
@@ -238,8 +241,11 @@ class _HomePageState extends ConsumerState<HomePage> {
         } else {
           final userData = userDoc.data()!;
 
+          final bool hasSubscription =
+              userDoc.data()?['isSubscription'] as bool? ?? false;
           final bool isPremiumFromSnapshot =
-              userData['isPremium'] as bool? ?? false;
+              (userDoc.data()?['isPremium'] as bool? ?? false) ||
+                  hasSubscription;
 
           if (isPremiumFromSnapshot) {
             // Corrected to use isPremiumFromSnapshot
@@ -330,15 +336,22 @@ class _HomePageState extends ConsumerState<HomePage> {
                 color: peekPrimaryColor),
             error: (e, _) => _buildErrorUI('Error loading premium status.'),
             data: (isPremiumForUI) {
-              // isPremiumForUI is from premiumStatusProvider (for UI hints like badge)
               return userAsyncValue.when(
                 loading: () => const material.CircularProgressIndicator(
                     color: peekPrimaryColor),
                 error: (e, _) => _buildErrorUI('Error loading user data.'),
-                data: (doc) {
-                  if (doc == null || !doc.exists) {
+                data: (userDoc) {
+                  if (userDoc == null || !userDoc.exists) {
                     return _buildErrorUI("Waiting for user data...");
                   }
+
+                  // Always read from userDoc.data()
+                  final userData = userDoc.data()!;
+                  final bool hasSubscription =
+                      userData['isSubscription'] as bool? ?? false;
+                  final bool isPremiumFromSnapshot =
+                      (userData['isPremium'] as bool? ?? false) ||
+                          hasSubscription;
 
                   return material.SingleChildScrollView(
                     child: material.Padding(
@@ -391,7 +404,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                                     style: material.TextStyle(
                                       fontSize: 16,
                                       fontWeight: material.FontWeight.w600,
-                                      color: (doc.data()?['isPremium'] == true)
+                                      color: isPremiumForUI
                                           ? material.Colors.green.shade600
                                           : material.Theme.of(context)
                                               .textTheme
@@ -507,8 +520,8 @@ class _HomePageState extends ConsumerState<HomePage> {
 
                           const material.SizedBox(height: 10),
 
-                          // *** Use isPremiumForUI for upgrade button visibility ***
-                          if (!isPremiumForUI)
+                          // *** Use isPremiumFromSnapshot for upgrade button visibility ***
+                          if (!isPremiumFromSnapshot)
                             material.SizedBox(
                               width: double.infinity,
                               child: material.ElevatedButton.icon(
@@ -541,7 +554,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                               ),
                             ),
 
-                          if (!isPremiumForUI)
+                          if (!isPremiumFromSnapshot)
                             const material.SizedBox(height: 16),
 
                           // Receiver Mode Button (logic uses calculated state)
@@ -690,14 +703,14 @@ material.Widget _buildErrorUI(String message) {
 }
 
 material.Widget _buildWelcomeArea(
-    material.BuildContext context, bool isPremiumForUI) {
+    material.BuildContext context, bool isPremiumFromSnapshot) {
   // Accept premium status
   final isAnonymous = FirebaseAuth.instance.currentUser?.isAnonymous ?? true;
   final userEmail = FirebaseAuth.instance.currentUser?.email;
 
   // const String peekImagePath = 'assets/images/welcome_logo.png';
 
-  if (isPremiumForUI && !isAnonymous) {
+  if (isPremiumFromSnapshot && !isAnonymous) {
     // Show badge only if premium AND not anonymous
     return material.Row(
       mainAxisAlignment: material.MainAxisAlignment.center,
@@ -739,8 +752,9 @@ material.Widget _buildWelcomeArea(
   }
 
   // --- Fallback: Non-Premium or Anonymous Title/Subtitle Logic ---
-  String titleText = isPremiumForUI ? 'Welcome Back' : 'Welcome to Peekio!';
-  String? subtitleText = isPremiumForUI
+  String titleText =
+      isPremiumFromSnapshot ? 'Welcome Back' : 'Welcome to Peekio!';
+  String? subtitleText = isPremiumFromSnapshot
       ? 'You\'re browsing as a premium'
       : 'You\'re browsing as a guest.';
 

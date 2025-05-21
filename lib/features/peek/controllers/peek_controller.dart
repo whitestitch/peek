@@ -1,18 +1,25 @@
 // lib/features/peek/controllers/peek_controller.dart
+
+import 'dart:async'; // For TimeoutException
+import 'dart:io';
+
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-// import 'package:uuid/uuid.dart'; // Uuid is no longer used here if Cloud Function generates ID
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_functions/cloud_functions.dart';
-import 'package:flutter/foundation.dart'; // For debugPrint
 
-// Import for userDataProvider
-import 'package:peek/features/home/home_page.dart';
+import 'package:flutter/foundation.dart'; // For debugPrint
+import 'package:peek/features/home/home_page.dart'; // userDataProvider import
 
 import '../data/peek_repository.dart';
-import '../providers/peek_providers.dart'; // Assuming peekRepositoryProvider is defined here
+import '../providers/peek_providers.dart';
+// import 'package:peek/core/constants.dart';
+
+// Add emulator flag so we can skip real token refresh against emulator
+// const bool useFirebaseEmulator =
+//     bool.fromEnvironment('USE_FIREBASE_EMULATOR', defaultValue: false);
 
 @immutable
 class PeekControllerState {
@@ -35,7 +42,8 @@ final peekControllerProvider =
     ref.read(peekRepositoryProvider),
     FirebaseAuth.instance,
     FirebaseFunctions.instanceFor(
-        region: "us-central1"), // Match your function's region
+        // function's region
+        region: "us-central1"),
     ref,
     FirebaseFirestore.instance,
   );
@@ -86,18 +94,42 @@ class PeekController extends StateNotifier<PeekControllerState> {
       debugPrint(
           "[PeekController] Attempting to refresh ID token for user: $fromUserId");
       await currentUser.getIdToken(true); // true forces a refresh
+      debugPrint(
+          "[PeekController] ID token refreshed successfully (or attempt made).");
+
+      debugPrint(
+          "[PeekController] Attempting to refresh ID token for user: $fromUserId");
+
+      await currentUser.getIdToken(true); // true forces a refresh
       debugPrint("[PeekController] ID token refreshed successfully.");
+
+      // if (!useFirebaseEmulator) {
+      //   debugPrint(
+      //       "[PeekController] Refreshing ID token for user: $fromUserId");
+      //   try {
+      //     await currentUser.getIdToken(true);
+      //     debugPrint("✅ ID token refreshed");
+      //   } catch (e) {
+      //     debugPrint("[PeekController] Token refresh failed, continuing: $e");
+      //   }
+      // } else {
+      //   debugPrint("ℹ️ Skipping token refresh against emulator");
+      // }
 
       debugPrint(
           "[PeekController] Calling 'initiatePeekRequest' Cloud Function for user: $fromUserId");
-      final HttpsCallable callable =
-          _functions.httpsCallable('initiatePeekRequest');
+
+      final HttpsCallable callable = _functions.httpsCallable(
+        'initiatePeekRequest',
+        options: HttpsCallableOptions(
+          timeout: const Duration(seconds: 30),
+        ),
+      );
 
       final HttpsCallableResult result =
           await callable.call<Map<String, dynamic>>({
-        // Pass any client-side data if your function expects it.
-        // If it only needs the authenticated user, the data map can be empty,
-        // as senderUid is derived from context.auth in the Cloud Function.
+        'senderUid': fromUserId, // Pass senderUid explicitly
+        // Add any other data your Cloud Function might expect from the client
       });
 
       final Map<String, dynamic> responseData =
@@ -143,10 +175,15 @@ class PeekController extends StateNotifier<PeekControllerState> {
       }
     } on FirebaseFunctionsException catch (e, st) {
       debugPrint(
-          "FirebaseFunctionsException calling initiatePeekRequest: ${e.code} - ${e.message}\nStack: $st");
+          "❌ [PeekController] FirebaseFunctionsException calling initiatePeekRequest:\n"
+          "  Code: ${e.code}\n"
+          "  Message: ${e.message}\n"
+          "  Details: ${e.details}\n" // This is the crucial part
+          "  Stack: $st");
       state = state.copyWith(
           isLoading: false,
-          error: e.message ?? "Cloud function error. Please try again.");
+          // Provide a more user-friendly message, but log the details
+          error: "Peek request failed. (${e.code})");
       return null;
     } catch (e, st) {
       debugPrint("Error in createPeekRequestAndUpdateStats: $e\nStack: $st");

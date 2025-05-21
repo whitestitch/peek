@@ -14,8 +14,15 @@ import '../firebase_options.dart'; // Ensure correct path
 // Top-level function required by Firebase for background handler
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  // --- Keep your existing background handler code ---
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  // only initialize if this isolate hasn’t yet:
+  if (Firebase.apps.isEmpty) {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    debugPrint("✅ Firebase initialized in BG Handler (was empty).");
+  } else {
+    debugPrint("ℹ️ Firebase already initialized in BG Handler.");
+  }
   debugPrint(
     "📨 [NotificationService BG Handler] Message data: ${message.data}",
   );
@@ -32,18 +39,47 @@ class NotificationService {
   /// Initialize listeners, request permissions.
   /// MUST be called after GoRouter is initialized.
   Future<void> initialize(GoRouter router) async {
-    // --- Keep your existing initialize method code ---
     _router = router;
     await _requestPermissions();
     _setupListeners();
+
     if (!kIsWeb && Platform.isIOS) {
-      _getAndSaveTokensWithRetry();
+      // 1️⃣ grab whatever APNs token we have right now
+      final apns = await _firebaseMessaging.getAPNSToken();
+      debugPrint("[NotificationService] initial APNs token: $apns");
+
+      if (apns != null) {
+        // we already have an APNs token → go straight to FCM
+        await _getAndSaveTokens();
+      } else {
+        // schedule retries until APNs arrives, then fetch FCM
+        _getAndSaveTokensWithRetry();
+      }
     } else if (!kIsWeb) {
-      _getAndSaveTokens();
+      // Android & others get FCM immediately
+      await _getAndSaveTokens();
     }
+
     debugPrint(
       "[NotificationService] Initialization complete (excluding initial message check).",
     );
+  }
+
+  void _getAndSaveTokensWithRetry() {
+    Timer.periodic(const Duration(seconds: 5), (timer) async {
+      if (!Platform.isIOS) {
+        timer.cancel();
+        return;
+      }
+      final apnsToken = await _firebaseMessaging.getAPNSToken();
+      debugPrint('🔁 [NotificationService] retrying APNs token: $apnsToken');
+      if (apnsToken != null) {
+        timer.cancel();
+        debugPrint(
+            '✅ [NotificationService] got APNs token on retry: $apnsToken');
+        await _getAndSaveTokens();
+      }
+    });
   }
 
   /// Checks for an initial message if the app was opened from terminated state.
@@ -117,9 +153,8 @@ class NotificationService {
     // --- Extract required data fields ---
     final String? type =
         data['type'] as String?; // Crucial field to determine action
-    final String? requestId =
-        data['request_id']
-            as String?; // Use 'request_id' as per previous examples
+    final String? requestId = data['request_id']
+        as String?; // Use 'request_id' as per previous examples
 
     // --- Validate base requirement: requestId ---
     if (requestId == null || requestId.isEmpty) {
@@ -201,23 +236,6 @@ class NotificationService {
   // --- END OF MODIFIED _handleNotificationTap ---
 
   // --- Token Handling Methods (Keep As Is) ---
-  void _getAndSaveTokensWithRetry() {
-    // Keep your existing token retry logic
-    _getAndSaveTokens();
-    Timer.periodic(const Duration(seconds: 5), (timer) async {
-      if (!Platform.isIOS) {
-        timer.cancel();
-        return;
-      }
-      final apnsToken = await _firebaseMessaging.getAPNSToken();
-      debugPrint('🔁 [NotificationService] Retrying APNs token: $apnsToken');
-      if (apnsToken != null) {
-        timer.cancel();
-        debugPrint('✅ [NotificationService] Got APNs token: $apnsToken');
-        await _getAndSaveTokens();
-      }
-    });
-  }
 
   Future<void> _getAndSaveTokens() async {
     // Keep your existing token saving logic

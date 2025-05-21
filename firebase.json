@@ -40,7 +40,7 @@
   },
   "firestore": {
     "rules": "firestore.rules",
-    "indexes": "\t"
+    "indexes": "firestore.indexes.json"
   },
   "functions": [
     {
@@ -60,17 +60,22 @@
   ],
   "emulators": {
     "auth": {
+      "host": "0.0.0.0",
       "port": 9099
     },
     "functions": {
+      "host": "0.0.0.0",
       "port": 5001,
       "runtime": "nodejs20"
     },
     "firestore": {
+      "host": "0.0.0.0",
+      "rules": "firestore.rules",
       "port": 8080
     },
     "ui": {
       "enabled": true,
+      "host": "0.0.0.0",
       "port": 4000
     },
     "singleProjectMode": true

@@ -2,7 +2,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lottie/lottie.dart';
-import 'package:peek/features/peek/providers/peek_providers.dart'; // Ensure this path is correct
+import 'package:peek/features/peek/providers/peek_providers.dart';
+import 'package:peek/core/router.dart' show shellNavigatorKey;
 
 final overlayAnimationServiceProvider =
     Provider<OverlayAnimationService>((ref) {
@@ -22,7 +23,7 @@ class OverlayAnimationService {
     debugPrint(
         "[OverlayAnimationService] _showRootAnimation CALLED for: $lottieAssetPath");
 
-    this.hideCurrentAnimation();
+    hideCurrentAnimation();
 
     BuildContext? navigatorContext;
     OverlayState? overlayState;
@@ -55,37 +56,44 @@ class OverlayAnimationService {
           "✅ [OverlayAnimationService] STEP 1 PASSED: navigatorContext IS MOUNTED for '$lottieAssetPath'.");
 
       // More detailed check for navigatorKey.currentState
-      final NavigatorState? currentNavigatorState = navigatorKey.currentState;
-      debugPrint(
-          "[OverlayAnimationService] Checking navigatorKey.currentState: ${currentNavigatorState == null ? 'NULL' : 'NOT NULL'}.");
-
-      OverlayState? potentialOverlayFromNavigatorState =
-          currentNavigatorState?.overlay;
-      debugPrint(
-          "[OverlayAnimationService] Attempted to get overlay directly from navigatorKey.currentState.overlay: ${potentialOverlayFromNavigatorState == null ? 'NULL' : 'NOT NULL'}.");
-
-      try {
+      final NavigatorState? navigatorState = shellNavigatorKey.currentState;
+      if (navigatorState == null) {
         debugPrint(
-            "[OverlayAnimationService] STEP 2: Attempting Overlay.of(navigatorContext, rootOverlay: true) for '$lottieAssetPath'.");
-        overlayState = Overlay.of(navigatorContext, rootOverlay: true);
-        debugPrint(
-            "✅ [OverlayAnimationService] STEP 2 COMPLETED: Overlay.of(rootOverlay: true) called for '$lottieAssetPath'. Result: ${overlayState == null ? 'NULL' : 'NOT NULL'}.");
-      } catch (e, s) {
-        debugPrint(
-            "❌❌❌ [OverlayAnimationService] STEP 2 EXCEPTION during Overlay.of(rootOverlay: true): $e");
-        debugPrintStack(
-            stackTrace: s, label: "Exception in Overlay.of(rootOverlay: true)");
-
-        if (potentialOverlayFromNavigatorState != null) {
-          debugPrint(
-              "[OverlayAnimationService] FALLBACK: Using overlay from navigatorKey.currentState.overlay because Overlay.of() failed.");
-          overlayState = potentialOverlayFromNavigatorState;
-        } else {
-          debugPrint(
-              "❌ [OverlayAnimationService] FALLBACK FAILED: navigatorKey.currentState.overlay is also null after Overlay.of() exception.");
-          return;
-        }
+            "❌ [OverlayAnimationService] shellNavigatorKey.currentState is null. Aborting animation.");
+        return;
       }
+
+      // Pull its OverlayState
+      final OverlayState? overlayState = navigatorState.overlay;
+      if (overlayState == null) {
+        debugPrint(
+            "❌ [OverlayAnimationService] shell Navigator's overlay is null. Aborting animation.");
+        return;
+      }
+
+      // try {
+      //   debugPrint(
+      //       "[OverlayAnimationService] Inserting into shell overlay for '$lottieAssetPath'");
+
+      //   overlayState = Overlay.of(navigatorContext, rootOverlay: true);
+      //   debugPrint(
+      //       "✅ [OverlayAnimationService] STEP 2 COMPLETED: Overlay.of(rootOverlay: true) called for '$lottieAssetPath'. Result: ${overlayState == null ? 'NULL' : 'NOT NULL'}.");
+      // } catch (e, s) {
+      //   debugPrint(
+      //       "❌❌❌ [OverlayAnimationService] STEP 2 EXCEPTION during Overlay.of(rootOverlay: true): $e");
+      //   debugPrintStack(
+      //       stackTrace: s, label: "Exception in Overlay.of(rootOverlay: true)");
+
+      //   if (potentialOverlayFromNavigatorState != null) {
+      //     debugPrint(
+      //         "[OverlayAnimationService] FALLBACK: Using overlay from navigatorKey.currentState.overlay because Overlay.of() failed.");
+      //     overlayState = potentialOverlayFromNavigatorState;
+      //   } else {
+      //     debugPrint(
+      //         "❌ [OverlayAnimationService] FALLBACK FAILED: navigatorKey.currentState.overlay is also null after Overlay.of() exception.");
+      //     return;
+      //   }
+      // }
 
       if (overlayState == null) {
         // This means Overlay.of() returned null and the fallback (potentialOverlayFromNavigatorState) was also null.
@@ -107,53 +115,47 @@ class OverlayAnimationService {
       debugPrint(
           "[OverlayAnimationService] Creating OverlayEntry for '$lottieAssetPath'.");
       _currentOverlayEntry = OverlayEntry(
-        builder: (overlayBuildContext) {
-          debugPrint(
-              "[OverlayAnimationService] OverlayEntry BUILDER executing for '$lottieAssetPath'. Context: $overlayBuildContext");
+        builder: (ctx) {
           return Material(
             type: MaterialType.transparency,
             child: IgnorePointer(
-              child: Container(
-                child: Center(
-                  child: Lottie.asset(
-                    lottieAssetPath,
-                    key: ValueKey(lottieAssetPath + DateTime.now().toString()),
-                    width: MediaQuery.of(overlayBuildContext).size.width * 0.75,
-                    height:
-                        MediaQuery.of(overlayBuildContext).size.height * 0.75,
-                    fit: BoxFit.contain,
-                    onLoaded: (composition) {
-                      debugPrint(
-                          "✅ [OverlayAnimationService] Lottie '$lottieAssetPath' LOADED. Composition Duration: ${composition.duration}. Will display for: ${duration.inMilliseconds}ms");
-                    },
-                    errorBuilder: (context, error, stackTrace) {
-                      debugPrint(
-                          "❌❌❌ [OverlayAnimationService] LOTTIE ASSET ERROR for '$lottieAssetPath': $error");
-                      debugPrintStack(
-                          stackTrace: stackTrace,
-                          label: "Lottie Load Error for $lottieAssetPath");
-                      return Container(
-                        width: MediaQuery.of(overlayBuildContext).size.width *
-                            0.75,
-                        height: MediaQuery.of(overlayBuildContext).size.height *
-                            0.75,
-                        color: Colors.red.withOpacity(0.5),
-                        padding: const EdgeInsets.all(10),
-                        child: SingleChildScrollView(
-                          child: Text(
-                            "Lottie Error:\nAsset: $lottieAssetPath\nError: $error",
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                                decoration: TextDecoration.none,
-                                fontWeight: FontWeight.normal),
-                            textDirection: TextDirection.ltr,
-                          ),
+              child: Center(
+                child: Lottie.asset(
+                  lottieAssetPath,
+                  key: ValueKey(lottieAssetPath + DateTime.now().toString()),
+                  width: MediaQuery.of(ctx).size.width * 0.75,
+                  height: MediaQuery.of(ctx).size.height * 0.75,
+                  fit: BoxFit.contain,
+                  onLoaded: (composition) {
+                    debugPrint(
+                        "✅ [OverlayAnimationService] Lottie loaded: ${composition.duration}");
+                  },
+                  // Error builder
+                  errorBuilder: (context, error, stackTrace) {
+                    debugPrint(
+                        "❌ [OverlayAnimationService] Lottie load error for '$lottieAssetPath': $error");
+                    debugPrintStack(
+                        stackTrace: stackTrace,
+                        label: "Lottie Load Error for $lottieAssetPath");
+                    return Container(
+                      width: MediaQuery.of(ctx).size.width * 0.75,
+                      height: MediaQuery.of(ctx).size.height * 0.75,
+                      color: Colors.red.withOpacity(0.5),
+                      padding: const EdgeInsets.all(10),
+                      child: SingleChildScrollView(
+                        child: Text(
+                          "Lottie Error:\nAsset: $lottieAssetPath\nError: $error",
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              decoration: TextDecoration.none,
+                              fontWeight: FontWeight.normal),
+                          textDirection: TextDirection.ltr,
                         ),
-                      );
-                    },
-                  ),
+                      ),
+                    );
+                  },
                 ),
               ),
             ),
@@ -169,15 +171,19 @@ class OverlayAnimationService {
 
       debugPrint(
           "[OverlayAnimationService] Attempting to insert overlay for '$lottieAssetPath'. OverlayState isMounted: ${overlayState.mounted}");
+
       overlayState.insert(_currentOverlayEntry!);
       debugPrint(
-          "✅ [OverlayAnimationService] Successfully INSERTED overlay for '$lottieAssetPath'.");
+          "[OverlayAnimationService] OverlayEntry inserted for '$lottieAssetPath'");
 
       debugPrint(
           "[OverlayAnimationService] Starting delay of ${duration.inMilliseconds}ms for '$lottieAssetPath'.");
+
       await Future.delayed(duration);
       debugPrint(
-          "[OverlayAnimationService] Delay finished for '$lottieAssetPath'. Attempting to hide.");
+          "[OverlayAnimationService] Duration elapsed, hiding '$lottieAssetPath'");
+      hideCurrentAnimation();
+
       this.hideCurrentAnimation();
     } catch (e, s) {
       debugPrint(

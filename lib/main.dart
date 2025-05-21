@@ -1,5 +1,6 @@
 // main.dart
 import 'dart:async';
+import 'dart:io';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -27,23 +28,38 @@ import 'package:peek/core/firestore_service.dart';
 import 'package:peek/features/peek/providers/peek_providers.dart'; // For navigatorKeyProvider
 import 'core/root_realtime_listener.dart';
 
+/// Set this to true when you run `firebase emulators:start`.
+const bool useFirebaseEmulator =
+    bool.fromEnvironment('USE_FIREBASE_EMULATOR', defaultValue: false);
+
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   debugPrint("--- Background Handler Started ---");
   // Crucial: Ensure Firebase is initialized in this background isolate
-  if (Firebase.apps.isEmpty) {
-    try {
+  try {
+    if (Firebase.apps.isEmpty) {
       await Firebase.initializeApp(
         options: DefaultFirebaseOptions.currentPlatform,
       );
-      debugPrint("✅ Firebase initialized for Background Handler.");
-    } catch (e) {
+      debugPrint("✅ Firebase initialized for Background Handler (was empty).");
+    } else {
+      Firebase.app();
+      debugPrint(
+          "ℹ️ Firebase already initialized for Background Handler (apps not empty).");
+    }
+  } catch (e) {
+    if (e is FirebaseException && e.code == 'no-app') {
+      // Should not happen if apps.isEmpty was false
+      debugPrint(
+          "🔄 No Firebase app found in BG Handler despite apps not empty check—re-initializing…");
+      await Firebase.initializeApp(
+          options: DefaultFirebaseOptions.currentPlatform);
+      debugPrint("✅ Firebase re-initialized in BG Handler.");
+    } else {
       debugPrint("❌ Error initializing Firebase in Background Handler: $e");
     }
-  } else {
-    debugPrint("ℹ️ Firebase already initialized for Background Handler.");
   }
   debugPrint("📨 [BG Handler] Message received: ${message.messageId}");
   if (message.data.isNotEmpty) {
@@ -56,39 +72,57 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   debugPrint("--- main() Started: WidgetsFlutterBinding initialized.");
 
-  // 2. Initialize Firebase (ONLY ONCE)
-  debugPrint("Attempting Firebase.initializeApp()...");
-  bool firebaseInitializedSuccessfully = false;
+  FirebaseApp? defaultApp;
+  bool firebaseCoreInitialized = false;
+  debugPrint("Attempting robust Firebase initialization...");
+
   try {
-    // Check if Firebase has already been initialized.
-    // This is the primary guard against the "duplicate-app" error.
-    if (Firebase.apps.isEmpty) {
-      await Firebase.initializeApp(
-        options: DefaultFirebaseOptions.currentPlatform,
-      );
+    // Attempt to initialize. If it's already initialized, this will use the existing instance
+    // or throw 'duplicate-app' which we handle.
+    defaultApp = await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    debugPrint(
+        "✅ Firebase.initializeApp() successful or used existing. Default app: ${defaultApp.name}");
+    firebaseCoreInitialized = true;
+  } on FirebaseException catch (e) {
+    if (e.code == 'duplicate-app') {
       debugPrint(
-          "✅ Firebase.initializeApp() successful in main (Firebase.apps was empty).");
-      firebaseInitializedSuccessfully = true;
+          "🔶 Firebase.initializeApp() threw 'duplicate-app'. Retrieving existing default app.");
+      try {
+        defaultApp = Firebase.app(); // Get the existing default app
+        debugPrint(
+            "   Successfully retrieved existing [DEFAULT] app: ${defaultApp.name}");
+        firebaseCoreInitialized =
+            true; // Mark as initialized because an app instance exists
+      } catch (eDefault) {
+        debugPrint(
+            "   ❌ CRITICAL: Failed to retrieve existing [DEFAULT] app after 'duplicate-app': $eDefault");
+        // firebaseCoreInitialized remains false
+      }
     } else {
       debugPrint(
-          "ℹ️ Firebase.initializeApp() skipped, Firebase.apps was not empty. Default app: ${Firebase.app().name}");
-      firebaseInitializedSuccessfully = true;
+          "❌ CRITICAL: Firebase.initializeApp() failed with FirebaseException: ${e.code} - ${e.message}");
+      // firebaseCoreInitialized remains false
     }
   } catch (e) {
-    if (e is FirebaseException && e.code == 'duplicate-app') {
-      debugPrint(
-          "❌ Firebase.initializeApp() threw 'duplicate-app' error even after checking Firebase.apps.isEmpty. This is unusual for a clean build.");
-      firebaseInitializedSuccessfully =
-          true; // Still assume an app instance is available
-    } else {
-      debugPrint(
-          "❌ CRITICAL: Error during Firebase.initializeApp() in main: $e");
-    }
+    debugPrint(
+        "❌ CRITICAL: Unexpected generic error during Firebase.initializeApp(): $e");
+    // firebaseCoreInitialized remains false
   }
 
-  debugPrint("Current Firebase apps count: ${Firebase.apps.length}");
-  if (Firebase.apps.isNotEmpty) {
-    debugPrint("Default Firebase app name: ${Firebase.app().name}");
+  if (!firebaseCoreInitialized && Firebase.apps.isNotEmpty) {
+    // Fallback: If initializeApp failed but an app somehow exists (e.g., from a plugin)
+    debugPrint(
+        "⚠️ Firebase.initializeApp() failed, but Firebase.apps is not empty. Attempting to use existing default app.");
+    try {
+      defaultApp = Firebase.app();
+      firebaseCoreInitialized = true;
+      debugPrint("   Using existing default app: ${defaultApp.name}");
+    } catch (e) {
+      debugPrint(
+          "   ❌ Failed to get existing default app even when Firebase.apps not empty: $e");
+    }
   }
 
   // Handle User Authentication
@@ -109,69 +143,78 @@ Future<void> main() async {
     debugPrint("❌ Anonymous sign-in failed: $e");
   }
 
-  // Log current Firebase app status for diagnostics
-  debugPrint("Current Firebase apps count: ${Firebase.apps.length}");
-  if (Firebase.apps.isNotEmpty) {
-    debugPrint("Default Firebase app name: ${Firebase.app().name}");
-    // You can add more details if needed:
-    // debugPrint("Default Firebase app options: ${Firebase.app().options.asMap}");
-  }
-
-  // Log current Firebase app status
-  debugPrint("Current Firebase apps count: ${Firebase.apps.length}");
-  if (Firebase.apps.isNotEmpty) {
-    debugPrint("Default Firebase app name: ${Firebase.app().name}");
-  }
-
-  if (kDebugMode && firebaseInitializedSuccessfully) {
+  if (kDebugMode && firebaseCoreInitialized && defaultApp != null) {
     try {
-      // Use 10.0.2.2 for Android emulator to connect to localhost of the host machine.
-      // For iOS simulator, 'localhost' or '127.0.0.1' usually works.
-      // For physical devices, you'd need to use your computer's local network IP.
-      final String host = defaultTargetPlatform == TargetPlatform.android
-          ? '10.0.2.2'
-          : 'localhost';
+      final String host;
+      if (Platform.isAndroid) {
+        // Check actual platform
+        host = '10.0.2.2';
+      } else if (Platform.isIOS) {
+        // For physical iOS device, use your Mac's local network IP.
+        // For iOS Simulator, '127.0.0.1' or 'localhost' is fine.
+        // Ensure this IP is correct for your network setup when using a physical device.
+        // << YOUR MAC'S WIFI IP if on physical device
+        host = '192.168.1.3';
+      } else {
+        // Fallback for other platforms (e.g. web, desktop)
+        host = '127.0.0.1';
+      }
 
-      debugPrint("🔧 Configuring Firebase Emulators to use host: $host");
-
-      FirebaseFirestore.instance.useFirestoreEmulator(host, 8080);
-      debugPrint("   Firestore Emulator -> $host:8080");
-
-      await FirebaseAuth.instance.useAuthEmulator(host, 9099);
-      debugPrint("   Auth Emulator      -> $host:9099");
-
-      // Configure the default instance and the regional instance if you use it
-      FirebaseFunctions.instance.useFunctionsEmulator(host, 5001);
-      FirebaseFunctions.instanceFor(region: "us-central1")
-          .useFunctionsEmulator(host, 5001);
       debugPrint(
-          "   Functions Emulator -> $host:5001 (for default and us-central1)");
+          "🔧 Configuring Firebase Emulators to use host: $host for app: ${defaultApp.name}");
 
-      // If using Firebase Storage Emulator:
-      // await FirebaseStorage.instance.useStorageEmulator(host, 9199);
-      // debugPrint("   Storage Emulator   -> $host:9199");
+      // Auth
+      await FirebaseAuth.instanceFor(app: defaultApp)
+          .useAuthEmulator(host, 9099);
+      debugPrint("Auth Emulator -> $host:9099");
+
+      // Firestore
+      FirebaseFirestore.instanceFor(app: defaultApp)
+          .useFirestoreEmulator(host, 8080);
+      debugPrint("Firestore Emulator -> $host:8080");
+
+      // Functions
+      FirebaseFunctions.instanceFor(app: defaultApp, region: "us-central1")
+          .useFunctionsEmulator(host, 5001);
+      debugPrint("   Functions Emulator (us-central1) -> $host:5001");
 
       debugPrint("✅ Firebase Emulators configured.");
     } catch (e) {
       debugPrint("❌ Error configuring Firebase Emulators: $e");
-      // This is a critical setup error for development if emulators are intended.
     }
+  } else if (kDebugMode && (!firebaseCoreInitialized || defaultApp == null)) {
+    debugPrint(
+        "⚠️ Firebase core not properly initialized or defaultApp is null, SKIPPING emulator configuration.");
   }
 
   // Only proceed with Firebase-dependent services if initialization was successful
-  if (firebaseInitializedSuccessfully) {
-    debugPrint("Initializing cameras (post-Firebase init)...");
-
-    debugPrint("Initializing cameras...");
+  if (firebaseCoreInitialized) {
+    // Changed condition to firebaseCoreInitialized
+    debugPrint("Initializing cameras (post-Firebase setup)...");
     await initializeCameras();
     debugPrint("✅ Camera list initialized.");
+
+    debugPrint("Checking user authentication state (post-Firebase setup)...");
+    try {
+      // This sign-in attempt will use the Auth emulator if configured above
+      if (FirebaseAuth.instance.currentUser == null) {
+        debugPrint("No current user, attempting anonymous sign-in...");
+        await FirebaseAuth.instance.signInAnonymously();
+        debugPrint(
+            "✅ Signed in anonymously (via Auth service): ${FirebaseAuth.instance.currentUser?.uid}");
+      } else {
+        debugPrint(
+            "✅ User already signed in (via Auth service): ${FirebaseAuth.instance.currentUser?.uid}");
+      }
+    } catch (e) {
+      debugPrint("❌ Anonymous sign-in failed: $e");
+    }
 
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
     debugPrint("Firebase background message handler registered.");
   } else {
     debugPrint(
-        "⚠️ Firebase did not initialize successfully. App functionality may be severely limited.");
-    // Consider showing an error UI to the user here.
+        "⚠️ Firebase setup failed. App functionality requiring Firebase may be severely limited.");
   }
 
   String determinedInitialRoute = '/';
@@ -258,6 +301,21 @@ class _PeekAppState extends ConsumerState<PeekApp> {
   Future<void> _initializeNotificationService() async {
     if (!mounted) return;
     debugPrint("[PeekApp] Initializing NotificationService...");
+
+    if (Platform.isIOS) {
+      try {
+        final apnsToken = await FirebaseMessaging.instance.getAPNSToken();
+        if (apnsToken != null) {
+          debugPrint("[NotificationService] APNs token: $apnsToken");
+        } else {
+          debugPrint(
+              "[NotificationService] APNs token was null. This is expected on simulators if not configured for remote notifications.");
+        }
+      } catch (e) {
+        debugPrint("❌ Failed to fetch APNs token: $e");
+      }
+    }
+
     final notificationService = NotificationService();
     try {
       await notificationService.initialize(widget.router);
@@ -310,10 +368,10 @@ class _PeekAppState extends ConsumerState<PeekApp> {
   @override
   Widget build(BuildContext context) {
     // Provide the router configuration to MaterialApp.router
-    // Inside main.dart or your App widget's build method
 
     return RootRealtimeListener(
       child: MaterialApp.router(
+        // navigatorKey: rootNavigatorKey,
         title: 'PEEK',
         debugShowCheckedModeBanner: false,
         routerConfig: widget.router, // Use the router passed from main()
@@ -550,25 +608,17 @@ class _PeekAppState extends ConsumerState<PeekApp> {
                 await _analytics.logEvent(
                   name: purchase.status == PurchaseStatus.restored
                       ? 'purchase_restored'
-                      : 'purchase', // Standard name for purchase
-                  // These are standard e-commerce parameters
+                      : 'purchase',
                   parameters: {
                     'transaction_id': purchase.purchaseID ?? 'UNKNOWN_ID',
-                    'value':
-                        0.0, // Placeholder - ideally get price from ProductDetails
-                    'currency': 'USD', // Placeholder - ideally get currency
-                    'items': [
-                      {
-                        'item_id': purchase.productID,
-                        'item_name': purchase
-                            .productID, // Or a more descriptive name if available
-                        // 'item_category': 'subscription', // Optional
-                        // 'price': 0.0, // Placeholder
-                        'quantity': 1,
-                      },
-                    ],
+                    'value': 0.0,
+                    'currency': 'USD',
+                    'item_id': purchase.productID,
+                    'item_name': purchase.productID,
+                    'quantity': 1,
                   },
                 );
+
                 debugPrint(
                   "[_PeekAppState] Logged ${purchase.status == PurchaseStatus.restored ? 'purchase_restored' : 'purchase'} event.",
                 );
@@ -726,19 +776,35 @@ class _PeekAppState extends ConsumerState<PeekApp> {
 
   /// Helper to show dialogs only if the widget state is still mounted.
   void _showDialogIfMounted(
-    BuildContext context,
+    BuildContext callingContext,
     Widget Function(BuildContext) builder,
   ) {
-    if (mounted) {
+    if (!mounted) {
+      debugPrint(
+          "⚠️ Attempted to show dialog but _PeekAppState is not mounted.");
+      return;
+    }
+    final BuildContext dialogCtx =
+        rootNavigatorKey.currentContext ?? callingContext;
+
+    try {
+      MaterialLocalizations.of(dialogCtx);
       showDialog(
-        context: context,
+        context: dialogCtx,
         builder: builder,
         barrierDismissible: false,
-      ); // Generally make IAP dialogs non-dismissible
-    } else {
-      debugPrint(
-        "⚠️ Attempted to show dialog but PeekApp state is not mounted.",
       );
+    } catch (e) {
+      debugPrint(
+          "⚠️ _showDialogIfMounted: dialogCtx ($dialogCtx) from (rootKey: ${rootNavigatorKey.currentContext}, calling: $callingContext) is not valid. Error: $e");
+      try {
+        // Fallback to ScaffoldMessenger with callingContext
+        ScaffoldMessenger.of(callingContext).showSnackBar(const SnackBar(
+            content: Text("Error displaying dialog. Please try again later.")));
+      } catch (snackbarError) {
+        debugPrint(
+            "⚠️ Could not show SnackBar with callingContext: $snackbarError");
+      }
     }
   }
 

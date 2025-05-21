@@ -36,12 +36,15 @@ target 'Runner' do
   end
 end
 
-# Add this at the end of your Podfile (ios/Podfile)
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
+
+    # across all pods and the main target, especially with modern plugins.
     target.build_configurations.each do |config|
-      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0' # Set to your project's minimum
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0' # Ensure consistency
+      # For Swift 5 compatibility if any pods require it (often needed)
+      config.build_settings['SWIFT_VERSION'] = '5.0' # Or your project's Swift version
     end
   end
 end
