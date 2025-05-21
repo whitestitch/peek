@@ -1,6 +1,5 @@
-#include "Generated.xcconfig"
 #include "Pods/Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig"
-// #include "../Pods/Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig"
+#include "Generated.xcconfig"
 
 
 // ... rest of file
@@ -8,7 +7,7 @@
 // #include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig"
 
 
-IPHONEOS_DEPLOYMENT_TARGET = 13.0
+// IPHONEOS_DEPLOYMENT_TARGET = 13.0
 
 // Custom Profile-specific build settings below these lines.
 // Example:
