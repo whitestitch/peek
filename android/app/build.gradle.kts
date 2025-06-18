@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.peek"
+    namespace = "com.fab.peek"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -20,7 +20,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.peek"
+        applicationId = "com.fab.peek"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

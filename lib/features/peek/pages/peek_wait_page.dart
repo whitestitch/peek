@@ -62,7 +62,9 @@ class _PeekWaitPageState extends ConsumerState<PeekWaitPage> {
         }
 
         final status = data['status'] as String?;
-        final imageUrl = data['imageUrl'] as String?; // Get the URL if present
+        final imageUrl = data['imageUrl'] as String?;
+        // You might want to get User B's display name to show in the status message
+        // final receiverName = data['receiverDisplayName'] as String?;
 
         material.debugPrint(
           "[PeekWaitPage] Listener update: status=$status, imageUrl=${imageUrl != null ? 'present' : 'null'}",
@@ -71,34 +73,65 @@ class _PeekWaitPageState extends ConsumerState<PeekWaitPage> {
         // Handle different statuses
         switch (status) {
           case 'accepted':
-            // Ensure imageUrl is valid before navigating
-            // --- START MODIFICATION ---
-            // Only proceed if the image URL is actually present and valid.
-            // If status is 'accepted' but URL is missing, just wait for the next snapshot.
             if (imageUrl != null && imageUrl.isNotEmpty) {
               material.debugPrint(
-                "[PeekWaitPage] Status 'accepted' and imageUrl present. Navigating.",
+                "[PeekWaitPage] Status 'accepted' AND imageUrl IS PRESENT. Navigating to image confirmation page.",
               );
-
-              // Navigate to the new accepted page
-              _goToPeekAcceptedPage(imageUrl);
-              // Navigate to splash screen
-              // _goToSplash(imageUrl);
+              // CORRECTED: Navigate to the confirmation page instead of directly to splash.
+              _goToImageConfirmationPage(widget.requestId, imageUrl);
             } else {
-              // Status is 'accepted', but URL isn't here YET. This is likely an intermediate
-              // state during the Firestore update. Just wait for the next snapshot update.
+              // Status is 'accepted', but URL isn't here YET.
               material.debugPrint(
-                "[PeekWaitPage] Status 'accepted' but imageUrl missing/empty. Waiting for next update...",
+                "[PeekWaitPage] Status 'accepted', but imageUrl is still MISSING. User A remains on PeekWaitPage, listening.",
               );
-              // REMOVED: _handleInternalError("Received Peek was incomplete.");
+              // The commented-out block for navigating to /peek-accepted with empty imageUrl
+              // was for a different scenario. For this flow, if imageUrl is missing, we just wait.
+
+              // Navigate to PeekAcceptedPage to show "Peek Accepted!" to the SENDER
+              // if (mounted && !_navigated) {
+              //   _navigated = true;
+              //   _cancelAll();
+              //   context.go(Uri(
+              //     path: '/peek-accepted',
+              //     queryParameters: {
+              //       'requestId': widget.requestId,
+              //       'imageUrl': '',
+              //     },
+              //   ).toString());
+              // }
             }
-            // --- END MODIFICATION ---
+
             break;
+
+          // User B has captured and sent the image.
+          case 'responded_with_image':
+            if (imageUrl != null && imageUrl.isNotEmpty) {
+              material.debugPrint(
+                "[PeekWaitPage] Status 'responded_with_image' AND imageUrl IS PRESENT. Navigating to splash.",
+              );
+              // _goToSplash(imageUrl);
+              _goToImageConfirmationPage(widget.requestId, imageUrl);
+            } else {
+              // This state is unexpected: status implies image is ready, but URL is missing.
+              material.debugPrint(
+                "⚠️ [PeekWaitPage] Status 'responded_with_image' but imageUrl is MISSING. This is unexpected. Waiting for potential correction or local timeout.",
+              );
+            }
+            break;
+
+          case 'pending_acceptance': // Explicitly handle the initial or intermediate pending state
+            material.debugPrint(
+              "[PeekWaitPage] Status 'pending_acceptance'. Waiting for User B to respond.",
+            );
+            // Optionally: Update a UI message here (e.g., "Waiting for User B to accept...")
+            break;
+
           case 'rejected':
-            _onRejected(); // Handle rejection
+          case 'declined':
+            _onRejected();
             break;
           case 'timeout':
-            _onTimeout(); // Handle explicit timeout status from Firestore
+            _onTimeout();
             break;
           case 'pending':
           default:
@@ -138,6 +171,29 @@ class _PeekWaitPageState extends ConsumerState<PeekWaitPage> {
         }
       },
     );
+  }
+
+  // Add this new method to your _PeekWaitPageState class:
+  void _goToImageConfirmationPage(String requestId, String imageUrl) {
+    if (!mounted || _navigated) return;
+    _navigated = true;
+    _cancelAll(); // Cancel listener and timer from PeekWaitPage
+
+    material.debugPrint(
+      "[PeekWaitPage] Navigating to /peek-accepted with requestId: $requestId and imageUrl (present). This page should show for 3s.",
+    );
+
+    // Navigate to 'peek_accepted_page.dart'.
+    // This page will then handle the 3-second delay and navigation to '/splash'.
+    context.go(Uri(
+      path: '/peek-accepted', // This is your route for peek_accepted_page.dart
+      queryParameters: {
+        'requestId': requestId,
+        'imageUrl': imageUrl, // Pass the imageUrl
+        // Optional: Add a context parameter if peek_accepted_page handles multiple scenarios
+        // 'source': 'image_received_by_sender',
+      },
+    ).toString());
   }
 
   /// Handles navigation and cleanup when the peek request times out locally or via Firestore status.

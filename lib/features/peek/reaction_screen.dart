@@ -1,5 +1,9 @@
 // lib/features/peek/reaction_screen.dart
+
+import 'dart:ui'; // Required for ImageFilter
+import 'package:firebase_auth/firebase_auth.dart'; // Required for FirebaseAuth
 import 'package:flutter/material.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 // Lottie import is no longer needed here as this screen won't play the animation
@@ -25,7 +29,141 @@ class ReactionScreen extends ConsumerStatefulWidget {
 
 class _ReactionScreenState extends ConsumerState<ReactionScreen> {
   bool _isSubmitting = false;
+  bool _isProcessingAction = false;
   // _activeAnimationAsset is no longer needed here
+
+  // Methods relocated and adapted from PeekImageView
+  Future<void> _reportThisPeek() async {
+    if (widget.originalSenderUid.isEmpty) {
+      debugPrint(
+          "[ReactionScreen] Cannot report: Original Sender ID is missing.");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text("Cannot report this Peek: sender unknown.")));
+      }
+      return;
+    }
+    if (_isProcessingAction) return;
+    setState(() => _isProcessingAction = true);
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: peekSurfaceColor,
+        title: const Text("Report Peek?",
+            style: TextStyle(color: peekOnSurfaceColor)),
+        content: const Text(
+            "Are you sure you want to report this Peek for objectionable content? This action cannot be undone.",
+            style: TextStyle(color: peekOnSurfaceColor)),
+        actions: [
+          TextButton(
+            child: const Text("Cancel",
+                style: TextStyle(color: peekOnSurfaceColor)),
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+          ),
+          TextButton(
+            child: Text("Report",
+                style: TextStyle(color: Colors.redAccent.shade100)),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      try {
+        final firestoreService = ref.read(firestoreServiceProvider);
+        final reporterId = FirebaseAuth.instance.currentUser?.uid;
+        if (reporterId == null) throw Exception("Reporter not logged in");
+
+        await firestoreService.addReport(
+          peekRequestId: widget.requestId,
+          reportedImageUrl: widget.imageUrl,
+          reportedSenderId: widget.originalSenderUid,
+          reporterId: reporterId,
+          reason: "objectionable_content_from_reaction_screen",
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text("Peek reported. Thank you.")));
+          // Decide if navigation should happen here or if user stays to react
+        }
+      } catch (e) {
+        debugPrint("❌ Error reporting Peek: $e");
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text("Failed to report Peek. Please try again.")));
+        }
+      }
+    }
+    if (mounted) setState(() => _isProcessingAction = false);
+  }
+
+  Future<void> _blockThisSender() async {
+    if (widget.originalSenderUid.isEmpty) {
+      debugPrint(
+          "[ReactionScreen] Cannot block: Original Sender ID is missing.");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text("Cannot block this sender: sender unknown.")));
+      }
+      return;
+    }
+    if (_isProcessingAction) return;
+    setState(() => _isProcessingAction = true);
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: peekSurfaceColor,
+        title: const Text("Block Sender?",
+            style: TextStyle(color: peekOnSurfaceColor)),
+        content: const Text(
+            "Are you sure you want to block this sender? You will no longer receive Peeks from them.",
+            style: TextStyle(color: peekOnSurfaceColor)),
+        actions: [
+          TextButton(
+            child: const Text("Cancel",
+                style: TextStyle(color: peekOnSurfaceColor)),
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+          ),
+          TextButton(
+            child: Text("Block",
+                style: TextStyle(color: Colors.redAccent.shade100)),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      try {
+        final firestoreService = ref.read(firestoreServiceProvider);
+        final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+        if (currentUserId == null) {
+          throw Exception("Current user not logged in");
+        }
+
+        await firestoreService.blockUser(
+            byUserId: currentUserId, userIdToBlock: widget.originalSenderUid);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text("Sender blocked successfully.")));
+          // After blocking, typically navigate away, e.g., to home.
+          // This might happen after reaction as well, ensure flow is logical.
+          context.go('/');
+        }
+      } catch (e) {
+        debugPrint("❌ Error blocking sender: $e");
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text("Failed to block sender. Please try again.")));
+        }
+      }
+    }
+    if (mounted) setState(() => _isProcessingAction = false);
+  }
 
   Future<void> _handleReaction(String reactionType) async {
     if (_isSubmitting) return;
@@ -41,21 +179,16 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
         debugPrint(
             "[ReactionScreen] User chose LIKE for Peek (requestId: ${widget.requestId}). Incrementing for sender: ${widget.originalSenderUid}");
         await firestoreService.incrementLikesReceived(widget.originalSenderUid);
-        // No local animation display here
       } else if (reactionType == 'dislike') {
         debugPrint(
             "[ReactionScreen] User chose DISLIKE for Peek (requestId: ${widget.requestId}). Incrementing for sender: ${widget.originalSenderUid}");
         await firestoreService
             .incrementDislikesReceived(widget.originalSenderUid);
-        // No local animation display here
       } else if (reactionType == 'skip') {
         debugPrint(
             "[ReactionScreen] User chose SKIP for Peek (requestId: ${widget.requestId}).");
-        // No Firestore update for skip
       }
 
-      // After processing the reaction (or skip), navigate home.
-      // The animation for the SENDER will be triggered on their device by listening to Firestore changes.
       if (mounted) {
         context.go('/');
       }
@@ -67,21 +200,19 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
               content: Text('Could not submit reaction. Please try again.'),
               backgroundColor: Colors.redAccent),
         );
-        // Reset submitting state on error if not navigating away immediately
         setState(() {
           _isSubmitting = false;
         });
       }
     }
-    // The 'finally' block that navigated home is removed because navigation
-    // now happens directly after successful processing or for skip.
-    // If an error occurs, the user stays on the screen with _isSubmitting reset.
   }
 
   @override
   Widget build(BuildContext context) {
+    final safePadding = MediaQuery.of(context).padding;
+
     return Scaffold(
-      backgroundColor: Colors.black, // Full black background
+      backgroundColor: Colors.black,
       body: Stack(
         fit: StackFit.expand,
         children: [
@@ -106,146 +237,170 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
             },
           ),
 
-          // Layer 2: Semi-transparent overlay to dim the image
-          Container(
-            color: Colors.black.withOpacity(0.5),
-          ),
-
-          // Layer 3: Reaction UI (Prompt and Buttons)
-          // This is always visible now, as there's no local animation state to hide it.
-          Center(
-            child: Padding(
-              padding: const EdgeInsets.all(30.0),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  Text(
-                    "How was this Peek?",
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 32,
-                          // shadows: [
-                          //   const Shadow(
-                          //       blurRadius: 3.0,
-                          //       color: Colors.black87,
-                          //       offset: Offset(1, 1))
-                          // ]
-                        ),
-                  ),
-                  const SizedBox(height: 40),
-                  _buildReactionButton(
-                    context: context,
-                    iconData: Icons.favorite_rounded,
-                    label: "Like",
-                    buttonBackgroundColor: peekPrimaryColor
-                        .withOpacity(0.95), // Use your theme's primary color
-                    iconColor: peekBackgroundColor,
-                    labelColor: peekBackgroundColor,
-                    onPressed:
-                        _isSubmitting ? null : () => _handleReaction('like'),
-                  ),
-                  const SizedBox(height: 20),
-                  _buildReactionButton(
-                    context: context,
-                    iconData: Icons.thumb_down_alt_rounded,
-                    label: "Dislike",
-                    buttonBackgroundColor:
-                        Colors.blueGrey.shade700, // Darker, distinct color
-                    iconColor: Colors.white.withOpacity(0.85),
-                    labelColor: Colors.white.withOpacity(0.85),
-                    onPressed:
-                        _isSubmitting ? null : () => _handleReaction('dislike'),
-                  ),
-                  const SizedBox(height: 20),
-                  _buildReactionButton(
-                    context: context,
-                    iconData: Icons.skip_next_rounded,
-                    label: "Skip",
-                    buttonBackgroundColor: Colors.white.withOpacity(0.85),
-                    iconColor: Colors.black87,
-                    labelColor: Colors.black87,
-                    onPressed:
-                        _isSubmitting ? null : () => _handleReaction('skip'),
-                  ),
-                ],
+          // Layer 2: Blur Effect
+          Positioned.fill(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(
+                  // Adjust blur intensity
+                  sigmaX: 45.0,
+                  sigmaY: 45.0),
+              child: Container(
+                color:
+                    // Optional: slight dimming
+                    Colors.black.withOpacity(0.55),
               ),
             ),
           ),
 
+          // Layer 3: UI Elements (Prompt, Buttons, Menus)
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+                20, safePadding.top + 10, 20, safePadding.bottom + 20),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment
+                  .spaceBetween, // Pushes content to top and bottom
+              children: <Widget>[
+                // Top Row for Skip (X) and Report/Block (...)
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    // Report/Block Button (Three-dots top-left)
+                    CircleAvatar(
+                      radius: 20,
+                      backgroundColor: Colors.black.withOpacity(0.4),
+                      child: PopupMenuButton<String>(
+                        iconSize: 22,
+                        icon: const Icon(Icons.more_vert, color: Colors.white),
+                        color: peekSurfaceColor,
+                        onSelected: (String value) {
+                          if (value == 'report') {
+                            _reportThisPeek();
+                          } else if (value == 'block') {
+                            _blockThisSender();
+                          }
+                        },
+                        itemBuilder: (BuildContext context) =>
+                            <PopupMenuEntry<String>>[
+                          const PopupMenuItem<String>(
+                            value: 'report',
+                            child: ListTile(
+                              leading: Icon(Icons.flag_outlined,
+                                  color: peekOnSurfaceColor),
+                              title: Text('Report Peek',
+                                  style: TextStyle(color: peekOnSurfaceColor)),
+                            ),
+                          ),
+                          if (widget.originalSenderUid.isNotEmpty)
+                            const PopupMenuItem<String>(
+                              value: 'block',
+                              child: ListTile(
+                                leading: Icon(Icons.block_flipped,
+                                    color: peekOnSurfaceColor),
+                                title: Text('Block Sender',
+                                    style:
+                                        TextStyle(color: peekOnSurfaceColor)),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    // Skip Button (X top-right)
+                    CircleAvatar(
+                      radius: 20,
+                      backgroundColor: Colors.black.withOpacity(0.4),
+                      child: IconButton(
+                        tooltip: 'Skip',
+                        icon: const Icon(Icons.close,
+                            size: 24, color: Colors.white),
+                        onPressed: (_isSubmitting || _isProcessingAction)
+                            ? null
+                            : () => _handleReaction('skip'),
+                      ),
+                    ),
+                  ],
+                ),
+
+                // Spacer to push reaction elements down if needed, or adjust mainAxisAlignment
+                const Spacer(),
+
+                // Main Reaction Prompt and Buttons
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      "How was this Peek?",
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context)
+                          .textTheme
+                          .headlineSmall
+                          ?.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 28, // Slightly adjusted for better fit
+                              shadows: [
+                            const Shadow(
+                                blurRadius: 2.0,
+                                color: Colors.black54,
+                                offset: Offset(1, 1))
+                          ]),
+                    ),
+                    const SizedBox(height: 30), // Reduced spacing
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        // Like Button
+                        ElevatedButton(
+                          onPressed: (_isSubmitting || _isProcessingAction)
+                              ? null
+                              : () => _handleReaction('like'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: peekPrimaryColor,
+                            shape: const CircleBorder(),
+                            padding:
+                                const EdgeInsets.all(22), // Adjusted padding
+                            elevation: 5,
+                          ),
+                          child: Icon(Icons.favorite_rounded,
+                              size: 30, color: peekBackgroundColor),
+                        ),
+                        // Dislike Button
+                        ElevatedButton(
+                          onPressed: (_isSubmitting || _isProcessingAction)
+                              ? null
+                              : () => _handleReaction('dislike'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor:
+                                Colors.blueGrey.shade600, // Adjusted color
+                            shape: const CircleBorder(),
+                            padding:
+                                const EdgeInsets.all(22), // Adjusted padding
+                            elevation: 5,
+                          ),
+                          child: Icon(Icons.thumb_down_alt_rounded,
+                              size: 30, color: Colors.white70),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                const Spacer(), // Pushes buttons towards center if column takes full height
+              ],
+            ),
+          ),
+
           // Layer 4: Loading indicator while submitting
-          if (_isSubmitting)
+          if (_isSubmitting || _isProcessingAction)
             Positioned.fill(
-                child: Container(
-              color: Colors.black.withOpacity(0.5),
-              child: const Center(
-                  child: CircularProgressIndicator(color: Colors.white)),
-            ))
+              child: Container(
+                color: Colors.black.withOpacity(0.6),
+                child: const Center(
+                    child: CircularProgressIndicator(color: Colors.white)),
+              ),
+            )
         ],
       ),
     );
   }
 
-  // Method signature updated to accept specific styling parameters
-  Widget _buildReactionButton({
-    required BuildContext context,
-    required IconData iconData,
-    required String label,
-    required Color buttonBackgroundColor,
-    Color? iconColor,
-    Color? labelColor,
-    Color defaultContentColor =
-        Colors.white, // Fallback for icon/label if specific colors not provided
-    required VoidCallback? onPressed,
-  }) {
-    final effectiveIconColor = iconColor ?? defaultContentColor;
-    final effectiveLabelColor = labelColor ?? defaultContentColor;
-
-    return ElevatedButton.icon(
-      icon: Icon(iconData,
-          size: 28,
-          color: onPressed == null
-              ? effectiveIconColor.withOpacity(0.7)
-              : effectiveIconColor),
-      label: Text(label,
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: onPressed == null
-                ? effectiveLabelColor.withOpacity(0.7)
-                : effectiveLabelColor,
-          )),
-      onPressed: onPressed,
-      style: ButtonStyle(
-        backgroundColor: MaterialStateProperty.resolveWith<Color?>(
-          (Set<MaterialState> states) {
-            if (states.contains(MaterialState.disabled)) {
-              return buttonBackgroundColor.withOpacity(0.5);
-            }
-            return buttonBackgroundColor;
-          },
-        ),
-        // foregroundColor is for ripple and can be a general fallback if text/icon colors aren't set
-        foregroundColor: MaterialStateProperty.all<Color>(
-            effectiveLabelColor.withOpacity(0.8)),
-        minimumSize: MaterialStateProperty.all<Size>(
-          const Size(double.infinity, 60),
-        ),
-        padding: MaterialStateProperty.all<EdgeInsetsGeometry>(
-          const EdgeInsets.symmetric(vertical: 15),
-        ),
-        shape: MaterialStateProperty.all<RoundedRectangleBorder>(
-          RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(30),
-          ),
-        ),
-        elevation: MaterialStateProperty.all<double>(
-            onPressed == null ? 1 : 3), // Less elevation when disabled
-        shadowColor: MaterialStateProperty.all<Color>(
-            buttonBackgroundColor.withOpacity(0.5)),
-      ),
-    );
-  }
+  // _buildReactionButton is no longer needed as buttons are custom designed in build method
 }

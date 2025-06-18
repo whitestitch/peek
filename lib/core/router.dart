@@ -1,11 +1,28 @@
 // lib/core/router.dart
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:peek/features/menu/about_page.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-// --- Imports exactly as you provided ---
-import '../features/home/home_page.dart';
-// import '../features/peek/peeking_page.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+// --- Feature Page Imports ---
+import 'package:peek/features/home/home_page.dart';
+import 'package:peek/features/onboarding/pages/onboarding_page.dart';
+import 'package:peek/features/onboarding/providers/onboarding_provider.dart';
+import 'package:peek/features/onboarding/terms_acceptance_screen.dart';
+import 'package:peek/features/splash/splash_start.dart';
+import 'package:peek/features/settings/settings_page.dart';
+import 'package:peek/features/stats/pages/stats_page.dart';
+
+// --- App Shell and other top-level pages ---
+import 'package:peek/core/widgets/app_shell.dart';
+import 'package:peek/features/auth/auth_wrapper.dart';
+import 'package:peek/services/terms_service.dart';
+
+// All other pages
+import 'package:peek/features/menu/about_page.dart';
 import '../features/peek/photo_capture_page.dart';
 import '../features/peek/splash_page.dart';
 import '../features/peek/peek_receiver_page.dart';
@@ -18,19 +35,8 @@ import '../features/peek/peek_timed_out_page.dart';
 import '../features/auth/upgrade_account.dart';
 import '../features/premium/pages/premium_page.dart';
 import '../features/menu/privacy_page.dart';
-import '../features/menu/about_page.dart';
-// import '../features/menu/drawer_menu.dart';
-// ** Import the new Settings Page **
-import '../features/settings/settings_page.dart';
-import '../features/onboarding/pages/onboarding_page.dart';
 import '../features/peek/reaction_screen.dart';
-import '../features/stats/pages/stats_page.dart';
 import '../features/peek/peek_sent_confirmation_page.dart';
-import '../core/widgets/app_shell.dart';
-
-// This key is for the Navigator within the ShellRoute
-final GlobalKey<NavigatorState> _shellNavigatorKey =
-    GlobalKey<NavigatorState>(debugLabel: 'shell');
 
 // HIDE TOP APPBAR WIDGET
 const List<String> routesInShellWithoutAppBar = [
@@ -51,6 +57,7 @@ const List<String> routesInShellWithoutBottomNav = [
 // These routes will not have the AppShell's AppBar or BottomNavigationBar.
 // (This was your existing routesWithoutShell)
 const List<String> routesWithoutShell = [
+  '/terms',
   '/onboarding',
   '/receive',
   '/capture',
@@ -78,6 +85,7 @@ const List<String> routesWithoutShell = [
 // If AppShell uses the more specific lists above, this one might become redundant or serve a different purpose.
 // For clarity, the AppShell will use the new specific lists.
 const List<String> routesWithoutBottomNav = [
+  '/terms',
   '/onboarding',
   '/receive',
   '/capture',
@@ -98,67 +106,164 @@ const List<String> routesWithoutBottomNav = [
   // '/stats',    // Stats is now part of ShellRoute
 ];
 
-GoRouter createRouter(GlobalKey<NavigatorState> rootNavigatorKey,
-    {String initialLocation = '/'}) {
+final rootNavigatorKey = GlobalKey<NavigatorState>();
+// This key is for the shell navigator.
+final shellNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'shell');
+
+final rootNavigatorKeyProvider =
+    Provider<GlobalKey<NavigatorState>>((ref) => rootNavigatorKey);
+
+final routerProvider = Provider<GoRouter>((ref) {
+  final authState = ref.watch(authStateChangesProvider);
+
+  // This ValueNotifier will trigger the router to re-evaluate its redirects
+  // whenever the authentication state changes. This is the key to the fix.
+  final refreshListenable = ValueNotifier<AsyncValue<User?>>(authState);
+
+  // Update the listenable when auth state changes
+  ref.listen(authStateChangesProvider, (previous, next) {
+    debugPrint("🔄 Auth state changed in router - updating refresh listenable");
+    refreshListenable.value = next;
+  });
+
   return GoRouter(
-    navigatorKey: rootNavigatorKey,
-    initialLocation: initialLocation, // Use the parameter here
+    navigatorKey: rootNavigatorKey, // Use the global key defined in main.dart
+    refreshListenable: refreshListenable,
+    initialLocation: '/splash-start',
     debugLogDiagnostics: true,
+
+    redirect: (context, state) async {
+      debugPrint(
+          "🔄 Router redirect called - location: ${state.matchedLocation}");
+      debugPrint(
+          "🔄 Auth state: loading=${authState.isLoading}, hasError=${authState.hasError}, value=${authState.valueOrNull?.uid}");
+
+      // While auth state is loading, show the splash screen.
+      if (authState.isLoading || authState.hasError) {
+        debugPrint(
+            "🔄 Auth still loading or has error, staying on current location");
+        return null; // Returning null from redirect preserves the current location
+      }
+
+      final isLoggedIn = authState.valueOrNull != null;
+      final onSplash = state.matchedLocation == '/splash-start';
+
+      // If the user is not logged in, they MUST stay on the splash screen.
+      // The `signInAnonymously` in main() will update authState, and refreshListenable
+      // will trigger this redirect to run again.
+      if (!isLoggedIn) {
+        if (onSplash && !authState.isLoading) {
+          debugPrint("🔄 Router: Triggering anonymous sign-in from splash");
+          FirebaseAuth.instance.signInAnonymously().then((userCredential) {
+            debugPrint(
+                "🔄 Router: Anonymous sign-in completed: ${userCredential.user?.uid}");
+          }).catchError((error) {
+            debugPrint("🔄 Router: Anonymous sign-in error: $error");
+          });
+        }
+
+        return onSplash ? null : '/splash-start';
+      }
+
+      // If we are here, isLoggedIn is true. Now check for the onboarding flow.
+      final prefs = await SharedPreferences.getInstance();
+
+      // if (isLoggedIn) {
+      //   final uid = authState.valueOrNull!.uid;
+      //   try {
+      //     final userDoc = await FirebaseFirestore.instance
+      //         .collection('users')
+      //         .doc(uid)
+      //         .get();
+
+      //     if (!userDoc.exists) {
+      //       debugPrint("🔄 Creating user document in router for $uid");
+      //       await FirebaseFirestore.instance.collection('users').doc(uid).set({
+      //         'uid': uid,
+      //         'displayName': 'User ${uid.substring(0, 6)}',
+      //         'createdAt': FieldValue.serverTimestamp(),
+      //         'isPremium': false,
+      //         'dailyPeekCount': 0,
+      //         'isAnonymous': authState.valueOrNull!.isAnonymous,
+      //       });
+      //     }
+      //   } catch (e) {
+      //     debugPrint("🔄 Error creating user doc in router: $e");
+      //   }
+      // }
+
+      final termsAccepted = prefs.getBool('termsAccepted') ?? false;
+      final onboardingComplete = prefs.getBool(onboardingCompleteKey) ?? false;
+      final onAuthFlow = state.matchedLocation == '/terms' ||
+          state.matchedLocation == '/onboarding';
+
+      final currentPath = state.matchedLocation;
+
+      if (!termsAccepted) {
+        // return onAuthFlow ? null : '/terms';
+        return currentPath == '/terms' ? null : '/terms';
+      }
+
+      if (!onboardingComplete) {
+        // return onAuthFlow ? null : '/onboarding';
+        return currentPath == '/onboarding' ? null : '/onboarding';
+      }
+
+      // If the user is fully set up and is on any of the initial screens, go to home.
+      if (onSplash || onAuthFlow) {
+        return '/';
+      }
+
+      // Otherwise, no redirection is needed.
+      return null;
+    },
     routes: [
+      GoRoute(
+        path: '/splash-start',
+        builder: (context, state) => const SplashStartPage(),
+      ),
+      GoRoute(
+        path: '/terms',
+        builder: (context, state) => const TermsAcceptanceScreen(),
+      ),
+      GoRoute(
+        path: '/onboarding',
+        builder: (context, state) => const OnboardingPage(),
+      ),
       ShellRoute(
-        navigatorKey:
-            _shellNavigatorKey, // Key for the shell's nested navigator
-        builder: (BuildContext context, GoRouterState state, Widget child) {
-          // The AppShell widget builds the Scaffold with BottomNavigationBar
-          // 'child' is the widget for the current nested route (e.g., HomePage, StatsPage)
-          return AppShell(routerState: state, child: child);
-        },
+        navigatorKey: shellNavigatorKey,
+        builder: (context, state, child) =>
+            AppShell(routerState: state, child: child),
         routes: <RouteBase>[
-          // Child routes of the ShellRoute
           GoRoute(
             path: '/',
             name: 'home',
-            pageBuilder: (context, state) => const NoTransitionPage(
-              // Avoid transitions between shell tabs
-              child: HomePage(),
-            ),
+            pageBuilder: (context, state) =>
+                const NoTransitionPage(child: HomePage()),
           ),
           GoRoute(
             path: '/stats',
             name: 'stats',
-            pageBuilder: (context, state) => const NoTransitionPage(
-              // pageBuilder: (context, state) => const NoTransitionPage(
-              child: StatsPage(),
-            ),
+            pageBuilder: (context, state) =>
+                const NoTransitionPage(child: StatsPage()),
           ),
           GoRoute(
-            path: '/settings', // Settings is now part of the shell
+            path: '/settings',
             name: 'settings',
-            pageBuilder: (context, state) => const NoTransitionPage(
-              child: SettingsPage(),
-            ),
+            pageBuilder: (context, state) =>
+                const NoTransitionPage(child: SettingsPage()),
           ),
         ],
       ),
 
-      // NONE SHELL/ROUT
+      // SPACE
+      // --- ALL OTHER NON-SHELL ROUTES ---
+
       GoRoute(
         path: '/onboarding',
         name: 'onboarding',
         builder: (context, state) => const OnboardingPage(),
       ),
-
-      // GoRoute(
-      //   path: '/peek/:requestId',
-      //   name: 'peeking',
-      //   builder: (context, state) {
-      //     final requestId = state.pathParameters['requestId'];
-      //     if (requestId == null) {
-      //       return _errorScreen('❌ Missing requestId');
-      //     }
-      //     return PeekingPage(requestId: requestId);
-      //   },
-      // ),
       GoRoute(
         path: '/receive',
         name: 'receive',
@@ -174,7 +279,6 @@ GoRouter createRouter(GlobalKey<NavigatorState> rootNavigatorKey,
               : _errorScreen('❌ Missing requestId');
         },
       ),
-
       GoRoute(
         path: '/peek-accepted',
         name: 'peek-accepted',
@@ -184,31 +288,21 @@ GoRouter createRouter(GlobalKey<NavigatorState> rootNavigatorKey,
           return PeekAcceptedPage(requestId: requestId, imageUrl: imageUrl);
         },
       ),
-
       GoRoute(
-        path: '/peek-declined', // Corrected path to match navigation call
+        path: '/peek-declined',
         name: 'peek-declined',
-        builder: (context, state) {
-          // PeekDeclinedPage does not require requestId or imageUrl
-          return const PeekDeclinedPage();
-        },
+        builder: (context, state) => const PeekDeclinedPage(),
       ),
-
       GoRoute(
-        path: '/peek-timed-out', // Path for the new timed-out page
-        name: 'peek-timed-out', // Route name
-        builder: (context, state) {
-          // This page doesn't require parameters from the route
-          return const PeekTimedOutPage();
-        },
+        path: '/peek-timed-out',
+        name: 'peek-timed-out',
+        builder: (context, state) => const PeekTimedOutPage(),
       ),
-
       GoRoute(
         path: '/peek-sent-confirmation',
         name: 'peekSentConfirmation',
         builder: (context, state) => const PeekSentConfirmationPage(),
       ),
-
       GoRoute(
         path: '/splash',
         name: 'splash',
@@ -223,55 +317,29 @@ GoRouter createRouter(GlobalKey<NavigatorState> rootNavigatorKey,
       GoRoute(
         path: '/peek-image',
         name: 'peek-image',
-        // --- Use pageBuilder instead of builder ---
         pageBuilder: (context, state) {
           final requestId = state.uri.queryParameters['requestId'];
           final imageUrl = state.uri.queryParameters['imageUrl'];
           if (requestId == null || imageUrl == null) {
-            // IMPORTANT: Handle error case properly within pageBuilder
-            // Option 1: Return a standard page with the error screen
             return MaterialPage(
-              // Or CupertinoPage
               key: state.pageKey,
               child: _errorScreen('❌ Missing requestId or imageUrl'),
             );
-            // Option 2: Navigate away or throw (less ideal for pageBuilder)
           }
-
-          // --- Define the Custom Transition ---
           return CustomTransitionPage(
-            key: state.pageKey, // Use state.pageKey for efficient rebuilds
+            key: state.pageKey,
             child: PeekImageView(requestId: requestId, imageUrl: imageUrl),
-            transitionsBuilder: (
-              context,
-              animation,
-              secondaryAnimation,
-              child,
-            ) {
-              // Example: Fade Transition
+            transitionsBuilder:
+                (context, animation, secondaryAnimation, child) {
               return FadeTransition(
                 opacity: CurveTween(curve: Curves.easeInOut).animate(animation),
                 child: child,
               );
-              // Example: Slide Transition (from bottom)
-              // return SlideTransition(
-              //   position: Tween<Offset>(
-              //     begin: const Offset(0.0, 1.0),
-              //     end: Offset.zero,
-              //   ).chain(CurveTween(curve: Curves.easeOut)).animate(animation),
-              //   child: child,
-              // );
             },
-            transitionDuration: const Duration(
-              milliseconds: 300,
-            ), // Adjust duration
-            reverseTransitionDuration: const Duration(
-              milliseconds: 250,
-            ), // Optional reverse duration
+            transitionDuration: const Duration(milliseconds: 300),
+            reverseTransitionDuration: const Duration(milliseconds: 250),
           );
         },
-        // --- Remove the old builder ---
-        // builder: (context, state) { ... },
       ),
       GoRoute(
         path: '/peek-reaction',
@@ -280,13 +348,10 @@ GoRouter createRouter(GlobalKey<NavigatorState> rootNavigatorKey,
           final requestId = state.uri.queryParameters['requestId'];
           final originalSenderUid =
               state.uri.queryParameters['originalSenderUid'];
-          final imageUrl =
-              state.uri.queryParameters['imageUrl']; // <-- Add this
-
+          final imageUrl = state.uri.queryParameters['imageUrl'];
           if (requestId == null ||
               originalSenderUid == null ||
               imageUrl == null) {
-            // <-- Check imageUrl too
             debugPrint(
                 "[Router] Error: Missing parameters for ReactionScreen. RequestId: $requestId, OriginalSenderUid: $originalSenderUid, ImageUrl: $imageUrl");
             return _errorScreen('Error: Missing reaction data.');
@@ -294,7 +359,7 @@ GoRouter createRouter(GlobalKey<NavigatorState> rootNavigatorKey,
           return ReactionScreen(
             requestId: requestId,
             originalSenderUid: originalSenderUid,
-            imageUrl: imageUrl, // <-- Pass it to ReactionScreen
+            imageUrl: imageUrl,
           );
         },
       ),
@@ -339,36 +404,22 @@ GoRouter createRouter(GlobalKey<NavigatorState> rootNavigatorKey,
         name: 'info',
         builder: (_, __) => const AboutPage(),
       ),
-      // GoRoute(
-      //   path: '/info',
-      //   name: 'about',
-      //   builder: (_, __) => const AboutPage(),
-      // ),
-      // GoRoute(
-      //   path: '/settings',
-      //   name: 'settings',
-      //   builder: (context, state) => const SettingsPage(),
-      // ),
-      // GoRoute(
-      //   path: '/stats',
-      //   name: 'stats',
-      //   builder: (context, state) => const StatsPage(),
-      // ),
+      GoRoute(
+        path: '/link',
+        name: 'link',
+        redirect: (context, state) {
+          debugPrint("🔗 [GoRouter] Handling dynamic link: ${state.uri}");
+          return '/';
+        },
+      ),
     ],
   );
-}
+});
 
 Widget _errorScreen(String message) {
   return Scaffold(
     backgroundColor: Colors.black,
-    appBar: AppBar(
-        // Added AppBar to error screen for consistency
-        title: const Text("Error"),
-        leading: BackButton(
-          onPressed: () {
-            // For now, relies on default pop behavior or manual handling if needed.
-          },
-        )),
+    appBar: AppBar(title: const Text("Error"), leading: const BackButton()),
     body: Center(
       child: Padding(
         padding: const EdgeInsets.all(16.0),

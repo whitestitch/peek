@@ -206,17 +206,21 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     }
   }
 
-  Future<void> _updateDisplayName(String newName) async {
+  Future<bool> _updateDisplayName(String newName) async {
     final trimmedName = newName.trim();
     if (trimmedName.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Display name cannot be empty.')),
-      );
-      return;
+      if (mounted) {
+        // Check mounted before showing SnackBar
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Display name cannot be empty.')),
+        );
+      }
+      return false;
     }
-    if (_isUpdatingDisplayName) return;
+    if (_isUpdatingDisplayName) return false;
 
     setState(() => _isUpdatingDisplayName = true);
+    bool success = false; // Variable to track success
 
     try {
       await ref
@@ -227,10 +231,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         setState(() {
           _currentDisplayName = trimmedName; // Update local state on success
         });
-        Navigator.of(context).pop(); // Close the dialog on success
+        // REMOVED: Navigator.of(context).pop();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Display name updated!')),
         );
+        success = true; // Mark as successful
       }
     } catch (e) {
       debugPrint("❌ [SettingsPage] Failed to update display name: $e");
@@ -240,11 +245,13 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               content: Text('Failed to update name. Please try again.')),
         );
       }
+      success = false; // Mark as failed
     } finally {
       if (mounted) {
         setState(() => _isUpdatingDisplayName = false);
       }
     }
+    return success; // Return success status
   }
 
   void _showEditDisplayNameDialog() {
@@ -282,7 +289,14 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     value.text.trim().isNotEmpty && !_isUpdatingDisplayName;
                 return TextButton(
                   onPressed: canSave
-                      ? () => _updateDisplayName(_displayNameController.text)
+                      ? () async {
+                          final success = await _updateDisplayName(
+                              _displayNameController.text);
+                          // Use dialogContext to pop, and check if it's still mounted
+                          if (success && dialogContext.mounted) {
+                            Navigator.of(dialogContext).pop();
+                          }
+                        }
                       : null,
                   child: _isUpdatingDisplayName
                       ? const SizedBox(
@@ -433,6 +447,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   child: SizedBox(
                       height: 15, width: 15, child: LinearProgressIndicator())),
             ),
+
           sectionDivider,
 
           // Toggle for User SEEING OTHERS' locations ("Location Reveal")
@@ -466,6 +481,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             inactiveThumbColor: isPremium ? null : Colors.grey.shade700,
             inactiveTrackColor: isPremium ? null : Colors.grey.shade800,
           ),
+
           if (_isUpdatingSeeOthersPreference) // Checks correct loading flag
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 4.0),
@@ -475,6 +491,42 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                       width: 15,
                       child: CircularProgressIndicator(strokeWidth: 2))),
             ),
+
+          sectionDivider,
+
+          SwitchListTile(
+            contentPadding: listTilePadding,
+            secondary: Icon(
+              Icons.my_location_rounded,
+              color: theme.iconTheme.color, // Always allow this setting
+            ),
+            title: const Text(
+              'Share My General Location',
+              // style: TextStyle(color: null), // Default color for all users
+            ),
+            subtitle: Text(
+              "Allow others to see your general location (city or region) when they peek you.",
+              style: subtitleStyle.copyWith(
+                  color: theme.textTheme.bodySmall?.color
+                      ?.withOpacity(0.7) // Consistent subtitle style
+                  ),
+            ),
+            value: currentPreference, // Uses _localLocationSharingEnabled
+            onChanged: _isUpdatingPreference
+                ? null
+                : _updateLocationPreference, // Calls the existing update method
+            activeColor: theme.colorScheme.primary,
+          ),
+          if (_isUpdatingPreference)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 4.0),
+              child: Center(
+                  child: SizedBox(
+                      height: 15,
+                      width: 15,
+                      child: CircularProgressIndicator(strokeWidth: 2))),
+            ),
+
           sectionDivider,
 
           ListTile(

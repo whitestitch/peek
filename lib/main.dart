@@ -1,7 +1,16 @@
 // main.dart
 import 'dart:async';
+import 'dart:io';
+import 'package:device_info_plus/device_info_plus.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/material.dart';
+
+import 'package:peek/core/router.dart';
+
+import 'package:peek/features/onboarding/terms_acceptance_screen.dart';
+import 'package:peek/services/terms_service.dart';
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -18,14 +27,82 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:peek/features/onboarding/providers/onboarding_provider.dart';
 import 'package:peek/theme/colors.dart';
 import 'firebase_options.dart'; // Make sure this file is up-to-date
-import 'core/router.dart';
+
 import 'services/notification_service.dart';
+import 'package:http/http.dart' as http;
+
+import 'package:peek/features/auth/auth_wrapper.dart';
 
 // Assuming initializeCameras is defined in photo_capture_page.dart or a utility file
 import 'features/peek/photo_capture_page.dart';
 import 'package:peek/core/firestore_service.dart';
-import 'package:peek/features/peek/providers/peek_providers.dart'; // For navigatorKeyProvider
+// For navigatorKeyProvider
+import 'package:peek/features/peek/providers/peek_providers.dart';
 import 'core/root_realtime_listener.dart';
+import 'core/router.dart';
+
+void testEmulatorConnection() async {
+  // Use the Firestore port or Emulator UI port that worked in your browser
+  final url = Uri.parse('http://192.168.1.4:8080'); // Or :4000 for Emulator UI
+  try {
+    final response = await http.get(url);
+    print('APP HTTP TEST: Status Code: ${response.statusCode}');
+    print('APP HTTP TEST: Response Body: ${response.body}');
+  } catch (e) {
+    print('APP HTTP TEST: Error: $e');
+  }
+}
+
+Future<void> createTestUsersInEmulator() async {
+  if (!kDebugMode) return;
+
+  try {
+    debugPrint("🧪 Creating test users in emulator...");
+
+    // Create multiple test users
+    final testUsers = [
+      {
+        'uid': 'test_user_alice_001',
+        'displayName': 'Alice (Test)',
+        'createdAt': FieldValue.serverTimestamp(),
+        'isTestUser': true,
+        'availableForPeek': true,
+        'lastSeenAt': FieldValue.serverTimestamp(),
+      },
+      {
+        'uid': 'test_user_bob_002',
+        'displayName': 'Bob (Test)',
+        'createdAt': FieldValue.serverTimestamp(),
+        'isTestUser': true,
+        'availableForPeek': true,
+        'lastSeenAt': FieldValue.serverTimestamp(),
+      },
+      {
+        'uid': 'test_user_charlie_003',
+        'displayName': 'Charlie (Test)',
+        'createdAt': FieldValue.serverTimestamp(),
+        'isTestUser': true,
+        'availableForPeek': true,
+        'lastSeenAt': FieldValue.serverTimestamp(),
+      }
+    ];
+
+    for (final user in testUsers) {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user['uid'] as String)
+          .set(user, SetOptions(merge: true));
+    }
+
+    debugPrint("✅ Created ${testUsers.length} test users in emulator");
+  } catch (e) {
+    debugPrint("❌ Failed to create test users: $e");
+  }
+}
+
+/// Set this to true when you run `firebase emulators:start`.
+const bool useFirebaseEmulator =
+    bool.fromEnvironment('USE_FIREBASE_EMULATOR', defaultValue: false);
 
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -33,22 +110,59 @@ final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   debugPrint("--- Background Handler Started ---");
   // Crucial: Ensure Firebase is initialized in this background isolate
-  if (Firebase.apps.isEmpty) {
-    try {
+  try {
+    if (Firebase.apps.isEmpty) {
       await Firebase.initializeApp(
         options: DefaultFirebaseOptions.currentPlatform,
       );
-      debugPrint("✅ Firebase initialized for Background Handler.");
-    } catch (e) {
+      debugPrint("✅ Firebase initialized for Background Handler (was empty).");
+    } else {
+      Firebase.app();
+      debugPrint(
+          "ℹ️ Firebase already initialized for Background Handler (apps not empty).");
+    }
+  } catch (e) {
+    if (e is FirebaseException && e.code == 'no-app') {
+      debugPrint(
+          "🔄 No Firebase app found in BG Handler despite apps not empty check—re-initializing…");
+      await Firebase.initializeApp(
+          options: DefaultFirebaseOptions.currentPlatform);
+      debugPrint("✅ Firebase re-initialized in BG Handler.");
+    } else {
       debugPrint("❌ Error initializing Firebase in Background Handler: $e");
     }
-  } else {
-    debugPrint("ℹ️ Firebase already initialized for Background Handler.");
   }
+
   debugPrint("📨 [BG Handler] Message received: ${message.messageId}");
   if (message.data.isNotEmpty) {
     debugPrint("   Data: ${message.data}");
+
+    // Handle peek request notifications
+    if (message.data['type'] == 'peek_request') {
+      debugPrint("🔍 [BG Handler] Peek request notification received");
+      // You can add local notification logic here if needed
+    }
   }
+
+  // Handle notification payload
+  if (message.notification != null) {
+    debugPrint("📨 [BG Handler] Notification: ${message.notification!.title}");
+  }
+}
+
+// Disable Firebase Dynamic Links handling during initial setup
+Future<void> _configureDynamicLinks() async {
+  // Only configure dynamic links after onboarding
+  final prefs = await SharedPreferences.getInstance();
+  final onboardingComplete = prefs.getBool(onboardingCompleteKey) ?? false;
+  if (!onboardingComplete) {
+    debugPrint(
+        "🚫 Skipping Dynamic Links configuration - onboarding not complete");
+    return;
+  }
+
+  // Configure dynamic links here if needed
+  debugPrint("✅ Dynamic Links configuration enabled");
 }
 
 Future<void> main() async {
@@ -56,211 +170,705 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   debugPrint("--- main() Started: WidgetsFlutterBinding initialized.");
 
-  // 2. Initialize Firebase (ONLY ONCE)
-  debugPrint("Attempting Firebase.initializeApp()...");
-  bool firebaseInitializedSuccessfully = false;
+  // 2. Lock orientation to portrait only
+  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+  ]);
+  debugPrint("✅ App locked to portrait orientation.");
+
+  FirebaseApp? defaultApp;
+  bool firebaseCoreInitialized = false;
+  debugPrint("Attempting robust Firebase initialization...");
+
   try {
-    // Check if Firebase has already been initialized.
-    // This is the primary guard against the "duplicate-app" error.
-    if (Firebase.apps.isEmpty) {
-      await Firebase.initializeApp(
-        options: DefaultFirebaseOptions.currentPlatform,
-      );
+    // Attempt to initialize. If it's already initialized, this will use the existing instance
+    // or throw 'duplicate-app' which we handle.
+    defaultApp = await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    debugPrint(
+        "✅ Firebase.initializeApp() successful or used existing. Default app: ${defaultApp.name}");
+    firebaseCoreInitialized = true;
+  } on FirebaseException catch (e) {
+    if (e.code == 'duplicate-app') {
       debugPrint(
-          "✅ Firebase.initializeApp() successful in main (Firebase.apps was empty).");
-      firebaseInitializedSuccessfully = true;
+          "🔶 Firebase.initializeApp() threw 'duplicate-app'. Retrieving existing default app.");
+      try {
+        defaultApp = Firebase.app(); // Get the existing default app
+        debugPrint(
+            "   Successfully retrieved existing [DEFAULT] app: ${defaultApp.name}");
+        firebaseCoreInitialized =
+            true; // Mark as initialized because an app instance exists
+      } catch (eDefault) {
+        debugPrint(
+            "   ❌ CRITICAL: Failed to retrieve existing [DEFAULT] app after 'duplicate-app': $eDefault");
+        // firebaseCoreInitialized remains false
+      }
     } else {
       debugPrint(
-          "ℹ️ Firebase.initializeApp() skipped, Firebase.apps was not empty. Default app: ${Firebase.app().name}");
-      firebaseInitializedSuccessfully = true;
+          "❌ CRITICAL: Firebase.initializeApp() failed with FirebaseException: ${e.code} - ${e.message}");
+      // firebaseCoreInitialized remains false
     }
   } catch (e) {
-    if (e is FirebaseException && e.code == 'duplicate-app') {
-      debugPrint(
-          "❌ Firebase.initializeApp() threw 'duplicate-app' error even after checking Firebase.apps.isEmpty. This is unusual for a clean build.");
-      firebaseInitializedSuccessfully =
-          true; // Still assume an app instance is available
-    } else {
-      debugPrint(
-          "❌ CRITICAL: Error during Firebase.initializeApp() in main: $e");
-    }
+    debugPrint(
+        "❌ CRITICAL: Unexpected generic error during Firebase.initializeApp(): $e");
+    // firebaseCoreInitialized remains false
   }
 
-  debugPrint("Current Firebase apps count: ${Firebase.apps.length}");
-  if (Firebase.apps.isNotEmpty) {
-    debugPrint("Default Firebase app name: ${Firebase.app().name}");
-  }
-
-  // Handle User Authentication
-  debugPrint("Checking user authentication state (post-Firebase init)...");
-  try {
-    if (FirebaseAuth.instance.currentUser == null) {
-      debugPrint("No current user, attempting anonymous sign-in...");
-      await FirebaseAuth.instance.signInAnonymously();
-      debugPrint(
-        "✅ Signed in anonymously: ${FirebaseAuth.instance.currentUser?.uid}",
-      );
-    } else {
-      debugPrint(
-        "✅ User already signed in: ${FirebaseAuth.instance.currentUser?.uid}",
-      );
-    }
-  } catch (e) {
-    debugPrint("❌ Anonymous sign-in failed: $e");
-  }
-
-  // Log current Firebase app status for diagnostics
-  debugPrint("Current Firebase apps count: ${Firebase.apps.length}");
-  if (Firebase.apps.isNotEmpty) {
-    debugPrint("Default Firebase app name: ${Firebase.app().name}");
-    // You can add more details if needed:
-    // debugPrint("Default Firebase app options: ${Firebase.app().options.asMap}");
-  }
-
-  // Log current Firebase app status
-  debugPrint("Current Firebase apps count: ${Firebase.apps.length}");
-  if (Firebase.apps.isNotEmpty) {
-    debugPrint("Default Firebase app name: ${Firebase.app().name}");
-  }
-
-  if (kDebugMode && firebaseInitializedSuccessfully) {
+  if (!firebaseCoreInitialized && Firebase.apps.isNotEmpty) {
+    // Fallback: If initializeApp failed but an app somehow exists (e.g., from a plugin)
+    debugPrint(
+        "⚠️ Firebase.initializeApp() failed, but Firebase.apps is not empty. Attempting to use existing default app.");
     try {
-      // Use 10.0.2.2 for Android emulator to connect to localhost of the host machine.
-      // For iOS simulator, 'localhost' or '127.0.0.1' usually works.
-      // For physical devices, you'd need to use your computer's local network IP.
-      final String host = defaultTargetPlatform == TargetPlatform.android
-          ? '10.0.2.2'
-          : 'localhost';
+      defaultApp = Firebase.app();
+      firebaseCoreInitialized = true;
+      debugPrint("   Using existing default app: ${defaultApp.name}");
+    } catch (e) {
+      debugPrint(
+          "   ❌ Failed to get existing default app even when Firebase.apps not empty: $e");
+    }
+  }
 
-      debugPrint("🔧 Configuring Firebase Emulators to use host: $host");
+  if (kDebugMode && firebaseCoreInitialized && defaultApp != null) {
+    // Call the function to test basic HTTP
+    testEmulatorConnection();
 
-      FirebaseFirestore.instance.useFirestoreEmulator(host, 8080);
-      debugPrint("   Firestore Emulator -> $host:8080");
+    Future<String> getEmulatorHost() async {
+      if (Platform.isIOS) {
+        try {
+          final deviceInfo = await DeviceInfoPlugin().iosInfo;
 
+          debugPrint(
+              "🔍 iOS Device Detection - isPhysicalDevice: ${deviceInfo.isPhysicalDevice}");
+          debugPrint("🔍 Device model: ${deviceInfo.model}");
+          debugPrint("🔍 Device name: ${deviceInfo.name}");
+
+          if (deviceInfo.isPhysicalDevice) {
+            // For physical devices, first try to validate the connection
+            debugPrint(
+                "📱 Detected PHYSICAL device - validating network connection...");
+
+            // Try multiple common local IPs
+            final myMachineIP =
+                '192.168.1.4'; // <-- UPDATE THIS with your actual IP
+
+            // Try multiple possible IPs including your machine's actual IP
+            final possibleHosts = [
+              myMachineIP, // Your machine's actual IP
+              '192.168.1.2', // Common router gateway
+              '192.168.1.3', // Alternative
+              '192.168.0.2', // Different subnet
+              '192.168.0.3',
+              '192.168.0.4',
+              '10.0.0.2', // Alternative network range
+              '172.20.10.2', // iPhone hotspot range
+            ];
+
+            debugPrint("🔍 Trying to find emulator host from: $possibleHosts");
+
+            for (final host in possibleHosts) {
+              try {
+                debugPrint("🔄 Testing connection to $host:8080...");
+                final testUrl = Uri.parse('http://$host:8080');
+                final response = await http.get(testUrl).timeout(
+                      const Duration(seconds: 2),
+                      onTimeout: () => throw TimeoutException(
+                          'Connection timeout for $host'),
+                    );
+                // Check for Firestore emulator response
+                if (response.statusCode == 200 ||
+                    response.statusCode == 404 ||
+                    response.body.contains('Firestore')) {
+                  debugPrint("✅ Successfully connected to emulator at $host!");
+                  return host;
+                }
+              } catch (e) {
+                debugPrint(
+                    "❌ Failed to connect to $host: ${e.toString().split('\n').first}");
+              }
+            }
+
+            // If all fail, show detailed instructions
+            debugPrint("⚠️ ERROR: Could not connect to any emulator host!");
+            debugPrint("📱 PHYSICAL DEVICE SETUP INSTRUCTIONS:");
+            debugPrint(
+                "   1. On your Mac, run: ifconfig | grep 'inet ' | grep -v 127.0.0.1");
+            debugPrint("   2. Find your IP (usually starts with 192.168.x.x)");
+            debugPrint(
+                "   3. Update the 'myMachineIP' variable in main.dart with this IP");
+            debugPrint(
+                "   4. Ensure both devices are on the same WiFi network");
+            debugPrint(
+                "   5. Restart the Firebase emulators with: firebase emulators:start --host 0.0.0.0");
+            debugPrint(
+                "   6. On Mac, check Firewall settings in System Preferences > Security & Privacy");
+
+            // Still return a default but we know it won't work
+            return myMachineIP;
+          } else {
+            debugPrint("💻 Detected SIMULATOR - using localhost");
+            return 'localhost';
+          }
+        } catch (e) {
+          debugPrint("❌ Error detecting device type: $e");
+          // Fallback: if we can't detect, assume physical device for safety
+          debugPrint("⚠️ Falling back to IP address for physical device");
+          return '192.168.1.4';
+        }
+      }
+      // For Android and other platforms
+      return 'localhost';
+    }
+
+    try {
+      debugPrint(
+          "🔧 Configuring Firebase Emulators IMMEDIATELY after Firebase init, BEFORE any authentication");
+
+      final host = await getEmulatorHost();
+      const androidHost = '10.0.2.2';
+
+      final finalHost = Platform.isAndroid ? androidHost : host;
+
+      debugPrint("🔧 Using host: $host for emulator connections");
+
+      bool emulatorsAccessible = false;
+
+      try {
+        final testUrl = Uri.parse('http://$host:8080');
+        final testResponse = await http.get(testUrl).timeout(
+              const Duration(seconds: 3),
+              onTimeout: () =>
+                  throw TimeoutException('Emulator connection test timeout'),
+            );
+        emulatorsAccessible = true;
+        debugPrint("✅ Emulators are accessible at $host");
+      } catch (e) {
+        debugPrint("❌ WARNING: Cannot reach emulators at $host: $e");
+        debugPrint(
+            "❌ The app will continue but Firestore operations will fail!");
+
+        // Show a warning dialog on physical device
+        if (Platform.isIOS &&
+            await DeviceInfoPlugin()
+                .iosInfo
+                .then((info) => info.isPhysicalDevice)) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (rootNavigatorKey.currentContext != null) {
+              showDialog(
+                context: rootNavigatorKey.currentContext!,
+                builder: (context) => AlertDialog(
+                  title: const Text('Emulator Connection Failed'),
+                  content: const Text(
+                    'Cannot connect to Firebase Emulators.\n\n'
+                    'Please ensure:\n'
+                    '1. Local Network permission is granted\n'
+                    '2. Emulators are running on your machine\n'
+                    '3. Both devices are on the same network',
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('OK'),
+                    ),
+                  ],
+                ),
+              );
+            }
+          });
+        }
+      }
+
+      // Configure Auth Emulator FIRST
       await FirebaseAuth.instance.useAuthEmulator(host, 9099);
-      debugPrint("   Auth Emulator      -> $host:9099");
+      debugPrint("✅ Auth Emulator configured for -> $host:9099");
 
-      // Configure the default instance and the regional instance if you use it
-      FirebaseFunctions.instance.useFunctionsEmulator(host, 5001);
+      // Configure Firestore Emulator using Settings (more reliable for iOS)
+      FirebaseFirestore.instance.settings = Settings(
+        host: '$host:8080',
+        sslEnabled: false,
+        persistenceEnabled: false,
+      );
+      debugPrint(
+          "✅ Firestore Emulator configured using Settings for -> $host:8080");
+
+      // Configure Functions Emulator
       FirebaseFunctions.instanceFor(region: "us-central1")
           .useFunctionsEmulator(host, 5001);
-      debugPrint(
-          "   Functions Emulator -> $host:5001 (for default and us-central1)");
+      debugPrint("✅ Functions Emulator configured for -> $host:5001");
 
-      // If using Firebase Storage Emulator:
-      // await FirebaseStorage.instance.useStorageEmulator(host, 9199);
-      // debugPrint("   Storage Emulator   -> $host:9199");
+      debugPrint("✅ All Firebase Emulators configured successfully");
 
-      debugPrint("✅ Firebase Emulators configured.");
+      // await Future.delayed(const Duration(seconds: 1));
+      // await createTestUsersInEmulator();
     } catch (e) {
-      debugPrint("❌ Error configuring Firebase Emulators: $e");
-      // This is a critical setup error for development if emulators are intended.
+      debugPrint("❌ Critical error configuring Firebase Emulators: $e");
     }
-  }
-
-  // Only proceed with Firebase-dependent services if initialization was successful
-  if (firebaseInitializedSuccessfully) {
-    debugPrint("Initializing cameras (post-Firebase init)...");
-
-    debugPrint("Initializing cameras...");
-    await initializeCameras();
-    debugPrint("✅ Camera list initialized.");
-
-    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
-    debugPrint("Firebase background message handler registered.");
-  } else {
+  } else if (kDebugMode) {
     debugPrint(
-        "⚠️ Firebase did not initialize successfully. App functionality may be severely limited.");
-    // Consider showing an error UI to the user here.
+        "⚠️ Emulator configuration skipped - Debug: $kDebugMode, Initialized: $firebaseCoreInitialized");
   }
-
-  String determinedInitialRoute = '/';
-  try {
-    final prefs = await SharedPreferences.getInstance();
-    final bool onboardingComplete =
-        prefs.getBool(onboardingCompleteKey) ?? false;
-    if (!onboardingComplete) {
-      determinedInitialRoute = '/onboarding';
-    }
-    debugPrint(
-        "[main] Onboarding complete: $onboardingComplete, Initial route: $determinedInitialRoute");
-  } catch (e) {
-    debugPrint(
-        "❌ Error checking onboarding status: $e. Defaulting to '$determinedInitialRoute'");
-  }
-
-  final GoRouter router =
-      createRouter(rootNavigatorKey, initialLocation: determinedInitialRoute);
-  debugPrint("GoRouter created with initial route: $determinedInitialRoute");
 
   runApp(
     ProviderScope(
       overrides: [
+        // Use the correct import path for rootNavigatorKeyProvider
         navigatorKeyProvider.overrideWithValue(rootNavigatorKey),
       ],
-      child: PeekApp(router: router),
+      child: const PeekApp(),
     ),
   );
+
   debugPrint("--- main() Finished: runApp called ---");
 }
 
+bool _shouldProcessDeepLinks = false;
+
 class PeekApp extends ConsumerStatefulWidget {
-  final GoRouter router;
-  const PeekApp({super.key, required this.router});
+  const PeekApp({super.key});
 
   @override
   ConsumerState<PeekApp> createState() => _PeekAppState();
 }
 
+//   @override
+//   Widget build(BuildContext context, WidgetRef ref) {
+//     final router = ref.watch(routerProvider);
+//     return MaterialApp.router(
+//       routerConfig: router,
+//       title: 'PEEK',
+//       debugShowCheckedModeBanner: false,
+//       theme: ThemeData(
+//         brightness: Brightness.dark,
+//         fontFamily: 'Poppins',
+//         useMaterial3: true,
+//         scaffoldBackgroundColor: peekBackgroundColor,
+//         // ... and the rest of your extensive theme data ...
+//       ),
+//     );
+//   }
+// }
+
 class _PeekAppState extends ConsumerState<PeekApp> {
+  StreamSubscription? _directFirestoreListener;
+  // ---------
   StreamSubscription<List<PurchaseDetails>>? _purchaseSubscription;
   final FirebaseAnalytics _analytics = FirebaseAnalytics.instance;
+
+  // @override
+  // void initState() {
+  //   super.initState();
+  //   debugPrint("[PeekApp] initState called.");
+
+  //   _initializeIAPListener();
+
+  //   // Force sign out on app start in debug mode to ensure fresh state
+  //   if (kDebugMode) {
+  //     debugPrint("[PeekApp] Debug mode: Checking for stale auth state...");
+  //     FirebaseAuth.instance.signOut().then((_) {
+  //       debugPrint("[PeekApp] Signed out any existing user for fresh start");
+  //     }).catchError((error) {
+  //       debugPrint("[PeekApp] Error signing out: $error");
+  //     });
+  //   }
+
+  //   FirebaseAuth.instance.authStateChanges().listen((User? user) {
+  //     if (mounted && user != null) {
+  //       debugPrint("[PeekApp] Auth state changed - user: ${user.uid}");
+  //       _initializeUser(user);
+  //     } else if (user == null) {
+  //       debugPrint("[PeekApp] Auth state changed - user signed out");
+  //       _directFirestoreListener?.cancel();
+  //     }
+  //   });
+  // }
 
   @override
   void initState() {
     super.initState();
     debugPrint("[PeekApp] initState called.");
+    _initializeApp();
+  }
+
+  void _initializeApp() async {
     _initializeIAPListener();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        _ensureUserSetupAndNotifications();
+
+    // In debug mode, AWAIT sign-out to ensure a clean slate before attaching listeners.
+    // This is the key fix to prevent the race condition.
+    if (kDebugMode) {
+      debugPrint("[PeekApp] Debug mode: Signing out for a fresh start...");
+      await FirebaseAuth.instance.signOut();
+      debugPrint("[PeekApp] ✅ Sign-out complete.");
+    }
+
+    // Attach the listener AFTER the initial state has been settled.
+    FirebaseAuth.instance.authStateChanges().listen((User? user) {
+      if (mounted && user != null) {
+        debugPrint("[PeekApp] Auth state changed - user: ${user.uid}");
+        _initializeUser(user);
+      } else if (user == null) {
+        debugPrint("[PeekApp] Auth state changed - user signed out");
+        _directFirestoreListener?.cancel();
       }
     });
   }
 
-  Future<void> _ensureUserSetupAndNotifications() async {
-    if (!mounted) return;
-    debugPrint("[PeekApp] _ensureUserSetupAndNotifications called.");
+  Future<void> _initializeUser(User user) async {
+    debugPrint("[PeekApp] Initializing user setup for ${user.uid}");
 
-    final currentUser = FirebaseAuth.instance.currentUser;
-    if (currentUser != null) {
+    // await _ensureUserDocument(user);
+
+    final firestoreService = ref.read(firestoreServiceProvider);
+    await firestoreService.ensureDisplayNameExists();
+
+    // Now that the user document is guaranteed to exist, set up other services
+    await _initializeFCMToken();
+    await _initializeNotificationService();
+
+    _setupDirectFirestoreListener();
+  }
+
+  void _setupDirectFirestoreListener() {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      debugPrint("[DirectFirestoreListener] No user for direct listener.");
+      return;
+    }
+    debugPrint("[DirectFirestoreListener] Setting up for user: $uid");
+    _directFirestoreListener = FirebaseFirestore.instance
+        .collection('peek_requests')
+        .where('receiverUid', isEqualTo: uid)
+        .where('status', isEqualTo: 'pending_acceptance')
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .listen((snapshot) {
       debugPrint(
-          "[PeekApp] Ensuring display name for user: ${currentUser.uid}");
-      try {
-        final firestoreService = ref.read(firestoreServiceProvider);
-        await firestoreService.ensureDisplayNameExists();
-        debugPrint(
-            "[PeekApp] ensureDisplayNameExists completed for ${currentUser.uid}.");
-      } catch (e) {
-        debugPrint(
-            "❌ Error in _ensureUserSetupAndNotifications (ensureDisplayNameExists): $e");
+          "[DirectFirestoreListener] DATA RECEIVED! Count: ${snapshot.docs.length}. IDs: ${snapshot.docs.map((d) => d.id).toList()}");
+    }, onError: (error) {
+      debugPrint("❌ [DirectFirestoreListener] ERROR: $error");
+    }, onDone: () {
+      debugPrint("[DirectFirestoreListener] Stream DONE.");
+    });
+  }
+
+  @override
+  void dispose() {
+    _purchaseSubscription?.cancel();
+    _directFirestoreListener?.cancel();
+    debugPrint('🛒 Purchase stream subscription cancelled in PeekApp dispose.');
+    debugPrint("[DirectFirestoreListener] Cancelled in dispose.");
+    super.dispose();
+  }
+
+  // Future<void> _ensureUserDocument(User currentUser) async {
+  //   if (!mounted) return;
+
+  //   debugPrint(
+  //       "[PeekApp] _ensureUserDocument START for user: ${currentUser.uid}");
+
+  //   const maxRetries = 3;
+  //   const retryDelay = Duration(seconds: 2);
+
+  //   for (int attempt = 1; attempt <= maxRetries; attempt++) {
+  //     try {
+  //       final userDocRef =
+  //           FirebaseFirestore.instance.collection('users').doc(currentUser.uid);
+
+  //       debugPrint(
+  //           "[PeekApp] Checking if user document exists... (Attempt $attempt)");
+
+  //       // Add timeout to prevent hanging
+  //       final userDoc = await userDocRef.get().timeout(
+  //             const Duration(seconds: 10),
+  //             onTimeout: () => throw TimeoutException('Firestore read timeout'),
+  //           );
+
+  //       debugPrint("[PeekApp] User document exists: ${userDoc.exists}");
+
+  //       if (!userDoc.exists) {
+  //         debugPrint("[PeekApp] Creating user document for ${currentUser.uid}");
+
+  //         // Create user document with initial data
+  //         final userData = {
+  //           'uid': currentUser.uid,
+  //           'displayName': currentUser.displayName ??
+  //               'User ${currentUser.uid.substring(0, 6)}',
+  //           'email': currentUser.email,
+  //           'isAnonymous': currentUser.isAnonymous,
+  //           'createdAt': FieldValue.serverTimestamp(),
+  //           'updatedAt': FieldValue.serverTimestamp(),
+  //           'isPremium': false,
+  //           'dailyPeekCount': 0,
+  //           'lastSeenAt': FieldValue.serverTimestamp(),
+  //           'availableForPeek': true,
+  //         };
+
+  //         debugPrint("[PeekApp] User data to create: $userData");
+
+  //         await userDocRef.set(userData).timeout(
+  //               const Duration(seconds: 10),
+  //               onTimeout: () =>
+  //                   throw TimeoutException('Firestore write timeout'),
+  //             );
+
+  //         // Verify creation with timeout
+  //         final verifyDoc = await userDocRef.get().timeout(
+  //               const Duration(seconds: 10),
+  //               onTimeout: () =>
+  //                   throw TimeoutException('Firestore verification timeout'),
+  //             );
+
+  //         debugPrint(
+  //             "[PeekApp] User doc created? ${verifyDoc.exists}, ID: ${verifyDoc.id}");
+
+  //         debugPrint(
+  //             "[PeekApp] ✅ User document created for ${currentUser.uid}");
+  //       } else {
+  //         debugPrint(
+  //             "[PeekApp] User document already exists for ${currentUser.uid}");
+
+  //         // Update last seen with timeout
+  //         await userDocRef.update({
+  //           'lastSeenAt': FieldValue.serverTimestamp(),
+  //         }).timeout(
+  //           const Duration(seconds: 10),
+  //           onTimeout: () => throw TimeoutException('Firestore update timeout'),
+  //         );
+
+  //         debugPrint("[PeekApp] Updated lastSeenAt timestamp");
+  //       }
+
+  //       // Success - exit retry loop
+  //       return;
+  //     } catch (e, stackTrace) {
+  //       debugPrint(
+  //           "[PeekApp] ❌ Error ensuring user document (Attempt $attempt/$maxRetries): $e");
+
+  //       if (attempt < maxRetries) {
+  //         debugPrint(
+  //             "[PeekApp] Retrying in ${retryDelay.inSeconds} seconds...");
+  //         await Future.delayed(retryDelay);
+  //       } else {
+  //         debugPrint("[PeekApp] ❌ Failed after $maxRetries attempts");
+  //         debugPrint("[PeekApp] Stack trace: $stackTrace");
+
+  //         // Show user-friendly error if still mounted
+  //         if (mounted) {
+  //           final scaffoldContext = rootNavigatorKey.currentContext;
+  //           if (scaffoldContext != null) {
+  //             ScaffoldMessenger.of(scaffoldContext).showSnackBar(
+  //               const SnackBar(
+  //                 content: Text(
+  //                     'Unable to connect to server. Please check your network connection.'),
+  //                 backgroundColor: Colors.orange,
+  //                 duration: Duration(seconds: 5),
+  //               ),
+  //             );
+  //           }
+  //         }
+  //       }
+  //     }
+  //   }
+  // }
+
+  Future<void> _initializeFCMToken() async {
+    try {
+      final messaging = FirebaseMessaging.instance;
+
+      // Request permission for notifications
+      NotificationSettings settings = await messaging.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+
+      if (settings.authorizationStatus == AuthorizationStatus.authorized) {
+        debugPrint("✅ FCM notification permission granted");
+
+        // Get FCM token
+        String? token = await messaging.getToken();
+        if (token != null && FirebaseAuth.instance.currentUser != null) {
+          // Use existing FirestoreService to save token
+          final firestoreService = ref.read(firestoreServiceProvider);
+          await firestoreService.updateUserPreference({'fcmToken': token});
+          debugPrint(
+              "✅ FCM token saved via FirestoreService: ${token.substring(0, 20)}...");
+        }
+
+        // Listen for token refresh
+        messaging.onTokenRefresh.listen((newToken) async {
+          if (FirebaseAuth.instance.currentUser != null) {
+            final firestoreService = ref.read(firestoreServiceProvider);
+            await firestoreService.updateUserPreference({'fcmToken': newToken});
+            debugPrint(
+                "✅ FCM token refreshed and updated via FirestoreService");
+          }
+        });
+      } else {
+        debugPrint("❌ FCM notification permission denied");
       }
-    } else {
+    } catch (e) {
+      debugPrint("❌ Error initializing FCM token: $e");
+    }
+  }
+
+  // =====================
+
+  void _showPeekRequestDialog(BuildContext context,
+      QueryDocumentSnapshot<Map<String, dynamic>> requestDoc) {
+    debugPrint("✅ _showPeekRequestDialog called for request: ${requestDoc.id}");
+
+    final data = requestDoc.data();
+    final requestId = requestDoc.id;
+    final senderUid = data['senderUid'] as String?;
+
+    // Use the rootNavigatorKey's context to ensure dialog can be shown globally
+    final BuildContext? dialogContext = rootNavigatorKey.currentContext;
+
+    if (dialogContext == null) {
       debugPrint(
-          "[PeekApp] User not authenticated in _ensureUserSetupAndNotifications.");
+          "❌ _showPeekRequestDialog: rootNavigatorKey.currentContext is null. Cannot show dialog.");
+      return;
+    }
+    if (!mounted) {
+      // Although less likely an issue if dialogContext is valid, good to keep
+      debugPrint(
+          "❌ _showPeekRequestDialog: _PeekAppState is not mounted. Cannot show dialog.");
+      return;
     }
 
-    if (mounted) {
-      await _initializeNotificationService();
+    showDialog(
+      context: dialogContext, // MODIFIED: Use context from rootNavigatorKey
+      barrierDismissible: false,
+      builder: (alertDialogContext) => AlertDialog(
+        // Renamed builder context to avoid confusion
+        title: const Text('New Peek Request!'),
+        content: const Text('Someone wants to share a peek with you. Accept?'),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(alertDialogContext).pop();
+              _declinePeekRequest(requestId);
+            },
+            child: const Text('Decline'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(alertDialogContext).pop();
+              _acceptPeekRequest(requestId);
+            },
+            child: const Text('Accept'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Accept peek request
+  Future<void> _acceptPeekRequest(String requestId) async {
+    debugPrint(
+        "✅ [PeekApp] _acceptPeekRequest CALLED for request: $requestId. Mounted: $mounted");
+    try {
+      if (!mounted) {
+        debugPrint(
+            "❌ [PeekApp] _acceptPeekRequest: NOT MOUNTED for request: $requestId");
+        return;
+      }
+
+      await FirebaseFirestore.instance
+          .collection('peek_requests')
+          .doc(requestId)
+          .update({
+        'status': 'accepted',
+        'acceptedAt': FieldValue.serverTimestamp(),
+      });
+      debugPrint(
+          "✅ [PeekApp] Peek request $requestId status updated to 'accepted' in Firestore.");
+
+      ref
+          .read(routerProvider)
+          .go('/capture?requestId=$requestId&mode=response');
+
+      debugPrint(
+          "✅ [PeekApp] NAVIGATED (or attempted to navigate) to /capture for request: $requestId");
+    } catch (e) {
+      debugPrint('❌ Error in _acceptPeekRequest: $e');
+      if (mounted) {
+        // Use rootNavigatorKey.currentContext for ScaffoldMessenger
+        final scaffoldMessengerContext = rootNavigatorKey.currentContext;
+        if (scaffoldMessengerContext != null) {
+          ScaffoldMessenger.of(scaffoldMessengerContext).showSnackBar(
+            // MODIFIED
+            SnackBar(
+              content: Text('Failed to accept peek: ${e.toString()}'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        } else {
+          debugPrint(
+              "❌ _acceptPeekRequest: rootNavigatorKey.currentContext is null, cannot show SnackBar.");
+        }
+      }
+    }
+  }
+
+  /// Decline peek request
+  Future<void> _declinePeekRequest(String requestId) async {
+    debugPrint(
+        "✅ [PeekApp] _declinePeekRequest CALLED for request: $requestId. Mounted: $mounted");
+    try {
+      await FirebaseFirestore.instance
+          .collection('peek_requests')
+          .doc(requestId)
+          .update({
+        'status': 'declined',
+        'declinedAt': FieldValue.serverTimestamp(),
+      });
+      debugPrint(
+          '✅ Peek request $requestId status updated to declined in Firestore.');
+    } catch (e) {
+      debugPrint('❌ Error declining peek request: $e');
+      if (mounted) {
+        // Use rootNavigatorKey.currentContext for ScaffoldMessenger
+        final scaffoldMessengerContext = rootNavigatorKey.currentContext;
+        if (scaffoldMessengerContext != null) {
+          ScaffoldMessenger.of(scaffoldMessengerContext).showSnackBar(
+            // MODIFIED
+            SnackBar(
+              content: Text('Failed to decline peek: ${e.toString()}'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        } else {
+          debugPrint(
+              "❌ _declinePeekRequest: rootNavigatorKey.currentContext is null, cannot show SnackBar.");
+        }
+      }
     }
   }
 
   Future<void> _initializeNotificationService() async {
     if (!mounted) return;
     debugPrint("[PeekApp] Initializing NotificationService...");
-    final notificationService = NotificationService();
+
+    if (Platform.isIOS) {
+      try {
+        final apnsToken = await FirebaseMessaging.instance.getAPNSToken();
+        if (apnsToken != null) {
+          debugPrint("[NotificationService] APNs token: $apnsToken");
+        } else {
+          debugPrint(
+              "[NotificationService] APNs token was null. This is expected on simulators if not configured for remote notifications.");
+        }
+      } catch (e) {
+        debugPrint("❌ Failed to fetch APNs token: $e");
+      }
+    }
+
+    final notificationService =
+        NotificationService(navigatorKey: rootNavigatorKey);
     try {
-      await notificationService.initialize(widget.router);
+      await notificationService.initialize(ref.read(routerProvider));
       debugPrint("[PeekApp] ✅ NotificationService initialized.");
       await notificationService.checkForInitialMessage();
       debugPrint("[PeekApp] ✅ Initial notification message check complete.");
@@ -300,25 +908,105 @@ class _PeekAppState extends ConsumerState<PeekApp> {
     debugPrint("✅ IAP Purchase stream listener attached.");
   }
 
-  @override
-  void dispose() {
-    _purchaseSubscription?.cancel(); // Cancel subscription on dispose
-    debugPrint('🛒 Purchase stream subscription cancelled in PeekApp dispose.');
-    super.dispose();
-  }
+  // @override
+  // void dispose() {
+  //   _purchaseSubscription?.cancel(); // Cancel subscription on dispose
+  //   debugPrint('🛒 Purchase stream subscription cancelled in PeekApp dispose.');
+  //   super.dispose();
+  // }
 
   @override
   Widget build(BuildContext context) {
-    // Provide the router configuration to MaterialApp.router
-    // Inside main.dart or your App widget's build method
+    final router = ref.watch(routerProvider);
+    // --- Set up Peek Request Listener ---
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+    if (currentUserId != null) {
+      // Listen for incoming peek requests
+
+      ref.listen<AsyncValue<List<QueryDocumentSnapshot<Map<String, dynamic>>>>>(
+        pendingPeekRequestsProvider,
+        (previous, next) {
+          next.whenData((requests) {
+            final previousRequests = previous?.asData?.value;
+            // final previousCount = previousRequests?.length ?? 0;
+            // final currentCount = requests.length;
+
+            final int previousCount;
+
+            if (previousRequests != null) {
+              previousCount = previousRequests.length;
+            } else if (previous == null ||
+                previous!.isLoading ||
+                previous.hasError) {
+              // If previous was null (initial), loading, or error, treat previous count as 0 for comparison logic.
+              // This helps the "fresh load" condition.
+              previousCount = 0;
+            } else {
+              // If previous has a value but it's not AsyncData (shouldn't happen if types are right)
+              // or if previous.asData.value is null (which previousRequests already covers).
+              // Defaulting to 0, but this state warrants a closer look if it occurs.
+              previousCount = 0;
+              debugPrint(
+                  "[PeekApp Build Listen] Warning: previous.asData.value was null despite previous having a value and not being loading/error.");
+            }
+
+            final currentCount = requests.length;
+
+            debugPrint(
+                "[PeekApp Build Listen] Listener FIRED. Prev value: ${previous?.hasValue}, Prev count: $previousCount, Curr count: $currentCount, Mounted: $mounted, Request IDs: ${requests.map((r) => r.id).toList()}");
+
+            if (currentCount > 0 && mounted) {
+              bool shouldShow = false;
+              if (previous == null || previous.isLoading || previous.hasError) {
+                // Case 1: This is the first valid data emission (previous was null, loading, or error)
+                shouldShow = true;
+                debugPrint(
+                    "[PeekApp Build Listen] Condition Case 1 MET (Initial/Fresh Load with data). Current count: $currentCount");
+              } else if (previousRequests != null &&
+                  currentCount > previousCount) {
+                // Case 2: More requests than before
+                shouldShow = true;
+                debugPrint(
+                    "[PeekApp Build Listen] Condition Case 2 MET (New request detected). Prev: $previousCount, Curr: $currentCount");
+              }
+              // Optional: Case 3 - if counts are same but request list content changed (more complex, usually handled by object inequality)
+              // For simplicity, we rely on count changes or fresh load for now.
+
+              if (shouldShow) {
+                final latestRequest = requests
+                    .first; // Assuming newest is always first due to orderBy
+                debugPrint(
+                    "[PeekApp Build Listen] ALL Conditions MET! Showing dialog for ${latestRequest.id}.");
+                _showPeekRequestDialog(context, latestRequest);
+              } else {
+                debugPrint(
+                    "[PeekApp Build Listen] Conditions NOT MET for showing dialog. Prev: $previousCount, Curr: $currentCount");
+              }
+            } else {
+              debugPrint(
+                  "[PeekApp Build Listen] Conditions NOT MET for showing dialog (currentCount <= 0 or not mounted). Prev: $previousCount, Curr: $currentCount");
+            }
+          });
+        },
+        onError: (error, stackTrace) {
+          debugPrint(
+              "[[PeekApp Build Listen ERROR]] Error listening to pendingPeekRequestsProvider: $error, Stack: $stackTrace");
+        },
+        // fireImmediately: true,
+      );
+      // test
+    } else {
+      debugPrint(
+          "[PeekApp Build] No authenticated user, peek request listener not set up.");
+    }
 
     return RootRealtimeListener(
       child: MaterialApp.router(
         title: 'PEEK',
         debugShowCheckedModeBanner: false,
-        routerConfig: widget.router, // Use the router passed from main()
-
+        routerConfig: ref.watch(routerProvider),
         theme: ThemeData(
+          // YOUR ENTIRE THEME DATA OBJECT GOES HERE (lines 770-880)
           brightness: Brightness.dark,
           fontFamily: 'Poppins',
           useMaterial3: true,
@@ -431,7 +1119,7 @@ class _PeekAppState extends ConsumerState<PeekApp> {
             ),
             elevation: 4,
           ),
-          dialogTheme: DialogTheme(
+          dialogTheme: DialogThemeData(
             backgroundColor: peekSurfaceColor,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
@@ -550,25 +1238,17 @@ class _PeekAppState extends ConsumerState<PeekApp> {
                 await _analytics.logEvent(
                   name: purchase.status == PurchaseStatus.restored
                       ? 'purchase_restored'
-                      : 'purchase', // Standard name for purchase
-                  // These are standard e-commerce parameters
+                      : 'purchase',
                   parameters: {
                     'transaction_id': purchase.purchaseID ?? 'UNKNOWN_ID',
-                    'value':
-                        0.0, // Placeholder - ideally get price from ProductDetails
-                    'currency': 'USD', // Placeholder - ideally get currency
-                    'items': [
-                      {
-                        'item_id': purchase.productID,
-                        'item_name': purchase
-                            .productID, // Or a more descriptive name if available
-                        // 'item_category': 'subscription', // Optional
-                        // 'price': 0.0, // Placeholder
-                        'quantity': 1,
-                      },
-                    ],
+                    'value': 0.0,
+                    'currency': 'USD',
+                    'item_id': purchase.productID,
+                    'item_name': purchase.productID,
+                    'quantity': 1,
                   },
                 );
+
                 debugPrint(
                   "[_PeekAppState] Logged ${purchase.status == PurchaseStatus.restored ? 'purchase_restored' : 'purchase'} event.",
                 );
@@ -726,19 +1406,35 @@ class _PeekAppState extends ConsumerState<PeekApp> {
 
   /// Helper to show dialogs only if the widget state is still mounted.
   void _showDialogIfMounted(
-    BuildContext context,
+    BuildContext callingContext,
     Widget Function(BuildContext) builder,
   ) {
-    if (mounted) {
+    if (!mounted) {
+      debugPrint(
+          "⚠️ Attempted to show dialog but _PeekAppState is not mounted.");
+      return;
+    }
+    final BuildContext dialogCtx =
+        rootNavigatorKey.currentContext ?? callingContext;
+
+    try {
+      MaterialLocalizations.of(dialogCtx);
       showDialog(
-        context: context,
+        context: dialogCtx,
         builder: builder,
         barrierDismissible: false,
-      ); // Generally make IAP dialogs non-dismissible
-    } else {
-      debugPrint(
-        "⚠️ Attempted to show dialog but PeekApp state is not mounted.",
       );
+    } catch (e) {
+      debugPrint(
+          "⚠️ _showDialogIfMounted: dialogCtx ($dialogCtx) from (rootKey: ${rootNavigatorKey.currentContext}, calling: $callingContext) is not valid. Error: $e");
+      try {
+        // Fallback to ScaffoldMessenger with callingContext
+        ScaffoldMessenger.of(callingContext).showSnackBar(const SnackBar(
+            content: Text("Error displaying dialog. Please try again later.")));
+      } catch (snackbarError) {
+        debugPrint(
+            "⚠️ Could not show SnackBar with callingContext: $snackbarError");
+      }
     }
   }
 

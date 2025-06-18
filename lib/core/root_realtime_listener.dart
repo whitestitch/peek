@@ -66,30 +66,39 @@ class RootRealtimeListener extends ConsumerWidget {
             }
 
             final overlayService = ref.read(overlayAnimationServiceProvider);
-            bool animationShown = false;
-
+// **1) If there's a new LIKE, update our stored count immediately,
+            //    then run the animation.**
             if (newLikes > lastCounts.likes) {
-              debugPrint(
-                  "[RootRealtimeListener] New LIKE received by sender! Current likes: $newLikes, Previous: ${lastCounts.likes}. Triggering animation.");
-              await overlayService.showLikeAnimation(); // AWAIT the animation
-              animationShown = true;
-            } else if (newDislikes > lastCounts.dislikes) {
-              debugPrint(
-                  "[RootRealtimeListener] New DISLIKE received by sender! Current dislikes: $newDislikes, Previous: ${lastCounts.dislikes}. Triggering animation.");
-              await overlayService
-                  .showDislikeAnimation(); // AWAIT the animation
-              animationShown = true;
+              debugPrint("[RootRealtimeListener] New LIKE received! "
+                  "Current likes: $newLikes, Previous: ${lastCounts.likes}. "
+                  "Showing animation and updating stored count.");
+              // update stored count _before_ the await
+              ref.read(lastReactionCountsProvider.notifier).state =
+                  (likes: newLikes, dislikes: lastCounts.dislikes);
+              await overlayService.showLikeAnimation();
+              return;
             }
 
+            // **2) Same for DISLIKEs.**
+            if (newDislikes > lastCounts.dislikes) {
+              debugPrint("[RootRealtimeListener] New DISLIKE received! "
+                  "Current dislikes: $newDislikes, Previous: ${lastCounts.dislikes}. "
+                  "Showing animation and updating stored count.");
+              ref.read(lastReactionCountsProvider.notifier).state =
+                  (likes: lastCounts.likes, dislikes: newDislikes);
+              await overlayService.showDislikeAnimation();
+              return;
+            }
+
+            // **3) Any other change (e.g. counts reset or manual edit)—
+            //    just store the new values without animation.**
             if (newLikes != lastCounts.likes ||
                 newDislikes != lastCounts.dislikes) {
+              debugPrint(
+                  "[RootRealtimeListener] Counts changed (no animation). "
+                  "Updating stored: Likes=$newLikes, Dislikes=$newDislikes.");
               ref.read(lastReactionCountsProvider.notifier).state =
                   (likes: newLikes, dislikes: newDislikes);
-            }
-
-            if (animationShown) {
-              debugPrint(
-                  "[RootRealtimeListener] Updated last known counts after animation: Likes=$newLikes, Dislikes=$newDislikes");
             }
           },
           loading: () {
