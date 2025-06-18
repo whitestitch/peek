@@ -515,14 +515,16 @@ class _PeekAppState extends ConsumerState<PeekApp> {
 
   Future<void> _initializeUser(User user) async {
     debugPrint("[PeekApp] Initializing user setup for ${user.uid}");
-    // This is now the single source of truth for user creation
-    await _ensureUserDocument(user);
 
-    // Now that the user document is guaranteed to exist, set up other services
+    // await _ensureUserDocument(user);
+
     final firestoreService = ref.read(firestoreServiceProvider);
     await firestoreService.ensureDisplayNameExists();
+
+    // Now that the user document is guaranteed to exist, set up other services
     await _initializeFCMToken();
     await _initializeNotificationService();
+
     _setupDirectFirestoreListener();
   }
 
@@ -558,116 +560,116 @@ class _PeekAppState extends ConsumerState<PeekApp> {
     super.dispose();
   }
 
-  Future<void> _ensureUserDocument(User currentUser) async {
-    if (!mounted) return;
+  // Future<void> _ensureUserDocument(User currentUser) async {
+  //   if (!mounted) return;
 
-    debugPrint(
-        "[PeekApp] _ensureUserDocument START for user: ${currentUser.uid}");
+  //   debugPrint(
+  //       "[PeekApp] _ensureUserDocument START for user: ${currentUser.uid}");
 
-    const maxRetries = 3;
-    const retryDelay = Duration(seconds: 2);
+  //   const maxRetries = 3;
+  //   const retryDelay = Duration(seconds: 2);
 
-    for (int attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        final userDocRef =
-            FirebaseFirestore.instance.collection('users').doc(currentUser.uid);
+  //   for (int attempt = 1; attempt <= maxRetries; attempt++) {
+  //     try {
+  //       final userDocRef =
+  //           FirebaseFirestore.instance.collection('users').doc(currentUser.uid);
 
-        debugPrint(
-            "[PeekApp] Checking if user document exists... (Attempt $attempt)");
+  //       debugPrint(
+  //           "[PeekApp] Checking if user document exists... (Attempt $attempt)");
 
-        // Add timeout to prevent hanging
-        final userDoc = await userDocRef.get().timeout(
-              const Duration(seconds: 10),
-              onTimeout: () => throw TimeoutException('Firestore read timeout'),
-            );
+  //       // Add timeout to prevent hanging
+  //       final userDoc = await userDocRef.get().timeout(
+  //             const Duration(seconds: 10),
+  //             onTimeout: () => throw TimeoutException('Firestore read timeout'),
+  //           );
 
-        debugPrint("[PeekApp] User document exists: ${userDoc.exists}");
+  //       debugPrint("[PeekApp] User document exists: ${userDoc.exists}");
 
-        if (!userDoc.exists) {
-          debugPrint("[PeekApp] Creating user document for ${currentUser.uid}");
+  //       if (!userDoc.exists) {
+  //         debugPrint("[PeekApp] Creating user document for ${currentUser.uid}");
 
-          // Create user document with initial data
-          final userData = {
-            'uid': currentUser.uid,
-            'displayName': currentUser.displayName ??
-                'User ${currentUser.uid.substring(0, 6)}',
-            'email': currentUser.email,
-            'isAnonymous': currentUser.isAnonymous,
-            'createdAt': FieldValue.serverTimestamp(),
-            'updatedAt': FieldValue.serverTimestamp(),
-            'isPremium': false,
-            'dailyPeekCount': 0,
-            'lastSeenAt': FieldValue.serverTimestamp(),
-            'availableForPeek': true,
-          };
+  //         // Create user document with initial data
+  //         final userData = {
+  //           'uid': currentUser.uid,
+  //           'displayName': currentUser.displayName ??
+  //               'User ${currentUser.uid.substring(0, 6)}',
+  //           'email': currentUser.email,
+  //           'isAnonymous': currentUser.isAnonymous,
+  //           'createdAt': FieldValue.serverTimestamp(),
+  //           'updatedAt': FieldValue.serverTimestamp(),
+  //           'isPremium': false,
+  //           'dailyPeekCount': 0,
+  //           'lastSeenAt': FieldValue.serverTimestamp(),
+  //           'availableForPeek': true,
+  //         };
 
-          debugPrint("[PeekApp] User data to create: $userData");
+  //         debugPrint("[PeekApp] User data to create: $userData");
 
-          await userDocRef.set(userData).timeout(
-                const Duration(seconds: 10),
-                onTimeout: () =>
-                    throw TimeoutException('Firestore write timeout'),
-              );
+  //         await userDocRef.set(userData).timeout(
+  //               const Duration(seconds: 10),
+  //               onTimeout: () =>
+  //                   throw TimeoutException('Firestore write timeout'),
+  //             );
 
-          // Verify creation with timeout
-          final verifyDoc = await userDocRef.get().timeout(
-                const Duration(seconds: 10),
-                onTimeout: () =>
-                    throw TimeoutException('Firestore verification timeout'),
-              );
+  //         // Verify creation with timeout
+  //         final verifyDoc = await userDocRef.get().timeout(
+  //               const Duration(seconds: 10),
+  //               onTimeout: () =>
+  //                   throw TimeoutException('Firestore verification timeout'),
+  //             );
 
-          debugPrint(
-              "[PeekApp] User doc created? ${verifyDoc.exists}, ID: ${verifyDoc.id}");
+  //         debugPrint(
+  //             "[PeekApp] User doc created? ${verifyDoc.exists}, ID: ${verifyDoc.id}");
 
-          debugPrint(
-              "[PeekApp] ✅ User document created for ${currentUser.uid}");
-        } else {
-          debugPrint(
-              "[PeekApp] User document already exists for ${currentUser.uid}");
+  //         debugPrint(
+  //             "[PeekApp] ✅ User document created for ${currentUser.uid}");
+  //       } else {
+  //         debugPrint(
+  //             "[PeekApp] User document already exists for ${currentUser.uid}");
 
-          // Update last seen with timeout
-          await userDocRef.update({
-            'lastSeenAt': FieldValue.serverTimestamp(),
-          }).timeout(
-            const Duration(seconds: 10),
-            onTimeout: () => throw TimeoutException('Firestore update timeout'),
-          );
+  //         // Update last seen with timeout
+  //         await userDocRef.update({
+  //           'lastSeenAt': FieldValue.serverTimestamp(),
+  //         }).timeout(
+  //           const Duration(seconds: 10),
+  //           onTimeout: () => throw TimeoutException('Firestore update timeout'),
+  //         );
 
-          debugPrint("[PeekApp] Updated lastSeenAt timestamp");
-        }
+  //         debugPrint("[PeekApp] Updated lastSeenAt timestamp");
+  //       }
 
-        // Success - exit retry loop
-        return;
-      } catch (e, stackTrace) {
-        debugPrint(
-            "[PeekApp] ❌ Error ensuring user document (Attempt $attempt/$maxRetries): $e");
+  //       // Success - exit retry loop
+  //       return;
+  //     } catch (e, stackTrace) {
+  //       debugPrint(
+  //           "[PeekApp] ❌ Error ensuring user document (Attempt $attempt/$maxRetries): $e");
 
-        if (attempt < maxRetries) {
-          debugPrint(
-              "[PeekApp] Retrying in ${retryDelay.inSeconds} seconds...");
-          await Future.delayed(retryDelay);
-        } else {
-          debugPrint("[PeekApp] ❌ Failed after $maxRetries attempts");
-          debugPrint("[PeekApp] Stack trace: $stackTrace");
+  //       if (attempt < maxRetries) {
+  //         debugPrint(
+  //             "[PeekApp] Retrying in ${retryDelay.inSeconds} seconds...");
+  //         await Future.delayed(retryDelay);
+  //       } else {
+  //         debugPrint("[PeekApp] ❌ Failed after $maxRetries attempts");
+  //         debugPrint("[PeekApp] Stack trace: $stackTrace");
 
-          // Show user-friendly error if still mounted
-          if (mounted) {
-            final scaffoldContext = rootNavigatorKey.currentContext;
-            if (scaffoldContext != null) {
-              ScaffoldMessenger.of(scaffoldContext).showSnackBar(
-                const SnackBar(
-                  content: Text(
-                      'Unable to connect to server. Please check your network connection.'),
-                  backgroundColor: Colors.orange,
-                  duration: Duration(seconds: 5),
-                ),
-              );
-            }
-          }
-        }
-      }
-    }
-  }
+  //         // Show user-friendly error if still mounted
+  //         if (mounted) {
+  //           final scaffoldContext = rootNavigatorKey.currentContext;
+  //           if (scaffoldContext != null) {
+  //             ScaffoldMessenger.of(scaffoldContext).showSnackBar(
+  //               const SnackBar(
+  //                 content: Text(
+  //                     'Unable to connect to server. Please check your network connection.'),
+  //                 backgroundColor: Colors.orange,
+  //                 duration: Duration(seconds: 5),
+  //               ),
+  //             );
+  //           }
+  //         }
+  //       }
+  //     }
+  //   }
+  // }
 
   Future<void> _initializeFCMToken() async {
     try {
