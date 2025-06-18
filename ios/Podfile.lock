@@ -1200,11 +1200,13 @@ PODS:
     - Firebase/Firestore (= 11.10.0)
     - firebase_core
     - Flutter
-  - cloud_functions (5.5.0):
+  - cloud_functions (5.5.1):
     - Firebase/Functions (= 11.10.0)
     - firebase_core
     - Flutter
   - desktop_webview_auth (0.0.1):
+    - Flutter
+  - device_info_plus (0.0.1):
     - Flutter
   - Firebase/Analytics (11.10.0):
     - Firebase/Core
@@ -1238,11 +1240,11 @@ PODS:
     - Firebase/Analytics (= 11.10.0)
     - firebase_core
     - Flutter
-  - firebase_auth (5.5.3):
+  - firebase_auth (5.5.4):
     - Firebase/Auth (= 11.10.0)
     - firebase_core
     - Flutter
-  - firebase_core (3.13.0):
+  - firebase_core (3.13.1):
     - Firebase/CoreOnly (= 11.10.0)
     - Flutter
   - firebase_dynamic_links (6.1.5):
@@ -1537,6 +1539,7 @@ DEPENDENCIES:
   - cloud_firestore (from `.symlinks/plugins/cloud_firestore/ios`)
   - cloud_functions (from `.symlinks/plugins/cloud_functions/ios`)
   - desktop_webview_auth (from `.symlinks/plugins/desktop_webview_auth/ios`)
+  - device_info_plus (from `.symlinks/plugins/device_info_plus/ios`)
   - firebase_analytics (from `.symlinks/plugins/firebase_analytics/ios`)
   - firebase_auth (from `.symlinks/plugins/firebase_auth/ios`)
   - firebase_core (from `.symlinks/plugins/firebase_core/ios`)
@@ -1597,6 +1600,8 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/cloud_functions/ios"
   desktop_webview_auth:
     :path: ".symlinks/plugins/desktop_webview_auth/ios"
+  device_info_plus:
+    :path: ".symlinks/plugins/device_info_plus/ios"
   firebase_analytics:
     :path: ".symlinks/plugins/firebase_analytics/ios"
   firebase_auth:
@@ -1635,12 +1640,13 @@ SPEC CHECKSUMS:
   BoringSSL-GRPC: dded2a44897e45f28f08ae87a55ee4bcd19bc508
   camera_avfoundation: be3be85408cd4126f250386828e9b1dfa40ab436
   cloud_firestore: b7b3bfffcd2ea3205f612d5602f959a0ec33c7b0
-  cloud_functions: da1966dda871b6d4a8e9addcdec31ea540489715
+  cloud_functions: bd20fe1d6f280e914902ae9c3e0568e1e097b353
   desktop_webview_auth: 4cf620136c3d79796496eef85e59508e3a1a003d
+  device_info_plus: 21fcca2080fbcd348be798aa36c3e5ed849eefbe
   Firebase: 1fe1c0a7d9aaea32efe01fbea5f0ebd8d70e53a2
   firebase_analytics: 1998960b8fa16fd0cd9e77a6f9fd35a2009ad65e
-  firebase_auth: 83bf106e5ac670dd3a0af27a86be6cba16a85723
-  firebase_core: 2d4534e7b489907dcede540c835b48981d890943
+  firebase_auth: 4d9603c196d22f71e80cf518b71939c4f2117088
+  firebase_core: ba71b44041571da878cb624ce0d80250bcbe58ad
   firebase_dynamic_links: de53015750ee801a731f48a09e127b8a0b14c666
   firebase_in_app_messaging: f532b5a692afd1e779d18923427828048d4d914c
   firebase_messaging: 75bc93a4df25faccad67f6662ae872ac9ae69b64
@@ -1683,6 +1689,6 @@ SPEC CHECKSUMS:
   shared_preferences_foundation: 9e1978ff2562383bd5676f64ec4e9aa8fa06a6f7
   url_launcher_ios: 694010445543906933d732453a59da0a173ae33d
 
-PODFILE CHECKSUM: 85f2a6ba81ddbcf6f1ae0ca47e434db830348efb
+PODFILE CHECKSUM: 251cb053df7158f337c0712f2ab29f4e0fa474ce
 
 COCOAPODS: 1.16.2

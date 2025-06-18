@@ -1,0 +1,119 @@
+// lib/features/splash/splash_start.dart
+
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import 'package:peek/theme/colors.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
+
+// This widget is now a simple, passive UI component. It contains no logic.
+// The GoRouter is solely responsible for navigating away from this screen.
+class SplashStartPage extends StatefulWidget {
+  const SplashStartPage({super.key});
+
+  @override
+  State<SplashStartPage> createState() => _SplashStartPageState();
+}
+
+class _SplashStartPageState extends State<SplashStartPage>
+    with TickerProviderStateMixin {
+  late final AnimationController _rotationController;
+  late final AnimationController _progressController;
+  final Duration _splashDuration = const Duration(seconds: 4);
+
+  @override
+  void initState() {
+    super.initState();
+    _rotationController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 10),
+    )..repeat();
+
+    _progressController = AnimationController(
+      vsync: this,
+      duration: _splashDuration,
+    )..forward().then((_) {
+        _handleSplashComplete();
+      });
+  }
+
+  Future<void> _handleSplashComplete() async {
+    if (!mounted) return;
+
+    debugPrint(
+        "[SplashStart] Splash animation complete, checking auth state...");
+
+    // Check if user is already authenticated
+    final currentUser = FirebaseAuth.instance.currentUser;
+
+    if (currentUser == null) {
+      debugPrint("[SplashStart] No user found, signing in anonymously...");
+      try {
+        final userCredential = await FirebaseAuth.instance.signInAnonymously();
+        debugPrint(
+            "[SplashStart] ✅ Anonymous sign-in successful: ${userCredential.user?.uid}");
+      } catch (e) {
+        debugPrint("[SplashStart] ❌ Anonymous sign-in failed: $e");
+      }
+    } else {
+      debugPrint(
+          "[SplashStart] ✅ User already authenticated: ${currentUser.uid}");
+    }
+
+    // Router will handle navigation based on auth state change
+  }
+
+  @override
+  void dispose() {
+    _rotationController.dispose();
+    _progressController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: peekBackgroundColor,
+      body: Center(
+        child: SizedBox(
+          width: 120,
+          height: 120,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              SizedBox(
+                width: 120,
+                height: 120,
+                child: AnimatedBuilder(
+                  animation: _progressController,
+                  builder: (context, child) {
+                    return CircularProgressIndicator(
+                      value: _progressController.value,
+                      strokeWidth: 6.0,
+                      backgroundColor: Colors.grey.shade800.withOpacity(0.5),
+                      valueColor:
+                          const AlwaysStoppedAnimation<Color>(peekPrimaryColor),
+                    );
+                  },
+                ),
+              ),
+              RotationTransition(
+                turns: _rotationController,
+                child: SvgPicture.asset(
+                  'assets/images/peekio_logo.svg',
+                  width: 60,
+                  height: 60,
+                  colorFilter: const ColorFilter.mode(
+                    peekWhiteColor,
+                    BlendMode.srcIn,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

@@ -1,11 +1,10 @@
-// Firebase Cloud Functions for Peek (JavaScript)
 const {onCall, HttpsError} = require("firebase-functions/v2/https");
 const {onDocumentCreated} = require("firebase-functions/v2/firestore");
 const {onObjectFinalized} = require("firebase-functions/v2/storage");
 const {onSchedule} = require("firebase-functions/v2/scheduler");
 
-
 const admin = require("firebase-admin");
+const {FieldValue, Timestamp} = require("firebase-admin/firestore");
 const vision = require("@google-cloud/vision");
 const logger = require("firebase-functions/logger");
 const {getStorage} = require("firebase-admin/storage");
@@ -17,13 +16,17 @@ if (admin.apps.length === 0) {
 const db = admin.firestore();
 const visionClient = new vision.ImageAnnotatorClient();
 
+const isEmulator = () => {
+  return process.env.FUNCTIONS_EMULATOR === "true" ||
+    process.env.NODE_ENV === "development";
+};
+
+
 /**
- * Finds a suitable, random, online, non-blocking recipient for a Peek.
- * THIS IS A COMPLEX FUNCTION YOU NEED TO TAILOR TO YOUR APP'S LOGIC.
- *
- * @param {string} senderUid - The UID of the user sending the Peek.
- * @param {string[]} previouslyAttemptedRecipientUids - UIDs already tried.
- * @return {Promise<string|null>} The UID of a potential recipient, or null.
+// The UID of the user initiating the peek request.
+  @param {string} senderUid
+  @param {Array<string>} previouslyAttemptedRecipientUids
+  @return {Promise<string|null>}
  */
 async function findPotentialRecipient(
     senderUid,
@@ -35,7 +38,6 @@ async function findPotentialRecipient(
       `attempted: ${attemptedStr})`,
   );
 
-  // TODO: Implement robust recipient finding logic.
   const usersSnapshot = await db.collection("users").limit(50).get();
   const potentialRecipients = [];
   usersSnapshot.forEach((doc) => {
@@ -55,23 +57,52 @@ async function findPotentialRecipient(
   return potentialRecipients[randomIndex];
 }
 
-/**
- * HTTP Callable Function to initiate a Peek request.
- */
 exports.initiatePeekRequest = onCall(
     {region: "us-central1", timeoutSeconds: 60},
     async (request) => {
-      if (!request.auth) {
-        logger.error(
-            "Unauthenticated call to initiatePeekRequest.");
-        throw new HttpsError( // Use HttpsError for structured errors
+      logger.info("🔍 initiatePeekRequest called with:", {
+        hasAuth: !!request.auth,
+        authUid: request.auth && request.auth.uid,
+        isEmulator: isEmulator(),
+        senderUid: request.data && request.data.senderUid,
+        emulatorMode: request.data && request.data.emulatorMode,
+      });
+
+      let senderUid;
+
+      try {
+      // In emulator mode with emulatorMode flag, skip auth check entirely
+        if (isEmulator() &&
+          request.data && request.data.emulatorMode && request.data.senderUid) {
+          senderUid = request.data.senderUid;
+          logger.info(
+              "🔧 Emulator mode bypass - using senderUid directly:", senderUid);
+        } else if (request.auth && request.auth.uid) {
+          senderUid = request.auth.uid;
+          logger.info("✅ Using request.auth.uid:", senderUid);
+        } else if (isEmulator() && request.data && request.data.senderUid) {
+        // Fallback for emulator without explicit flag
+          senderUid = request.data.senderUid;
+          logger.info("🔧 Emulator fallback - using senderUid:", senderUid);
+        } else {
+          logger.error("❌ No authentication context or senderUid provided");
+          throw new HttpsError(
+              "unauthenticated",
+              "The function must be called while authenticated.",
+          );
+        }
+      } catch (authError) {
+        logger.error("Authentication check failed:", authError);
+        if (authError instanceof HttpsError) {
+          throw authError;
+        }
+        throw new HttpsError(
             "unauthenticated",
-            "The function must be called while authenticated.",
+            "Authentication validation failed",
         );
       }
-      const senderUid = request.auth.uid;
 
-      logger.info(`Peek request initiated by sender: ${senderUid}`);
+      logger.info(`📝 Processing peek request for user: ${senderUid}`);
 
       try {
         const MAX_RECIPIENT_FIND_ATTEMPTS = 5;
@@ -98,16 +129,16 @@ exports.initiatePeekRequest = onCall(
 
           if (recipientDoc.exists) {
             const recipientData = recipientDoc.data();
-            const blockedSenderIds = (recipientData &&
-            recipientData.blockedSenderIds) ?
+            const blockedSenderIds = (
+            recipientData && recipientData.blockedSenderIds) ?
             recipientData.blockedSenderIds : [];
 
             if (blockedSenderIds.includes(senderUid)) {
               logger.info(
                   `Recipient
-                  ${potentialRecipientUid}
-                  blocked sender ${senderUid}.`,
-                  `Attempt ${attempt + 1}. Finding another.`,
+                  ${potentialRecipientUid} blocked sender ${senderUid}.`,
+                  `Attempt
+                  ${attempt + 1}. Finding another.`,
               );
               continue;
             } else {
@@ -135,20 +166,24 @@ exports.initiatePeekRequest = onCall(
         logger.info(`Final recipient for sender ${senderUid}: ${recipientUid}`);
 
         const peekRequestId = db.collection("peek_requests").doc().id;
+
+        logger.info("🔧 Creating peekRequestData object...");
+
         const peekRequestData = {
-          senderUid, // Use senderUid from auth context
+          senderUid,
           receiverUid: recipientUid,
           status: "pending_acceptance",
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          expiresAt: admin.firestore.Timestamp.fromMillis(
-              Date.now() + 1 * 60 * 60 * 1000, // Expires in 1 hour
+          createdAt: FieldValue.serverTimestamp(),
+          expiresAt: Timestamp.fromMillis(
+              Date.now() + 1 * 60 * 60 * 1000,
           ),
         };
 
+        logger.info("✅ peekRequestData created successfully:", peekRequestData);
+
         await db.collection("peek_requests")
-            .doc(peekRequestId)
-            .set(peekRequestData);
-        logger.info(`Peek request document created: ${peekRequestId}`);
+            .doc(peekRequestId).set(peekRequestData);
+        logger.info(`✅ Peek request document created: ${peekRequestId}`);
 
         return {
           success: true,
@@ -158,15 +193,13 @@ exports.initiatePeekRequest = onCall(
       } catch (error) {
         logger.error(
             "Unhandled error in initiatePeekRequest main logic:", error);
+
         if (error instanceof HttpsError) {
-          throw error; // Re-throw if already an HttpsError
+          throw error;
         }
-        // For other types of errors, wrap them in HttpsError
         throw new HttpsError(
             "internal",
             error.message || "Function internal error. Please check logs.",
-
-            // For security, avoid sending the full error.stack to the client.
             {
               originalErrorName: error.name,
               originalErrorMessage: error.message,
@@ -179,104 +212,104 @@ exports.initiatePeekRequest = onCall(
 exports.autoPingReceiverOnRequestCreate = onDocumentCreated(
     {document: "peek_requests/{requestId}", region: "us-central1"},
     async (event) => {
-    // For onCreate, event.data is the DocumentSnapshot
       const snapshot = event.data;
       if (!snapshot || !snapshot.data()) {
-      // ================== CHANGE END HERE ======
         logger.error("autoPingReceiver: No data on new peek request.");
         return null;
       }
 
-      async (event) => {
-      // For onCreate, event.data is the DocumentSnapshot
-        const snapshot = event.data;
-        if (!snapshot || !snapshot.data()) {
-          logger.error("autoPingReceiver: No data on new peek request.");
-          return null;
-        }
+      const data = snapshot.data();
+      const requestId = event.params.requestId;
 
-        const data = snapshot.data();
-        const requestId = event.params.requestId;
+      const receiverUid = (data && data.receiverUid) ? data.receiverUid : null;
+      const senderUid = (data && data.senderUid) ? data.senderUid : null;
 
-        const receiverUid = (
-          data && data.receiverUid) ? data.receiverUid : null;
-        const senderUid = (data && data.senderUid) ? data.senderUid : null;
-
-        if (!receiverUid || !senderUid) {
-          logger.warn(
-              `autoPingReceiver: Missing UIDs for req ${requestId}.`,
-              `Data: ${JSON.stringify(data)}`,
-          );
-          return null;
-        }
-
-        const recipientDocRef = db.collection("users").doc(receiverUid);
-        const recipientDoc = await recipientDocRef.get();
-
-        if (!recipientDoc.exists) {
-        // eslint-disable-next-line max-len
-          logger.warn(`autoPingReceiver: Recipient document ${receiverUid} not found.`);
-          return null;
-        }
-
-        const recipientData = recipientDoc.data();
-        const blockedSenderIds = (recipientData &&
-        recipientData.blockedSenderIds) ?
-        recipientData.blockedSenderIds : [];
-
-        if (blockedSenderIds.includes(senderUid)) {
-          logger.info(
-              `autoPingReceiver: Recipient ${receiverUid}`,
-              `blocked sender ${senderUid}. Ping aborted for ${requestId}.`,
-          );
-          return null;
-        }
-
-        const fcmToken = (recipientData && recipientData.fcmToken) ?
-        recipientData.fcmToken : null;
-
-        if (!fcmToken) {
-          logger.warn(
-              `autoPingReceiver: No FCM token for ${receiverUid}. No ping.`,
-          );
-          return null;
-        }
-
-        try {
-        // await admin.messaging().send({
-          const payload = {
-            notification: {
-              title: "👁 Someone wants to Peek!",
-              body: "Open the app to respond to the request.",
-            },
-            data: {requestId, type: "peek_request"},
-            token: fcmToken,
-          };
-          await admin.messaging().send(payload);
-          logger.info(
-              `✅ autoPingReceiver: Ping sent to ${receiverUid}`,
-              `for ${requestId}.`,
-          );
-        } catch (err) {
-          logger.error(
-              `❌ autoPingReceiver: Ping failed for ${receiverUid}:`, err,
-          );
-        }
+      if (!receiverUid || !senderUid) {
+        logger.warn(
+            `autoPingReceiver: Missing UIDs for req ${requestId}.`,
+            `Data: ${JSON.stringify(data)}`,
+        );
         return null;
-      };
+      }
+
+      const recipientDocRef = db.collection("users").doc(receiverUid);
+      const recipientDoc = await recipientDocRef.get();
+
+      if (!recipientDoc.exists) {
+        logger.warn(`
+          autoPingReceiver: Recipient document ${receiverUid} not found.`);
+        return null;
+      }
+
+      const recipientData = recipientDoc.data();
+      const blockedSenderIds = (
+      recipientData && recipientData.blockedSenderIds) ?
+      recipientData.blockedSenderIds : [];
+
+      if (blockedSenderIds.includes(senderUid)) {
+        logger.info(
+            `autoPingReceiver: Recipient ${receiverUid}`,
+            `blocked sender ${senderUid}. Ping aborted for ${requestId}.`,
+        );
+        return null;
+      }
+
+      const fcmToken = (recipientData && recipientData.fcmToken) ?
+      recipientData.fcmToken : null;
+
+      if (!fcmToken) {
+        logger.warn(
+            `autoPingReceiver: No FCM token for ${receiverUid}. No ping.`,
+        );
+        return null;
+      }
+
+      try {
+        const payload = {
+          notification: { // Standard notification object
+            title: "👁 Someone wants to Peek!",
+            body: "Open the app to respond to the request.",
+          },
+          data: { // Your custom data
+            requestId,
+            type: "peek_request_received",
+          },
+          apns: { // Apple Push Notification Service specific payload
+            payload: {
+              aps: {
+                alert: { // Ensures the alert is shown
+                  title: "👁 Someone wants to Peek!",
+                  body: "Open the app to respond to the request.",
+                },
+                sound: "default", // Standard sound
+                badge: 1, // Optional: to set the app icon badge
+                // silent background updates AND a visible notification.
+                // If only for visible notification, 'alert' is key.
+              },
+            },
+          },
+          token: fcmToken,
+        };
+        await admin.messaging().send(payload);
+        logger.info(
+            `✅ autoPingReceiver: Ping sent to ${receiverUid}`,
+            `for ${requestId}.`,
+        );
+      } catch (err) {
+        logger.error(
+            `❌ autoPingReceiver: Ping failed for ${receiverUid}:`, err,
+        );
+      }
+      return null;
     },
 );
 
-/**
- * Storage Trigger (v2): Moderates uploaded images.
- */
 const PEEK_STORAGE_BUCKET =
   process.env.FIREBASE_STORAGE_BUCKET || admin.app().options.storageBucket;
 
 exports.moderateImageUpload = onObjectFinalized(
     {bucket: PEEK_STORAGE_BUCKET, region: "us-central1"},
     async (event) => {
-    // StorageObjectData is on event.data
       const fileData = event.data;
       if (!fileData || !fileData.name || !fileData.bucket) {
         logger.error("moderateImageUpload: Missing file data in event.");
@@ -294,7 +327,7 @@ exports.moderateImageUpload = onObjectFinalized(
       const gcsUri = `gs://${bucketName}/${filePath}`;
       logger.info(`🔍 Moderating uploaded image: ${gcsUri}`);
 
-      try { // Added try-catch for Vision API call
+      try {
         const [result] = await visionClient.safeSearchDetection(gcsUri);
         const detections = result.safeSearchAnnotation;
         if (!detections) {
@@ -306,8 +339,8 @@ exports.moderateImageUpload = onObjectFinalized(
         const unsafe = ["LIKELY", "VERY_LIKELY"];
         if (
           (detections.adult && unsafe.includes(detections.adult)) ||
-          (detections.violence && unsafe.includes(detections.violence)) ||
-          (detections.racy && unsafe.includes(detections.racy))
+        (detections.violence && unsafe.includes(detections.violence)) ||
+        (detections.racy && unsafe.includes(detections.racy))
         ) {
           logger.warn(`🚫 Unsafe image detected. Deleting: ${gcsUri}`);
           await getStorage().bucket(bucketName).file(filePath).delete();
@@ -329,7 +362,7 @@ exports.cleanupExpiredPeeks = onSchedule(
       timeZone: "Etc/UTC",
     },
     async (event) => {
-      const now = admin.firestore.Timestamp.now();
+      const now = Timestamp.now();
       const expired = await db.collection("peek_requests")
           .where("status", "==", "pending_acceptance")
           .where("expiresAt", "<=", now)
@@ -349,7 +382,6 @@ exports.cleanupExpiredPeeks = onSchedule(
       });
       try {
         await batch.commit();
-        // logger.info(`✅ Cleaned up ${querySnapshot.size} expired peeks.`);
         logger.info(`✅ Cleaned up ${expired.size} expired peeks.`);
       } catch (error) {
         logger.error("❌ Error committing expired peeks batch:", error);

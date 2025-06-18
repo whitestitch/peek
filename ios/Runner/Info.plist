@@ -28,18 +28,21 @@
 	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+
 	<key>NSBonjourServices</key>
 	<array>
-		<string>_dartobservatory._tcp</string>
+		<string>_http._tcp</string>
+		<string>_https._tcp</string>
+		<string>_dart-vm-service._tcp</string>
+		<string>_firebase-emulator._tcp</string>
 	</array>
+
 	<key>NSCameraUsageDescription</key>
 	<string>We need camera access so you can take a Peek photo.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Needed to enable Flutter debugging features like hot reload and DevTools.</string>
+	<string>Peekio needs to connect to services on your local network for development features like Firebase Emulators and debugging.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>
-  		Peek uses your location—even when the app is in the background—to share your general area (city/region) with others when you send a Peek, if you enable this feature.
-	</string>
+	<string>Peek uses your location—even when the app is in the background—to share your general area (city/region) with others when you send a Peek, if you enable this feature.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Peek uses your location to show where Peeks are approximately sent from.</string>
 	<key>NSMicrophoneUsageDescription</key>
@@ -48,6 +51,32 @@
 	<string>Used for uploading your Peek image.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>localhost</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+				<key>NSExceptionMinimumTLSVersion</key>
+				<string>TLSv1.0</string>
+			</dict>
+			<key>127.0.0.1</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+				<key>NSExceptionMinimumTLSVersion</key>
+				<string>TLSv1.0</string>
+			</dict>
+		</dict>
+	</dict>
+
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>

@@ -145,11 +145,11 @@ class _PeekImageViewState extends ConsumerState<PeekImageView>
 
   Future<void> _fetchPeekData() async {
     // This should only be called if _isReceiverPremium is true
-    if (!_isReceiverPremium) {
-      if (mounted)
-        setState(() => _peekDataFetched = true); // Mark as done if not premium
-      return;
-    }
+    // if (!_isReceiverPremium) {
+    //   if (mounted)
+    //     setState(() => _peekDataFetched = true);
+    //   return;
+    // }
     debugPrint(
         "[PeekImageView] _fetchPeekData: Attempting to fetch data for requestId: ${widget.requestId}.");
     try {
@@ -169,43 +169,53 @@ class _PeekImageViewState extends ConsumerState<PeekImageView>
             "[PeekImageView] _fetchPeekData: Peek request document data: $data");
 
         fetchedSenderId = data?['senderId'] as String?;
+
         debugPrint(
             "[PeekImageView] _fetchPeekData: Fetched originalSenderId: $fetchedSenderId");
 
         // Fetch location if receiver wants it
-        if (_receiverWantsLocationReveal) {
-          location = data?['senderLocation'] as String?;
+        if (_isReceiverPremium) {
+          if (_receiverWantsLocationReveal) {
+            location = data?['senderLocation'] as String?;
+            debugPrint(
+                "[PeekImageView] _fetchPeekData: Fetched senderLocation (premium user): $location");
+          } else {
+            debugPrint(
+                "[PeekImageView] _fetchPeekData: Receiver is premium but doesn't want location reveal for display.");
+          }
+          displayName = data?['senderDisplayName'] as String?;
+          avatarUrl = data?['senderAvatarUrl'] as String?;
           debugPrint(
-              "[PeekImageView] _fetchPeekData: Fetched senderLocation: $location");
+              "[PeekImageView] _fetchPeekData: Fetched senderDisplayName (premium user): $displayName, senderAvatarUrl (premium user): ${avatarUrl != null ? 'Present' : 'null'}");
         } else {
           debugPrint(
-              "[PeekImageView] _fetchPeekData: Receiver doesn't want location reveal, skipping fetch.");
+              "[PeekImageView] _fetchPeekData: Non-premium user. Specific sender details (location, name, avatar) for display on PeekImageView will not be used.");
         }
-
-        displayName = data?['senderDisplayName'] as String?;
-        avatarUrl = data?['senderAvatarUrl'] as String?;
-        debugPrint(
-            "[PeekImageView] _fetchPeekData: Fetched senderDisplayName: $displayName, senderAvatarUrl: ${avatarUrl != null ? 'Present' : 'null'}");
-
-        // Fetch sender info (always fetch if premium, display depends on UI logic)
-        displayName = data?['senderDisplayName'] as String?;
-        avatarUrl = data?['senderAvatarUrl'] as String?;
-        debugPrint(
-            "[PeekImageView] _fetchPeekData: Fetched senderDisplayName: $displayName, senderAvatarUrl: ${avatarUrl != null ? 'Present' : 'null'}");
       } else {
         debugPrint(
             "[PeekImageView] _fetchPeekData: Peek request document ${widget.requestId} not found.");
       }
+
       if (mounted) {
         setState(() {
-          _senderLocation =
-              location; // Will be null if not fetched or not present
-          _senderDisplayName = displayName;
-          _senderAvatarUrl = avatarUrl;
+          // _originalSenderId is crucial for reactions and is set for ALL users.
           _originalSenderId = fetchedSenderId;
-          _peekDataFetched = true; // Mark all peek data fetching as attempted
+
+          // These are for display ON PeekImageView and are gated by premium status.
+          if (_isReceiverPremium) {
+            _senderLocation = location;
+            _senderDisplayName = displayName;
+            _senderAvatarUrl = avatarUrl;
+          } else {
+            // Explicitly ensure these are null for non-premium users for PeekImageView display
+            _senderLocation = null;
+            _senderDisplayName = null;
+            _senderAvatarUrl = null;
+          }
+          _peekDataFetched =
+              true; // Mark peek data fetching as attempted for all
           debugPrint(
-              "[PeekImageView] _fetchPeekData: State updated. _senderLocation: $_senderLocation, _senderDisplayName: $_senderDisplayName, _peekDataFetched: $_peekDataFetched");
+              "[PeekImageView] _fetchPeekData: State updated. _originalSenderId: $_originalSenderId, _senderLocation (for display): $_senderLocation, _senderDisplayName (for display): $_senderDisplayName, _peekDataFetched: $_peekDataFetched");
         });
       }
     } catch (e) {
@@ -213,9 +223,11 @@ class _PeekImageViewState extends ConsumerState<PeekImageView>
           "❌ [PeekImageView] _fetchPeekData: Error fetching data for ${widget.requestId}: $e");
       if (mounted) {
         setState(() {
-          _peekDataFetched = true; // Mark as fetched on error to unblock UI
+          _peekDataFetched =
+              true; // Mark as fetched even on error to unblock UI
+          // _originalSenderId might still be null if doc wasn't found or senderId was missing in doc.
           debugPrint(
-              "[PeekImageView] _fetchPeekData: State updated on error. _peekDataFetched: $_peekDataFetched");
+              "[PeekImageView] _fetchPeekData: State updated on error. _peekDataFetched: $_peekDataFetched, _originalSenderId: $_originalSenderId");
         });
       }
     }
@@ -307,22 +319,40 @@ class _PeekImageViewState extends ConsumerState<PeekImageView>
     _viewTimer = Timer(Duration(seconds: _viewDuration), () {
       if (!mounted) return;
       debugPrint("[PeekImageView] Non-premium view timer finished.");
+
+      // Call setState to hide the image
       setState(() {
         _showImage = false;
-      }); // Hide image
-      _decideNextNavigation();
+      });
+
+      // Defer navigation until after the current frame is built
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _decideNextNavigation();
+        }
+      });
     });
   }
 
   Future<void> _handleCloseAction() async {
     debugPrint("[PeekImageView] Close action initiated.");
     _viewTimer?.cancel(); // Stop timer if non-premium
-    if (mounted && !_isReceiverPremium) {
+
+    bool shouldHideImage = mounted && !_isReceiverPremium;
+
+    if (shouldHideImage) {
       setState(() {
-        _showImage = false;
-      }); // Hide image for non-premium on close
+        _showImage = false; // Hide image for non-premium on close
+      });
     }
-    await _decideNextNavigation(); // Navigate away
+
+    // Defer navigation until after the current frame is built,
+    // especially if setState was called.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _decideNextNavigation();
+      }
+    });
   }
 
   @override
@@ -659,6 +689,7 @@ class _PeekImageViewState extends ConsumerState<PeekImageView>
             ),
 
           // Display Sender Location (conditionally)
+          // Display Sender Location (conditionally)
           if (_isReceiverPremium &&
                   _receiverWantsLocationReveal &&
                   _senderLocation != null &&
@@ -703,55 +734,55 @@ class _PeekImageViewState extends ConsumerState<PeekImageView>
                   ),
                 ),
               ),
-            ),
+              //   ),
 
-          Positioned(
-            top: MediaQuery.of(context).padding.top + 10,
-            // Place it on the left if close button is on right, or adjust as needed
-            left: (_isReceiverPremium)
-                ? 60
-                : 15, // Offset if close button is present
-            child: CircleAvatar(
-              radius: 18,
-              backgroundColor: Colors.black.withOpacity(0.5),
-              child: PopupMenuButton<String>(
-                icon:
-                    const Icon(Icons.more_vert, color: Colors.white, size: 20),
-                color: peekSurfaceColor, // Themed background for dropdown
-                onSelected: (String value) {
-                  if (value == 'report') {
-                    _reportThisPeek();
-                  } else if (value == 'block') {
-                    _blockThisSender();
-                  }
-                },
-                itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-                  const PopupMenuItem<String>(
-                    value: 'report',
-                    child: ListTile(
-                      leading:
-                          Icon(Icons.flag_outlined, color: peekOnSurfaceColor),
-                      title: Text('Report Peek',
-                          style: TextStyle(color: peekOnSurfaceColor)),
-                    ),
-                  ),
-                  if (_originalSenderId != null &&
-                      _originalSenderId!
-                          .isNotEmpty) // Only show block if sender ID is known
-                    const PopupMenuItem<String>(
-                      value: 'block',
-                      child: ListTile(
-                        leading: Icon(Icons.block_flipped,
-                            color:
-                                peekOnSurfaceColor), // consider Icons.person_remove_outlined
-                        title: Text('Block Sender',
-                            style: TextStyle(color: peekOnSurfaceColor)),
-                      ),
-                    ),
-                ],
-              ),
+              // Positioned(
+              //   top: MediaQuery.of(context).padding.top + 10,
+              //   // Place it on the left if close button is on right, or adjust as needed
+              //   left: (_isReceiverPremium)
+              //       ? 60
+              //       : 15, // Offset if close button is present
+              //   child: CircleAvatar(
+              //     radius: 18,
+              //     backgroundColor: Colors.black.withOpacity(0.5),
+              //     child: PopupMenuButton<String>(
+              //       icon:
+              //           const Icon(Icons.more_vert, color: Colors.white, size: 20),
+              //       color: peekSurfaceColor, // Themed background for dropdown
+              //       onSelected: (String value) {
+              //         if (value == 'report') {
+              //           _reportThisPeek();
+              //         } else if (value == 'block') {
+              //           _blockThisSender();
+              //         }
+              //       },
+              //       itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+              //         const PopupMenuItem<String>(
+              //           value: 'report',
+              //           child: ListTile(
+              //             leading:
+              //                 Icon(Icons.flag_outlined, color: peekOnSurfaceColor),
+              //             title: Text('Report Peek',
+              //                 style: TextStyle(color: peekOnSurfaceColor)),
+              //           ),
+              //         ),
+              //         if (_originalSenderId != null &&
+              //             _originalSenderId!
+              //                 .isNotEmpty) // Only show block if sender ID is known
+              //           const PopupMenuItem<String>(
+              //             value: 'block',
+              //             child: ListTile(
+              //               leading: Icon(Icons.block_flipped,
+              //                   color:
+              //                       peekOnSurfaceColor), // consider Icons.person_remove_outlined
+              //               title: Text('Block Sender',
+              //                   style: TextStyle(color: peekOnSurfaceColor)),
+              //             ),
+              //           ),
+              //       ],
+              //     ),
+              //   ),
             ),
-          ),
         ],
       );
     } else {

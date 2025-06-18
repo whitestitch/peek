@@ -570,15 +570,12 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
       final downloadUrl = await storageRef.getDownloadURL();
 
       Map<String, dynamic> peekData = {
-        'status': 'accepted',
+        'status': 'responded_with_image', // MODIFIED: More descriptive status
         'storagePath': storagePath,
         'imageUrl': downloadUrl,
         'respondedAt': FieldValue.serverTimestamp(),
         'senderId': _auth.currentUser?.uid,
-        // Add sender's display name (use state variable which has default "Anon")
-        // Ensure _senderDisplayName is used, which holds the fetched/default name
         'senderDisplayName': _senderDisplayName ?? "Anon",
-        // Conditionally add avatar URL only if it exists and is not empty
         if (_senderAvatarUrl != null && _senderAvatarUrl!.isNotEmpty)
           'senderAvatarUrl': _senderAvatarUrl,
       };

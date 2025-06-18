@@ -83,9 +83,11 @@ class _AppShellState extends ConsumerState<AppShell> {
       newIndex = 0;
     } else if (path == '/stats') {
       newIndex = 1;
+    } else if (path == '/onboarding') {
+      newIndex = 2;
     } else if (path == '/settings') {
       // Assuming settings is also part of shell
-      newIndex = 2;
+      newIndex = 3;
     }
 
     if (_selectedIndex != newIndex) {
@@ -107,7 +109,10 @@ class _AppShellState extends ConsumerState<AppShell> {
         newRoute = '/stats';
         break;
       case 2:
-        newRoute = '/settings'; // Assuming settings is a shell route
+        newRoute = '/onboarding';
+        break;
+      case 3:
+        newRoute = '/settings';
         break;
       default:
         return;
@@ -136,7 +141,9 @@ class _AppShellState extends ConsumerState<AppShell> {
           ? material.AppBar(
               title: const material.Text('Peekio'),
               elevation: 1.0,
-              backgroundColor: material.Colors.transparent,
+              // backgroundColor: material.Colors.transparent,
+              backgroundColor: material.Colors.black.withOpacity(0.85),
+              // backgroundColor: peekBackgroundColor,
               leading:
                   material.Builder(// Use Builder to get context below Scaffold
                       builder: (material.BuildContext context) {
@@ -171,6 +178,11 @@ class _AppShellState extends ConsumerState<AppShell> {
                   label: 'Stats',
                 ),
                 material.BottomNavigationBarItem(
+                  icon: material.Icon(material.Icons.info),
+                  activeIcon: material.Icon(material.Icons.info),
+                  label: 'onboarding',
+                ),
+                material.BottomNavigationBarItem(
                   icon: material.Icon(material.Icons.settings),
                   activeIcon: material.Icon(material.Icons.settings),
                   label: 'Settings',
@@ -180,9 +192,11 @@ class _AppShellState extends ConsumerState<AppShell> {
               selectedItemColor: material.Theme.of(context).colorScheme.primary,
               unselectedItemColor: material.Colors.grey.shade600,
               onTap: (index) => _onItemTapped(index, context),
-              backgroundColor:
-                  material.Theme.of(context).bottomAppBarTheme.color ??
-                      material.Theme.of(context).colorScheme.surface,
+              // backgroundColor:
+              //     material.Theme.of(context).bottomAppBarTheme.color ??
+              //         material.Theme.of(context).colorScheme.surface,
+              // backgroundColor: peekBackgroundColor.withOpacity(1),
+              backgroundColor: material.Colors.black.withOpacity(1),
               type: material.BottomNavigationBarType.fixed,
               showUnselectedLabels: false,
               showSelectedLabels: true,

@@ -1,6 +1,7 @@
 // services/notification_service.dart
 import 'dart:async';
 import 'dart:io'; // Required for Platform check
+import 'package:flutter/material.dart';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -32,6 +33,10 @@ class NotificationService {
   final FirebaseMessaging _firebaseMessaging = FirebaseMessaging.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  final GlobalKey<NavigatorState> navigatorKey;
+  // Update constructor to require navigatorKey
+  NotificationService({required this.navigatorKey});
 
   // Store the router instance provided during initialization
   GoRouter? _router;
@@ -124,8 +129,22 @@ class NotificationService {
       debugPrint(
         '📨 [NotificationService FG] Notification: ${message.notification?.title}/${message.notification?.body}',
       );
-      // TODO: Implement foreground notification display
+
+      // Handle foreground peek requests immediately
+      final String? type =
+          message.data['type'] as String?; // Ensure you get type
+      if (type == 'peek_request_received') {
+        // final requestId = message.data['requestId']; // requestId is available if needed for other logic
+
+        // REMOVE OR COMMENT OUT THE DIRECT DIALOG CALL FROM HERE:
+        // _handleIncomingPeekRequest(requestId);
+
+        // Instead, just log and let the Riverpod provider drive the UI update via main.dart
+        debugPrint(
+            '🔍 [NotificationService FG] Peek request received (type: $type). Providers in main.dart should handle UI based on Firestore update.');
+      }
     });
+
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
       debugPrint(
         '📨 [NotificationService BG TAP] Notification tapped, Data: ${message.data}',
@@ -153,16 +172,14 @@ class NotificationService {
     // --- Extract required data fields ---
     final String? type =
         data['type'] as String?; // Crucial field to determine action
-    final String? requestId = data['request_id']
-        as String?; // Use 'request_id' as per previous examples
+    String? requestId = data['requestId'];
 
     // --- Validate base requirement: requestId ---
-    if (requestId == null || requestId.isEmpty) {
+    if (requestId != null) {
+      debugPrint("[NotificationService] Navigating with requestId: $requestId");
+    } else {
       debugPrint(
-        "⚠️ [NotificationService] Notification tap data missing 'request_id'. Cannot navigate.",
-      );
-      _router!.go('/'); // Fallback to home if critical data is missing
-      return;
+          "⚠️ [NotificationService] Notification tap data missing 'requestId' (camelCase). Cannot navigate.");
     }
 
     Uri? targetUri; // Variable to hold the navigation target
@@ -171,15 +188,15 @@ class NotificationService {
     switch (type) {
       case 'peek_request_received': // User needs to respond
         debugPrint(
-          "[NotificationService] Type: 'peek_request_received'. Navigating to /capture",
+          "[NotificationService] Type: 'peek_request_received'. Navigating to home where provider will show dialog",
         );
-        targetUri = Uri(
-          path: '/capture',
-          queryParameters: {'requestId': requestId},
-        );
+        // Navigate to home page where the pendingPeekRequestsProvider
+        // will automatically detect the new request and show the dialog
+        targetUri = Uri(path: '/');
         break;
 
-      case 'peek_image_ready': // User's request accepted, image ready to view
+      // User's request accepted, image ready to view
+      case 'peek_image_ready':
         final String? imageUrl =
             data['image_url'] as String?; // Get image URL for this type
         if (imageUrl == null || imageUrl.isEmpty) {
@@ -234,6 +251,39 @@ class NotificationService {
     // No else needed, default case in switch handles fallback or returns
   }
   // --- END OF MODIFIED _handleNotificationTap ---
+
+  void _handleIncomingPeekRequest(String requestId) {
+    final context = navigatorKey.currentContext;
+    if (context == null) {
+      debugPrint(
+          "❌ [NotificationService] No context available to show dialog.");
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Incoming Peek Request'),
+        content: const Text('Would you like to accept the peek?'),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              // TODO: Handle decline logic
+            },
+            child: const Text('Decline'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              // TODO: Handle accept logic
+            },
+            child: const Text('Accept'),
+          ),
+        ],
+      ),
+    );
+  }
 
   // --- Token Handling Methods (Keep As Is) ---
 

@@ -30,12 +30,14 @@ class _PeekReceiverPageState extends material.State<PeekReceiverPage> {
   void _listenForRequests() {
     FirebaseFirestore.instance
         .collection('peek_requests')
-        .where('status', isEqualTo: 'pending')
-        // Optional: You might want to filter requests not sent by the current user
-        // .where('from', isNotEqualTo: _auth.currentUser?.uid)
+        .where('receiverUid', isEqualTo: _auth.currentUser?.uid)
+        .where('status', isEqualTo: 'pending_acceptance')
         .orderBy('createdAt', descending: true)
         .limit(1)
         .snapshots()
+        // Optional: You might want to filter requests not sent by the current user
+        // .where('from', isNotEqualTo: _auth.currentUser?.uid)
+
         .listen((snapshot) {
       if (snapshot.docs.isNotEmpty) {
         final doc = snapshot.docs.first;
@@ -78,37 +80,69 @@ class _PeekReceiverPageState extends material.State<PeekReceiverPage> {
     final requestId = _currentRequest!.id;
     final String? uid = _auth.currentUser?.uid;
 
-    if (uid == null) {
-      material.debugPrint(
-          "Error: User not logged in, cannot respond to peek request.");
+    // if (uid == null) {
+    //   material.debugPrint(
+    //       "Error: User not logged in, cannot respond to peek request.");
+    //   if (mounted) {
+    //     material.ScaffoldMessenger.of(context).showSnackBar(
+    //       const material.SnackBar(
+    //           content:
+    //               material.Text("Error: You must be logged in to respond.")),
+    //     );
+    //   }
+    //   return;
+    // }
+
+    try {
+      if (accept) {
+        await docRef.update({
+          'status':
+              'accepted', // This status might be brief if PhotoCapturePage updates it again
+          'acceptedAt': FieldValue.serverTimestamp(),
+        });
+        material.debugPrint(
+            '[PeekReceiverPage] Request $requestId accepted, status updated.');
+
+        if (!mounted) return;
+        // Navigate ONCE to the unified /capture route
+        context.go('/capture?requestId=$requestId&mode=response');
+        material.debugPrint(
+            '[PeekReceiverPage] Navigated to /capture?requestId=$requestId&mode=response');
+      } else {
+        // Decline
+        await docRef.update({
+          'status': 'declined',
+          'declinedAt': FieldValue.serverTimestamp(),
+        });
+        material.debugPrint(
+            '[PeekReceiverPage] Request $requestId declined, status updated.');
+
+        if (!mounted) return;
+        // For decline, the receiver doesn't navigate to a "declined" page for themselves.
+        // They would typically go back or the UI would simply reflect no more request.
+        // If this page is a full screen, navigating home might be appropriate.
+        // Or, if it's part of a list, just let the list rebuild.
+        // For consistency with the dialog (which just pops), if this page was shown as a dialog
+        // or if we want to mimic the dialog dismissing, this could pop or go home.
+        // Given it's a page, context.go('/') might be best if they shouldn't see other requests immediately.
+        // However, your flow for the SENDER to see PeekDeclinedPage is separate.
+        // Let's assume the receiver goes home after declining on this page.
+        context.go('/'); // Or simply pop if this page was pushed modally.
+        material.debugPrint('[PeekReceiverPage] Declined, navigated to /');
+      }
+    } catch (e) {
+      material
+          .debugPrint('❌ [PeekReceiverPage] Error responding to request: $e');
       if (mounted) {
         material.ScaffoldMessenger.of(context).showSnackBar(
-          const material.SnackBar(
-              content:
-                  material.Text("Error: You must be logged in to respond.")),
+          material.SnackBar(
+            content: material.Text(accept
+                ? 'Failed to accept Peek. Please try again.'
+                : 'Failed to decline Peek. Please try again.'),
+            backgroundColor: material.Colors.redAccent,
+          ),
         );
       }
-      return;
-    }
-
-    await docRef.update({
-      'status': accept ? 'accepted' : 'rejected',
-      'to': uid,
-      'respondedAt': FieldValue.serverTimestamp(),
-    });
-
-    if (!mounted) return;
-
-    if (accept) {
-      context.go('/capture?requestId=$requestId');
-    } else {
-      // If rejected, simply clear the current request from UI and stay on page,
-      // or navigate home. Current behavior navigates home.
-      // To stay on page and wait for next:
-      // setState(() {
-      //   _currentRequest = null;
-      // });
-      context.go('/');
     }
   }
 
@@ -223,7 +257,7 @@ class _PeekReceiverPageState extends material.State<PeekReceiverPage> {
                           ),
                           onPressed: () => _respondToRequest(accept: true),
                           icon: const material.Icon(material.Icons.blur_on),
-                          label: const material.Text('Accept'),
+                          label: const material.Text('Accept & Take Photo'),
                         ),
                         const material.SizedBox(height: 16),
                         material.OutlinedButton.icon(
@@ -240,7 +274,7 @@ class _PeekReceiverPageState extends material.State<PeekReceiverPage> {
                           ),
                           onPressed: () => _respondToRequest(accept: false),
                           icon: const material.Icon(material.Icons.close),
-                          label: const material.Text('Not Now'),
+                          label: const material.Text('Decline'),
                         ),
                       ],
                     ),

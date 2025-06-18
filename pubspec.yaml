@@ -12,16 +12,16 @@ dependencies:
     sdk: flutter
 
   # Firebase core tools
-  firebase_core: ^3.1.1 # Keep previous update
-
-  firebase_auth: ^5.5.3 # Updated patch
+  firebase_core: ^3.13.1 # Keep previous update
+  firebase_auth: ^5.5.4 # Updated patch
   cloud_firestore: ^5.6.7 # Updated patch
-
   firebase_storage: ^12.1.0 # Keep previous update
   firebase_messaging: ^15.0.1 # Keep previous update
   firebase_analytics: ^11.0.1 # Keep previous update
   firebase_in_app_messaging: ^0.8.0 # Keep previous update
   firebase_ui_auth: ^1.13.1 # Keep previous update
+  cloud_functions: ^5.5.1
+
   timeago: ^3.6.1
   rive: ^0.13.4 # Keep previous update (Check latest safe minor if desired: ^0.13.x)
   geolocator: ^11.0.0
@@ -43,9 +43,9 @@ dependencies:
   # --- NOTE: Keep major version locked for now ---
   flutter_hooks: ^0.20.5 # Keep at 0.20.x
   url_launcher: ^6.3.0 # Keep previous update
-  in_app_review: ^2.0.9 # Keep, check latest safe minor if desired
+  in_app_review: ^2.0.10 # Keep, check latest safe minor if desired
 
-  cloud_functions: ^5.5.0
+  device_info_plus: ^11.4.0
 
   # UI enhancements
   # google_fonts: ^6.2.1 # Keep removed

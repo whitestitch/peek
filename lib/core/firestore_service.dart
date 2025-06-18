@@ -70,9 +70,36 @@ class FirestoreService {
               .toList(),
         );
   }
-  // --- End Existing Notes Methods ---
 
-  // --- ✨ NEW: Method to update user location preference ---
+  /// Updates or saves the FCM token for the current user
+  Future<void> updateFCMToken(String token) async {
+    final userId = _currentUserId;
+    if (userId == null) {
+      debugPrint(
+          "[FirestoreService] Cannot update FCM token: User not authenticated");
+      throw Exception("User not authenticated.");
+    }
+
+    try {
+      await updateUserPreference({'fcmToken': token});
+      debugPrint(
+          "[FirestoreService] FCM token updated successfully for user: $userId");
+    } catch (e) {
+      debugPrint("[FirestoreService] Error updating FCM token: $e");
+      rethrow;
+    }
+  }
+
+  /// Gets the current user's FCM token
+  Future<String?> getFCMToken() async {
+    final userDoc = await getCurrentUserDocument();
+    if (userDoc?.exists == true) {
+      final data = userDoc!.data();
+      return data?['fcmToken'] as String?;
+    }
+    return null;
+  }
+
   /// Updates the location sharing preference for the current user in the /users/{uid} document.
   Future<void> updateUserLocationPreference(bool isEnabled) async {
     final user = _auth.currentUser; // Use instance variable
@@ -172,92 +199,76 @@ class FirestoreService {
     String? finalDisplayName;
 
     try {
-      await _db.runTransaction((transaction) async {
-        final docSnap = await transaction.get(userDocRef);
-        final Map<String, dynamic> data = docSnap.data() ?? {};
-        final currentName = data['displayName'] as String?;
+      // First check if document exists
+      final docSnap = await userDocRef.get();
 
-        if (currentName == null || currentName.trim().isEmpty) {
-          finalDisplayName = _generateNickname();
-          debugPrint(
-              "[FirestoreService] ensureDisplayNameExists (TX): User $userId needs displayName. Generating: $finalDisplayName");
-
-          Map<String, dynamic> dataToSet = {
-            'displayName': finalDisplayName,
-            'updatedAt': FieldValue.serverTimestamp()
-          };
-
-          if (!docSnap.exists) {
-            // If document doesn't exist, add essential fields
-            dataToSet.addAll({
-              'uid': userId,
-              'createdAt': FieldValue.serverTimestamp(),
-              'isPremium': false,
-              'likesReceivedCount': 0,
-              'dislikesReceivedCount': 0,
-              'dailyPeekCount': 0,
-              'peekCountLastReset': null,
-              'lastPeekRequestTimestamp': null,
-              'blockedSenderIds': [],
-              'shareLocationPreference': false, // Add default
-              'seeOthersLocationPreference': false, // Add default
-            });
-            transaction.set(userDocRef, dataToSet); // Use set if creating
-          } else {
-            transaction.update(
-                userDocRef, dataToSet); // Use update if only displayName
-          }
-        } else {
-          finalDisplayName = currentName;
-        }
-      });
-      debugPrint(
-          "✅ ensureDisplayNameExists transaction succeeded for $userId. Name: $finalDisplayName");
-      return finalDisplayName;
-    } catch (txErr, stack) {
-      debugPrint(
-          "⚠️ Transaction failed for ensureDisplayNameExists (user $userId)—falling back to set(): $txErr\n$stack");
-      try {
-        final docSnap = await userDocRef.get();
-        final Map<String, dynamic> currentData = docSnap.data() ?? {};
-        final currentName = currentData['displayName'] as String?;
-
-        if ((currentName == null || currentName.trim().isEmpty)) {
-          finalDisplayName = _generateNickname();
-          debugPrint(
-              "[FirestoreService] ensureDisplayNameExists (Fallback Set): User $userId needs displayName. Generating: $finalDisplayName");
-
-          Map<String, dynamic> dataToSet = {
-            'displayName': finalDisplayName,
-            'updatedAt': FieldValue.serverTimestamp()
-          };
-          if (!docSnap.exists) {
-            // If document doesn't exist, add essential fields
-            dataToSet.addAll({
-              'uid': userId,
-              'createdAt': FieldValue.serverTimestamp(),
-              'isPremium': false,
-              'likesReceivedCount': 0,
-              'dislikesReceivedCount': 0,
-              'dailyPeekCount': 0,
-              'peekCountLastReset': null,
-              'lastPeekRequestTimestamp': null,
-              'blockedSenderIds': [],
-              'shareLocationPreference': false,
-              'seeOthersLocationPreference': false,
-            });
-          }
-          // Use set with merge true to create or update only specified fields
-          await userDocRef.set(dataToSet, SetOptions(merge: true));
-          debugPrint(
-              "✅ ensureDisplayNameExists fallback set() succeeded for $userId. Name: $finalDisplayName");
-        } else {
-          finalDisplayName = currentName;
-        }
-        return finalDisplayName;
-      } catch (setErr, setStack) {
+      if (!docSnap.exists) {
+        // Document doesn't exist, create it directly
+        finalDisplayName = _generateNickname();
         debugPrint(
-            "❌ Fallback set() for ensureDisplayNameExists (user $userId) also failed: $setErr\n$setStack");
+            "[FirestoreService] Creating new user document for $userId with display name: $finalDisplayName");
+
+        await userDocRef.set({
+          'uid': userId,
+          'displayName': finalDisplayName,
+          'createdAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+          'isPremium': false,
+          'likesReceivedCount': 0,
+          'dislikesReceivedCount': 0,
+          'dailyPeekCount': 0,
+          'peekCountLastReset': null,
+          'lastPeekRequestTimestamp': null,
+          'blockedSenderIds': [],
+          'shareLocationPreference': false,
+          'seeOthersLocationPreference': false,
+        });
+
+        debugPrint("✅ User document created successfully for $userId");
+        return finalDisplayName;
+      }
+
+      // Document exists, check if it needs displayName
+      final currentData = docSnap.data() ?? {};
+      final currentName = currentData['displayName'] as String?;
+
+      if (currentName == null || currentName.trim().isEmpty) {
+        finalDisplayName = _generateNickname();
+        debugPrint(
+            "[FirestoreService] Updating display name for existing user $userId: $finalDisplayName");
+
+        await userDocRef.update({
+          'displayName': finalDisplayName,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+
+        debugPrint("✅ Display name updated successfully for $userId");
+      } else {
+        finalDisplayName = currentName;
+        debugPrint(
+            "✅ User $userId already has display name: $finalDisplayName");
+      }
+
+      return finalDisplayName;
+    } catch (e, stack) {
+      debugPrint("❌ Error in ensureDisplayNameExists for user $userId: $e");
+      debugPrint("Stack trace: $stack");
+
+      // Try one more time with basic set
+      try {
+        finalDisplayName = _generateNickname();
+        await userDocRef.set({
+          'uid': userId,
+          'displayName': finalDisplayName,
+          'createdAt': FieldValue.serverTimestamp(),
+          'isPremium': false,
+          'dailyPeekCount': 0,
+        }, SetOptions(merge: true));
+
+        debugPrint("✅ Fallback set successful for $userId");
+        return finalDisplayName;
+      } catch (fallbackError) {
+        debugPrint("❌ Even fallback failed: $fallbackError");
         return null;
       }
     }

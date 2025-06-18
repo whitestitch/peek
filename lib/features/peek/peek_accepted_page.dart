@@ -12,7 +12,7 @@ class PeekAcceptedPage extends material.StatefulWidget {
   static String pageBackgroundPath = 'assets/images/onboarding_bg_02.jpg';
 
   const PeekAcceptedPage({
-    material.Key? key, // Use material.Key
+    material.Key? key,
     required this.requestId,
     required this.imageUrl,
   }) : super(key: key);
@@ -37,17 +37,18 @@ class _PeekAcceptedPageState extends material.State<PeekAcceptedPage> {
   void _startNavigationTimer() {
     _navigationTimer = Timer(_displayDuration, () {
       if (mounted) {
-        material.debugPrint(
-            "[PeekAcceptedPage] Timer elapsed. Navigating to SplashPage.");
-        // Construct the URI for SplashPage
-        final uri = Uri(
-          path: '/splash', // Path for SplashPage
-          queryParameters: {
-            'requestId': widget.requestId,
-            'initialImageUrl': widget.imageUrl,
-          },
-        );
-        context.go(uri.toString());
+        // This page is for User A (sender) and imageUrl (User B's response) SHOULD be present.
+        if (widget.imageUrl.isEmpty) {
+          material.debugPrint(
+              "[PeekAcceptedPage] Timer elapsed. ERROR: ImageUrl is empty! This indicates an issue in sender's flow. Navigating to home as fallback.");
+          context.go('/');
+        } else {
+          material.debugPrint(
+              "[PeekAcceptedPage] Timer elapsed. Navigating User A to /splash with received image: ${widget.imageUrl}");
+          context.go(
+              // Ensure imageUrl is properly encoded for query parameter
+              '/splash?requestId=${widget.requestId}&initialImageUrl=${Uri.encodeComponent(widget.imageUrl)}');
+        }
       }
     });
   }
@@ -103,6 +104,7 @@ class _PeekAcceptedPageState extends material.State<PeekAcceptedPage> {
                       size: 60,
                     ),
                   ),
+
                   const material.SizedBox(height: 32),
 
                   // --- Main Confirmation Text ---
