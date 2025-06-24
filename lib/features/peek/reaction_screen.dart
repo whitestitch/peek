@@ -1,7 +1,9 @@
 // lib/features/peek/reaction_screen.dart
 
 import 'dart:ui'; // Required for ImageFilter
-import 'package:firebase_auth/firebase_auth.dart'; // Required for FirebaseAuth
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,13 +16,11 @@ import 'package:peek/core/firestore_service.dart';
 class ReactionScreen extends ConsumerStatefulWidget {
   final String requestId;
   final String originalSenderUid;
-  final String imageUrl; // Keeping imageUrl for background display
 
   const ReactionScreen({
     super.key,
     required this.requestId,
     required this.originalSenderUid,
-    required this.imageUrl,
   });
 
   @override
@@ -28,9 +28,59 @@ class ReactionScreen extends ConsumerStatefulWidget {
 }
 
 class _ReactionScreenState extends ConsumerState<ReactionScreen> {
+  String? _selfFetchedImageUrl;
+  bool _isLoading = true;
+  String? _loadError;
+
   bool _isSubmitting = false;
   bool _isProcessingAction = false;
-  // _activeAnimationAsset is no longer needed here
+  bool _reactionSubmitted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchPeekData(); // NEW: Call the fetch method on init
+  }
+
+  // NEW: Method to fetch peek data and generate a fresh URL
+  Future<void> _fetchPeekData() async {
+    try {
+      final peekDoc = await FirebaseFirestore.instance
+          .collection('peek_requests')
+          .doc(widget.requestId)
+          .get();
+
+      if (!peekDoc.exists) {
+        throw Exception("Peek document not found.");
+      }
+
+      final data = peekDoc.data();
+      final storagePath = data?['storagePath'] as String?;
+
+      if (storagePath == null || storagePath.isEmpty) {
+        throw Exception("Storage path is missing from the peek document.");
+      }
+
+      // Generate a fresh, guaranteed-valid download URL
+      final freshImageUrl =
+          await FirebaseStorage.instance.ref(storagePath).getDownloadURL();
+
+      if (mounted) {
+        setState(() {
+          _selfFetchedImageUrl = freshImageUrl;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint("❌ [ReactionScreen] Failed to fetch peek data: $e");
+      if (mounted) {
+        setState(() {
+          _loadError = "Could not load Peek. Please try again.";
+          _isLoading = false;
+        });
+      }
+    }
+  }
 
   // Methods relocated and adapted from PeekImageView
   Future<void> _reportThisPeek() async {
@@ -78,7 +128,7 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
 
         await firestoreService.addReport(
           peekRequestId: widget.requestId,
-          reportedImageUrl: widget.imageUrl,
+          reportedImageUrl: _selfFetchedImageUrl ?? '',
           reportedSenderId: widget.originalSenderUid,
           reporterId: reporterId,
           reason: "objectionable_content_from_reaction_screen",
@@ -172,25 +222,54 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
       _isSubmitting = true;
     });
 
+    // STEP 1: LOG THAT THE PROCESS IS STARTING
+    debugPrint("[ReactionScreen] Submitting reaction: $reactionType...");
+
     final firestoreService = ref.read(firestoreServiceProvider);
 
     try {
-      if (reactionType == 'like') {
-        debugPrint(
-            "[ReactionScreen] User chose LIKE for Peek (requestId: ${widget.requestId}). Incrementing for sender: ${widget.originalSenderUid}");
-        await firestoreService.incrementLikesReceived(widget.originalSenderUid);
-      } else if (reactionType == 'dislike') {
-        debugPrint(
-            "[ReactionScreen] User chose DISLIKE for Peek (requestId: ${widget.requestId}). Incrementing for sender: ${widget.originalSenderUid}");
-        await firestoreService
-            .incrementDislikesReceived(widget.originalSenderUid);
-      } else if (reactionType == 'skip') {
-        debugPrint(
-            "[ReactionScreen] User chose SKIP for Peek (requestId: ${widget.requestId}).");
-      }
+      await firestoreService.addReactionToPeek(widget.requestId, reactionType);
 
+      if (reactionType == 'like' || reactionType == 'dislike') {
+        // We now call BOTH the analytics incrementer and the new real-time event trigger
+        if (reactionType == 'like') {
+          await firestoreService
+              .incrementLikesReceived(widget.originalSenderUid);
+        } else {
+          await firestoreService
+              .incrementDislikesReceived(widget.originalSenderUid);
+        }
+
+        // This is the new, crucial call for the real-time animation
+        await firestoreService.triggerReactionEvent(
+          targetUserId: widget.originalSenderUid,
+          reactionType: reactionType,
+          peekRequestId: widget.requestId,
+        );
+      }
+      // "skip" requires no database action
+
+      // STEP 2: LOG SUCCESS AND UPDATE UI
+      debugPrint(
+          "[ReactionScreen] Database update successful! Showing confirmation UI...");
       if (mounted) {
-        context.go('/');
+        setState(() {
+          _reactionSubmitted = true;
+          _isSubmitting = false; // Turn off the loader, turn on the checkmark
+        });
+
+        // STEP 3: LOG THE DELAY
+        debugPrint(
+            "[ReactionScreen] Starting 2.5 second delay before navigating home...");
+        await Future.delayed(
+            const Duration(milliseconds: 2500)); // Increased delay
+
+        // STEP 4: LOG THE FINAL NAVIGATION
+        if (mounted) {
+          debugPrint(
+              "[ReactionScreen] Delay finished. Navigating to home ('/').");
+          context.go('/');
+        }
       }
     } catch (e) {
       debugPrint("❌ [ReactionScreen] Error processing reaction: $e");
@@ -201,7 +280,7 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
               backgroundColor: Colors.redAccent),
         );
         setState(() {
-          _isSubmitting = false;
+          _isSubmitting = false; // Reset on error
         });
       }
     }
@@ -211,6 +290,29 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
   Widget build(BuildContext context) {
     final safePadding = MediaQuery.of(context).padding;
 
+    if (_isLoading) {
+      return const Scaffold(
+        backgroundColor: Colors.black,
+        body: Center(child: CircularProgressIndicator(color: Colors.white)),
+      );
+    }
+
+    if (_loadError != null || _selfFetchedImageUrl == null) {
+      return Scaffold(
+        backgroundColor: Colors.black,
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Text(
+              _loadError ?? "An unknown error occurred.",
+              style: const TextStyle(color: Colors.redAccent, fontSize: 18),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
@@ -218,7 +320,7 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
         children: [
           // Layer 1: Background Image (the Peek itself)
           Image.network(
-            widget.imageUrl,
+            _selfFetchedImageUrl!,
             fit: BoxFit.cover,
             loadingBuilder: (context, child, loadingProgress) {
               if (loadingProgress == null) return child;
@@ -226,6 +328,7 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
                   child: CircularProgressIndicator(color: Colors.white));
             },
             errorBuilder: (context, error, stackTrace) {
+              // This error should now be much rarer
               debugPrint(
                   "Error loading background image in ReactionScreen: $error");
               return Container(
@@ -324,66 +427,89 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
                 const Spacer(),
 
                 // Main Reaction Prompt and Buttons
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      "How was this Peek?",
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context)
-                          .textTheme
-                          .headlineSmall
-                          ?.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 28, // Slightly adjusted for better fit
-                              shadows: [
-                            const Shadow(
-                                blurRadius: 2.0,
-                                color: Colors.black54,
-                                offset: Offset(1, 1))
-                          ]),
-                    ),
-                    const SizedBox(height: 30), // Reduced spacing
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        // Like Button
-                        ElevatedButton(
-                          onPressed: (_isSubmitting || _isProcessingAction)
-                              ? null
-                              : () => _handleReaction('like'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: peekPrimaryColor,
-                            shape: const CircleBorder(),
-                            padding:
-                                const EdgeInsets.all(22), // Adjusted padding
-                            elevation: 5,
-                          ),
-                          child: Icon(Icons.favorite_rounded,
-                              size: 30, color: peekBackgroundColor),
+                if (_reactionSubmitted)
+                  // This is the confirmation UI
+                  const Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.check_circle_outline_rounded,
+                          color: Colors.white, size: 70),
+                      SizedBox(height: 20),
+                      Text(
+                        "Thanks for your feedback!",
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 24,
                         ),
-                        // Dislike Button
-                        ElevatedButton(
-                          onPressed: (_isSubmitting || _isProcessingAction)
-                              ? null
-                              : () => _handleReaction('dislike'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor:
-                                Colors.blueGrey.shade600, // Adjusted color
-                            shape: const CircleBorder(),
-                            padding:
-                                const EdgeInsets.all(22), // Adjusted padding
-                            elevation: 5,
+                      ),
+                    ],
+                  )
+                else
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        "How was this Peek?",
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context)
+                            .textTheme
+                            .headlineSmall
+                            ?.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                                fontSize:
+                                    28, // Slightly adjusted for better fit
+                                shadows: [
+                              const Shadow(
+                                  blurRadius: 2.0,
+                                  color: Colors.black54,
+                                  offset: Offset(1, 1))
+                            ]),
+                      ),
+                      const SizedBox(height: 30), // Reduced spacing
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          // Like Button
+                          ElevatedButton(
+                            onPressed: (_isSubmitting || _isProcessingAction)
+                                ? null
+                                : () => _handleReaction('like'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: peekPrimaryColor,
+                              shape: const CircleBorder(),
+                              padding:
+                                  const EdgeInsets.all(22), // Adjusted padding
+                              elevation: 5,
+                            ),
+                            child: Icon(Icons.favorite_rounded,
+                                size: 30, color: peekBackgroundColor),
                           ),
-                          child: Icon(Icons.thumb_down_alt_rounded,
-                              size: 30, color: Colors.white70),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                const Spacer(), // Pushes buttons towards center if column takes full height
+                          // Dislike Button
+                          ElevatedButton(
+                            onPressed: (_isSubmitting || _isProcessingAction)
+                                ? null
+                                : () => _handleReaction('dislike'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor:
+                                  Colors.blueGrey.shade600, // Adjusted color
+                              shape: const CircleBorder(),
+                              padding:
+                                  const EdgeInsets.all(22), // Adjusted padding
+                              elevation: 5,
+                            ),
+                            child: Icon(Icons.thumb_down_alt_rounded,
+                                size: 30, color: Colors.white70),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+
+                // Pushes buttons towards center if column takes full height
+                const Spacer(),
               ],
             ),
           ),

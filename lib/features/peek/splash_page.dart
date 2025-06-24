@@ -57,11 +57,10 @@ class _SplashPageState extends State<SplashPage> {
           "[SplashPage] No initialImageUrl, fetching from Firestore...",
         );
         // Fetch from Firestore if URL not provided
-        final snap =
-            await FirebaseFirestore.instance
-                .collection('peek_requests')
-                .doc(widget.requestId)
-                .get();
+        final snap = await FirebaseFirestore.instance
+            .collection('peek_requests')
+            .doc(widget.requestId)
+            .get();
 
         // Check mounted status after await
         if (!mounted) return;
@@ -141,16 +140,15 @@ class _SplashPageState extends State<SplashPage> {
           "[SplashPage] Countdown finished. Navigating to /peek-image.",
         );
         if (mounted) {
-          // Navigate to the image view page, passing the necessary data
+          // MODIFIED: Pass parameters via `extra` to align with the router's expectation.
+          // This is more robust for complex data than using query parameters.
           context.go(
-            Uri(
-              path: '/peek-image',
-              queryParameters: {
-                'requestId': widget.requestId,
-                'imageUrl':
-                    _imageUrl!, // URL should be non-null here if no error occurred
-              },
-            ).toString(),
+            '/peek-image',
+            extra: {
+              'requestId': widget.requestId,
+              'imageUrl':
+                  _imageUrl!, // URL should be non-null here if no error occurred
+            },
           );
         }
       }

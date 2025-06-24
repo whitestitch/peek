@@ -169,6 +169,22 @@ class HomeStateNotifier extends AutoDisposeAsyncNotifier<HomeState> {
           .read(peekControllerProvider.notifier)
           .createPeekRequestAndUpdateStats(needsDailyReset: needsReset);
       if (context.mounted && requestId != null) {
+        // OPTIMISTIC UI UPDATE: Immediately set the state to cooldown
+        // to prevent a flicker of the old state upon returning to this page.
+        const cooldown =
+            Duration(seconds: 5); // Ensure this matches the provider's logic
+        state = AsyncValue.data(
+          HomeState(
+            isPremium:
+                state.value?.isPremium ?? false, // Carry over premium status
+            isButtonEnabled: false,
+            buttonText:
+                '...', // This text will be immediately replaced by the countdown timer in the UI
+            subtitleText: 'Please wait for cooldown.',
+            cooldownEndTime: DateTime.now().add(cooldown),
+          ),
+        );
+
         context.go('/wait?requestId=$requestId');
       }
     } catch (e) {

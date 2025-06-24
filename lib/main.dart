@@ -38,8 +38,10 @@ import 'features/peek/photo_capture_page.dart';
 import 'package:peek/core/firestore_service.dart';
 // For navigatorKeyProvider
 import 'package:peek/features/peek/providers/peek_providers.dart';
-import 'core/root_realtime_listener.dart';
+
 import 'core/router.dart';
+
+import 'services/notification_service.dart';
 
 void testEmulatorConnection() async {
   // Use the Firestore port or Emulator UI port that worked in your browser
@@ -106,50 +108,6 @@ const bool useFirebaseEmulator =
 
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
-@pragma('vm:entry-point')
-Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  debugPrint("--- Background Handler Started ---");
-  // Crucial: Ensure Firebase is initialized in this background isolate
-  try {
-    if (Firebase.apps.isEmpty) {
-      await Firebase.initializeApp(
-        options: DefaultFirebaseOptions.currentPlatform,
-      );
-      debugPrint("✅ Firebase initialized for Background Handler (was empty).");
-    } else {
-      Firebase.app();
-      debugPrint(
-          "ℹ️ Firebase already initialized for Background Handler (apps not empty).");
-    }
-  } catch (e) {
-    if (e is FirebaseException && e.code == 'no-app') {
-      debugPrint(
-          "🔄 No Firebase app found in BG Handler despite apps not empty check—re-initializing…");
-      await Firebase.initializeApp(
-          options: DefaultFirebaseOptions.currentPlatform);
-      debugPrint("✅ Firebase re-initialized in BG Handler.");
-    } else {
-      debugPrint("❌ Error initializing Firebase in Background Handler: $e");
-    }
-  }
-
-  debugPrint("📨 [BG Handler] Message received: ${message.messageId}");
-  if (message.data.isNotEmpty) {
-    debugPrint("   Data: ${message.data}");
-
-    // Handle peek request notifications
-    if (message.data['type'] == 'peek_request') {
-      debugPrint("🔍 [BG Handler] Peek request notification received");
-      // You can add local notification logic here if needed
-    }
-  }
-
-  // Handle notification payload
-  if (message.notification != null) {
-    debugPrint("📨 [BG Handler] Notification: ${message.notification!.title}");
-  }
-}
-
 // Disable Firebase Dynamic Links handling during initial setup
 Future<void> _configureDynamicLinks() async {
   // Only configure dynamic links after onboarding
@@ -170,7 +128,14 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   debugPrint("--- main() Started: WidgetsFlutterBinding initialized.");
 
+  // Initialize cameras at startup
+  await initializeCameras();
+
   // 2. Lock orientation to portrait only
+  FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+  debugPrint("✅ Background message handler registered.");
+
+  // 3. Lock orientation to portrait only
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
@@ -412,7 +377,6 @@ Future<void> main() async {
   runApp(
     ProviderScope(
       overrides: [
-        // Use the correct import path for rootNavigatorKeyProvider
         navigatorKeyProvider.overrideWithValue(rootNavigatorKey),
       ],
       child: const PeekApp(),
@@ -422,8 +386,6 @@ Future<void> main() async {
   debugPrint("--- main() Finished: runApp called ---");
 }
 
-bool _shouldProcessDeepLinks = false;
-
 class PeekApp extends ConsumerStatefulWidget {
   const PeekApp({super.key});
 
@@ -431,63 +393,45 @@ class PeekApp extends ConsumerStatefulWidget {
   ConsumerState<PeekApp> createState() => _PeekAppState();
 }
 
-//   @override
-//   Widget build(BuildContext context, WidgetRef ref) {
-//     final router = ref.watch(routerProvider);
-//     return MaterialApp.router(
-//       routerConfig: router,
-//       title: 'PEEK',
-//       debugShowCheckedModeBanner: false,
-//       theme: ThemeData(
-//         brightness: Brightness.dark,
-//         fontFamily: 'Poppins',
-//         useMaterial3: true,
-//         scaffoldBackgroundColor: peekBackgroundColor,
-//         // ... and the rest of your extensive theme data ...
-//       ),
-//     );
-//   }
-// }
-
-class _PeekAppState extends ConsumerState<PeekApp> {
-  StreamSubscription? _directFirestoreListener;
+class _PeekAppState extends ConsumerState<PeekApp> with WidgetsBindingObserver {
+  // StreamSubscription? _directFirestoreListener;
   // ---------
   StreamSubscription<List<PurchaseDetails>>? _purchaseSubscription;
   final FirebaseAnalytics _analytics = FirebaseAnalytics.instance;
 
-  // @override
-  // void initState() {
-  //   super.initState();
-  //   debugPrint("[PeekApp] initState called.");
+  final Set<String> _processedRequestIds = <String>{};
+  bool _isShowingDialog = false;
 
-  //   _initializeIAPListener();
-
-  //   // Force sign out on app start in debug mode to ensure fresh state
-  //   if (kDebugMode) {
-  //     debugPrint("[PeekApp] Debug mode: Checking for stale auth state...");
-  //     FirebaseAuth.instance.signOut().then((_) {
-  //       debugPrint("[PeekApp] Signed out any existing user for fresh start");
-  //     }).catchError((error) {
-  //       debugPrint("[PeekApp] Error signing out: $error");
-  //     });
-  //   }
-
-  //   FirebaseAuth.instance.authStateChanges().listen((User? user) {
-  //     if (mounted && user != null) {
-  //       debugPrint("[PeekApp] Auth state changed - user: ${user.uid}");
-  //       _initializeUser(user);
-  //     } else if (user == null) {
-  //       debugPrint("[PeekApp] Auth state changed - user signed out");
-  //       _directFirestoreListener?.cancel();
-  //     }
-  //   });
-  // }
+  String? _pendingDialogRequestId;
 
   @override
   void initState() {
     super.initState();
     debugPrint("[PeekApp] initState called.");
+    WidgetsBinding.instance.addObserver(this);
     _initializeApp();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future.delayed(const Duration(seconds: 1), () {
+        if (mounted && _pendingDialogRequestId != null) {
+          // Try to show any pending dialog
+          final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+          if (currentUserId != null) {
+            ref.invalidate(pendingPeekRequestsProvider);
+          }
+        }
+      });
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed) {
+      debugPrint("[PeekApp] App resumed - refreshing peek requests");
+      // Just invalidate - the listener in build will handle the rest
+      ref.invalidate(pendingPeekRequestsProvider);
+    }
   }
 
   void _initializeApp() async {
@@ -508,7 +452,8 @@ class _PeekAppState extends ConsumerState<PeekApp> {
         _initializeUser(user);
       } else if (user == null) {
         debugPrint("[PeekApp] Auth state changed - user signed out");
-        _directFirestoreListener?.cancel();
+        _processedRequestIds.clear();
+        _isShowingDialog = false;
       }
     });
   }
@@ -516,160 +461,151 @@ class _PeekAppState extends ConsumerState<PeekApp> {
   Future<void> _initializeUser(User user) async {
     debugPrint("[PeekApp] Initializing user setup for ${user.uid}");
 
-    // await _ensureUserDocument(user);
-
     final firestoreService = ref.read(firestoreServiceProvider);
     await firestoreService.ensureDisplayNameExists();
 
-    // Now that the user document is guaranteed to exist, set up other services
     await _initializeFCMToken();
     await _initializeNotificationService();
 
-    _setupDirectFirestoreListener();
-  }
+    _processedRequestIds.clear();
+    _isShowingDialog = false;
 
-  void _setupDirectFirestoreListener() {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) {
-      debugPrint("[DirectFirestoreListener] No user for direct listener.");
-      return;
-    }
-    debugPrint("[DirectFirestoreListener] Setting up for user: $uid");
-    _directFirestoreListener = FirebaseFirestore.instance
-        .collection('peek_requests')
-        .where('receiverUid', isEqualTo: uid)
-        .where('status', isEqualTo: 'pending_acceptance')
-        .orderBy('createdAt', descending: true)
-        .snapshots()
-        .listen((snapshot) {
-      debugPrint(
-          "[DirectFirestoreListener] DATA RECEIVED! Count: ${snapshot.docs.length}. IDs: ${snapshot.docs.map((d) => d.id).toList()}");
-    }, onError: (error) {
-      debugPrint("❌ [DirectFirestoreListener] ERROR: $error");
-    }, onDone: () {
-      debugPrint("[DirectFirestoreListener] Stream DONE.");
-    });
+    // Re-setup peek request listener for new user
+    // WidgetsBinding.instance.addPostFrameCallback((_) {
+    //   _setupPeekRequestListener();
+    // });
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _purchaseSubscription?.cancel();
-    _directFirestoreListener?.cancel();
+
     debugPrint('🛒 Purchase stream subscription cancelled in PeekApp dispose.');
     debugPrint("[DirectFirestoreListener] Cancelled in dispose.");
     super.dispose();
   }
 
-  // Future<void> _ensureUserDocument(User currentUser) async {
-  //   if (!mounted) return;
+  void _handleNewPeekRequest(
+      QueryDocumentSnapshot<Map<String, dynamic>> requestDoc) {
+    final requestId = requestDoc.id;
 
-  //   debugPrint(
-  //       "[PeekApp] _ensureUserDocument START for user: ${currentUser.uid}");
+    // Set the new provider to track that this dialog is now active.
+    ref.read(activePeekRequestDialogProvider.notifier).state = requestId;
+    debugPrint(
+        "[PeekApp] Set activePeekRequestDialogProvider to: $requestId. Showing dialog.");
 
-  //   const maxRetries = 3;
-  //   const retryDelay = Duration(seconds: 2);
+    showDialog<void>(
+      context: rootNavigatorKey.currentContext!,
+      barrierDismissible: false,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: const Text('New Peek Request!'),
+        content: const Text('Someone wants to share a peek with you. Accept?'),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              _declinePeekRequest(requestId);
+            },
+            child: const Text('Decline'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              _acceptPeekRequest(requestId);
+            },
+            child: const Text('Accept'),
+          ),
+        ],
+      ),
+    ).then((_) {
+      // When the dialog is closed for any reason, clear the provider.
+      final activeDialogId = ref.read(activePeekRequestDialogProvider);
+      if (activeDialogId == requestId) {
+        ref.read(activePeekRequestDialogProvider.notifier).state = null;
+        debugPrint(
+            "[PeekApp] Dialog for $requestId closed, cleared activePeekRequestDialogProvider.");
+      }
+    });
+  }
 
-  //   for (int attempt = 1; attempt <= maxRetries; attempt++) {
-  //     try {
-  //       final userDocRef =
-  //           FirebaseFirestore.instance.collection('users').doc(currentUser.uid);
+  // Fix the _showReliablePeekRequestDialog method (Lines 560-640)
+//   void _showReliablePeekRequestDialog(
+//       QueryDocumentSnapshot<Map<String, dynamic>> requestDoc) {
+//     final requestId = requestDoc.id;
 
-  //       debugPrint(
-  //           "[PeekApp] Checking if user document exists... (Attempt $attempt)");
+//     // Wait for navigator to be ready using a more reliable method
+//     void attemptShowDialog() {
+//       // Try multiple context sources
+//       BuildContext? dialogContext;
 
-  //       // Add timeout to prevent hanging
-  //       final userDoc = await userDocRef.get().timeout(
-  //             const Duration(seconds: 10),
-  //             onTimeout: () => throw TimeoutException('Firestore read timeout'),
-  //           );
+//       // First try: root navigator key
+//       if (rootNavigatorKey.currentContext != null) {
+//         dialogContext = rootNavigatorKey.currentContext!;
+//       }
+//       // Second try: current widget context if mounted
+//       else if (mounted && context.mounted) {
+//         dialogContext = context;
+//       }
 
-  //       debugPrint("[PeekApp] User document exists: ${userDoc.exists}");
+//       if (dialogContext == null || !mounted) {
+//         // Retry after a short delay if context not ready
+//         if (mounted) {
+//           Future.delayed(const Duration(milliseconds: 200), attemptShowDialog);
+//         }
+//         return;
+//       }
 
-  //       if (!userDoc.exists) {
-  //         debugPrint("[PeekApp] Creating user document for ${currentUser.uid}");
+//       _isShowingDialog = true;
+//       debugPrint("[PeekApp] Showing dialog for request: $requestId");
 
-  //         // Create user document with initial data
-  //         final userData = {
-  //           'uid': currentUser.uid,
-  //           'displayName': currentUser.displayName ??
-  //               'User ${currentUser.uid.substring(0, 6)}',
-  //           'email': currentUser.email,
-  //           'isAnonymous': currentUser.isAnonymous,
-  //           'createdAt': FieldValue.serverTimestamp(),
-  //           'updatedAt': FieldValue.serverTimestamp(),
-  //           'isPremium': false,
-  //           'dailyPeekCount': 0,
-  //           'lastSeenAt': FieldValue.serverTimestamp(),
-  //           'availableForPeek': true,
-  //         };
+//       // Use simple showDialog approach
+//       showDialog<bool>(
+//         context: dialogContext,
+//         barrierDismissible: false,
+//         builder: (BuildContext dialogContext) => AlertDialog(
+//           title: const Text('New Peek Request!'),
+//           content:
+//               const Text('Someone wants to share a peek with you. Accept?'),
+//           actions: [
+//             TextButton(
+//               onPressed: () {
+//                 Navigator.of(dialogContext).pop(false);
+//                 _onDialogClosed();
+//                 _declinePeekRequest(requestId);
+//               },
+//               child: const Text('Decline'),
+//             ),
+//             ElevatedButton(
+//               onPressed: () {
+//                 Navigator.of(dialogContext).pop(true);
+//                 _onDialogClosed();
+//                 _acceptPeekRequest(requestId);
+//               },
+//               child: const Text('Accept'),
+//             ),
+//           ],
+//         ),
+//       ).then((result) {
+//         // Ensure dialog state is cleaned up
+//         if (_isShowingDialog) {
+//           _onDialogClosed();
+//         }
+//       });
+//     }
 
-  //         debugPrint("[PeekApp] User data to create: $userData");
+//     // Wait for the next frame before attempting to show dialog
+//     WidgetsBinding.instance.addPostFrameCallback((_) {
+//       if (mounted) {
+//         attemptShowDialog();
+//       }
+//     });
+//   }
 
-  //         await userDocRef.set(userData).timeout(
-  //               const Duration(seconds: 10),
-  //               onTimeout: () =>
-  //                   throw TimeoutException('Firestore write timeout'),
-  //             );
-
-  //         // Verify creation with timeout
-  //         final verifyDoc = await userDocRef.get().timeout(
-  //               const Duration(seconds: 10),
-  //               onTimeout: () =>
-  //                   throw TimeoutException('Firestore verification timeout'),
-  //             );
-
-  //         debugPrint(
-  //             "[PeekApp] User doc created? ${verifyDoc.exists}, ID: ${verifyDoc.id}");
-
-  //         debugPrint(
-  //             "[PeekApp] ✅ User document created for ${currentUser.uid}");
-  //       } else {
-  //         debugPrint(
-  //             "[PeekApp] User document already exists for ${currentUser.uid}");
-
-  //         // Update last seen with timeout
-  //         await userDocRef.update({
-  //           'lastSeenAt': FieldValue.serverTimestamp(),
-  //         }).timeout(
-  //           const Duration(seconds: 10),
-  //           onTimeout: () => throw TimeoutException('Firestore update timeout'),
-  //         );
-
-  //         debugPrint("[PeekApp] Updated lastSeenAt timestamp");
-  //       }
-
-  //       // Success - exit retry loop
-  //       return;
-  //     } catch (e, stackTrace) {
-  //       debugPrint(
-  //           "[PeekApp] ❌ Error ensuring user document (Attempt $attempt/$maxRetries): $e");
-
-  //       if (attempt < maxRetries) {
-  //         debugPrint(
-  //             "[PeekApp] Retrying in ${retryDelay.inSeconds} seconds...");
-  //         await Future.delayed(retryDelay);
-  //       } else {
-  //         debugPrint("[PeekApp] ❌ Failed after $maxRetries attempts");
-  //         debugPrint("[PeekApp] Stack trace: $stackTrace");
-
-  //         // Show user-friendly error if still mounted
-  //         if (mounted) {
-  //           final scaffoldContext = rootNavigatorKey.currentContext;
-  //           if (scaffoldContext != null) {
-  //             ScaffoldMessenger.of(scaffoldContext).showSnackBar(
-  //               const SnackBar(
-  //                 content: Text(
-  //                     'Unable to connect to server. Please check your network connection.'),
-  //                 backgroundColor: Colors.orange,
-  //                 duration: Duration(seconds: 5),
-  //               ),
-  //             );
-  //           }
-  //         }
-  //       }
-  //     }
-  //   }
-  // }
+// // Add these methods at class level (after _showReliablePeekRequestDialog)
+//   void _onDialogClosed() {
+//     _isShowingDialog = false;
+//   }
 
   Future<void> _initializeFCMToken() async {
     try {
@@ -712,58 +648,6 @@ class _PeekAppState extends ConsumerState<PeekApp> {
     }
   }
 
-  // =====================
-
-  void _showPeekRequestDialog(BuildContext context,
-      QueryDocumentSnapshot<Map<String, dynamic>> requestDoc) {
-    debugPrint("✅ _showPeekRequestDialog called for request: ${requestDoc.id}");
-
-    final data = requestDoc.data();
-    final requestId = requestDoc.id;
-    final senderUid = data['senderUid'] as String?;
-
-    // Use the rootNavigatorKey's context to ensure dialog can be shown globally
-    final BuildContext? dialogContext = rootNavigatorKey.currentContext;
-
-    if (dialogContext == null) {
-      debugPrint(
-          "❌ _showPeekRequestDialog: rootNavigatorKey.currentContext is null. Cannot show dialog.");
-      return;
-    }
-    if (!mounted) {
-      // Although less likely an issue if dialogContext is valid, good to keep
-      debugPrint(
-          "❌ _showPeekRequestDialog: _PeekAppState is not mounted. Cannot show dialog.");
-      return;
-    }
-
-    showDialog(
-      context: dialogContext, // MODIFIED: Use context from rootNavigatorKey
-      barrierDismissible: false,
-      builder: (alertDialogContext) => AlertDialog(
-        // Renamed builder context to avoid confusion
-        title: const Text('New Peek Request!'),
-        content: const Text('Someone wants to share a peek with you. Accept?'),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.of(alertDialogContext).pop();
-              _declinePeekRequest(requestId);
-            },
-            child: const Text('Decline'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.of(alertDialogContext).pop();
-              _acceptPeekRequest(requestId);
-            },
-            child: const Text('Accept'),
-          ),
-        ],
-      ),
-    );
-  }
-
   /// Accept peek request
   Future<void> _acceptPeekRequest(String requestId) async {
     debugPrint(
@@ -798,7 +682,6 @@ class _PeekAppState extends ConsumerState<PeekApp> {
         final scaffoldMessengerContext = rootNavigatorKey.currentContext;
         if (scaffoldMessengerContext != null) {
           ScaffoldMessenger.of(scaffoldMessengerContext).showSnackBar(
-            // MODIFIED
             SnackBar(
               content: Text('Failed to accept peek: ${e.toString()}'),
               backgroundColor: Colors.redAccent,
@@ -833,7 +716,6 @@ class _PeekAppState extends ConsumerState<PeekApp> {
         final scaffoldMessengerContext = rootNavigatorKey.currentContext;
         if (scaffoldMessengerContext != null) {
           ScaffoldMessenger.of(scaffoldMessengerContext).showSnackBar(
-            // MODIFIED
             SnackBar(
               content: Text('Failed to decline peek: ${e.toString()}'),
               backgroundColor: Colors.redAccent,
@@ -908,289 +790,231 @@ class _PeekAppState extends ConsumerState<PeekApp> {
     debugPrint("✅ IAP Purchase stream listener attached.");
   }
 
-  // @override
-  // void dispose() {
-  //   _purchaseSubscription?.cancel(); // Cancel subscription on dispose
-  //   debugPrint('🛒 Purchase stream subscription cancelled in PeekApp dispose.');
-  //   super.dispose();
-  // }
-
   @override
   Widget build(BuildContext context) {
     final router = ref.watch(routerProvider);
-    // --- Set up Peek Request Listener ---
-    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
-    if (currentUserId != null) {
-      // Listen for incoming peek requests
 
-      ref.listen<AsyncValue<List<QueryDocumentSnapshot<Map<String, dynamic>>>>>(
-        pendingPeekRequestsProvider,
-        (previous, next) {
-          next.whenData((requests) {
-            final previousRequests = previous?.asData?.value;
-            // final previousCount = previousRequests?.length ?? 0;
-            // final currentCount = requests.length;
-
-            final int previousCount;
-
-            if (previousRequests != null) {
-              previousCount = previousRequests.length;
-            } else if (previous == null ||
-                previous!.isLoading ||
-                previous.hasError) {
-              // If previous was null (initial), loading, or error, treat previous count as 0 for comparison logic.
-              // This helps the "fresh load" condition.
-              previousCount = 0;
-            } else {
-              // If previous has a value but it's not AsyncData (shouldn't happen if types are right)
-              // or if previous.asData.value is null (which previousRequests already covers).
-              // Defaulting to 0, but this state warrants a closer look if it occurs.
-              previousCount = 0;
-              debugPrint(
-                  "[PeekApp Build Listen] Warning: previous.asData.value was null despite previous having a value and not being loading/error.");
-            }
-
-            final currentCount = requests.length;
-
-            debugPrint(
-                "[PeekApp Build Listen] Listener FIRED. Prev value: ${previous?.hasValue}, Prev count: $previousCount, Curr count: $currentCount, Mounted: $mounted, Request IDs: ${requests.map((r) => r.id).toList()}");
-
-            if (currentCount > 0 && mounted) {
-              bool shouldShow = false;
-              if (previous == null || previous.isLoading || previous.hasError) {
-                // Case 1: This is the first valid data emission (previous was null, loading, or error)
-                shouldShow = true;
-                debugPrint(
-                    "[PeekApp Build Listen] Condition Case 1 MET (Initial/Fresh Load with data). Current count: $currentCount");
-              } else if (previousRequests != null &&
-                  currentCount > previousCount) {
-                // Case 2: More requests than before
-                shouldShow = true;
-                debugPrint(
-                    "[PeekApp Build Listen] Condition Case 2 MET (New request detected). Prev: $previousCount, Curr: $currentCount");
-              }
-              // Optional: Case 3 - if counts are same but request list content changed (more complex, usually handled by object inequality)
-              // For simplicity, we rely on count changes or fresh load for now.
-
-              if (shouldShow) {
-                final latestRequest = requests
-                    .first; // Assuming newest is always first due to orderBy
-                debugPrint(
-                    "[PeekApp Build Listen] ALL Conditions MET! Showing dialog for ${latestRequest.id}.");
-                _showPeekRequestDialog(context, latestRequest);
-              } else {
-                debugPrint(
-                    "[PeekApp Build Listen] Conditions NOT MET for showing dialog. Prev: $previousCount, Curr: $currentCount");
-              }
-            } else {
-              debugPrint(
-                  "[PeekApp Build Listen] Conditions NOT MET for showing dialog (currentCount <= 0 or not mounted). Prev: $previousCount, Curr: $currentCount");
-            }
-          });
-        },
-        onError: (error, stackTrace) {
+    // This listener handles showing AND hiding the dialog for NEW incoming peek requests.
+    ref.listen<AsyncValue<List<QueryDocumentSnapshot<Map<String, dynamic>>>>>(
+      pendingPeekRequestsProvider,
+      (previous, next) {
+        next.whenData((requests) {
+          final requestIds = requests.map((req) => req.id).toSet();
           debugPrint(
-              "[[PeekApp Build Listen ERROR]] Error listening to pendingPeekRequestsProvider: $error, Stack: $stackTrace");
-        },
-        // fireImmediately: true,
-      );
-      // test
-    } else {
-      debugPrint(
-          "[PeekApp Build] No authenticated user, peek request listener not set up.");
-    }
+              "[PeekApp] Pending peek requests updated: ${requests.length} requests. IDs: $requestIds");
 
-    return RootRealtimeListener(
-      child: MaterialApp.router(
-        title: 'PEEK',
-        debugShowCheckedModeBanner: false,
-        routerConfig: ref.watch(routerProvider),
-        theme: ThemeData(
-          // YOUR ENTIRE THEME DATA OBJECT GOES HERE (lines 770-880)
+          // Check if the currently active dialog corresponds to a request that is no longer pending.
+          final activeDialogId = ref.read(activePeekRequestDialogProvider);
+          if (activeDialogId != null && !requestIds.contains(activeDialogId)) {
+            debugPrint(
+                "[PeekApp] Active dialog for request $activeDialogId is no longer pending. Closing dialog.");
+            // Pop the dialog if its request is no longer in the pending list.
+            if (rootNavigatorKey.currentContext != null &&
+                Navigator.of(rootNavigatorKey.currentContext!).canPop()) {
+              Navigator.of(rootNavigatorKey.currentContext!).pop();
+            }
+            ref.read(activePeekRequestDialogProvider.notifier).state = null;
+          }
+
+          // Show a dialog for the first new request, if no dialog is already showing.
+          if (ref.read(activePeekRequestDialogProvider) == null) {
+            if (requests.isNotEmpty) {
+              _handleNewPeekRequest(requests.first);
+            }
+          }
+        });
+      },
+    );
+
+    // This return statement now includes your full theme.
+    return MaterialApp.router(
+      title: 'PEEK',
+      debugShowCheckedModeBanner: false,
+      routerConfig: router,
+      theme: ThemeData(
+        brightness: Brightness.dark,
+        fontFamily: 'Poppins',
+        useMaterial3: true,
+        iconTheme: const IconThemeData(
+          weight: 500,
+          fill: 0,
+          grade: 0,
+          opticalSize: 48,
+          size: 24,
+          color: peekAccentColor,
+        ),
+        colorScheme: const ColorScheme(
           brightness: Brightness.dark,
-          fontFamily: 'Poppins',
-          useMaterial3: true,
-          iconTheme: const IconThemeData(
-            weight: 500,
-            fill: 0,
-            grade: 0,
-            opticalSize: 48,
-            size: 24,
-            color: peekAccentColor,
+          primary: peekPrimaryColor,
+          onPrimary: peekSurfaceColor,
+          secondary: peekSecondaryColor,
+          onSecondary: peekOnSecondaryColor,
+          error: peekErrorColor,
+          onError: peekOnErrorColor,
+          background: peekBackgroundColor,
+          onBackground: peekOnBackgroundColor,
+          surface: peekSurfaceColor,
+          onSurface: peekOnSurfaceColor,
+          tertiary: peekAccentColor,
+          onTertiary: Colors.black,
+        ),
+        scaffoldBackgroundColor: peekBackgroundColor,
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Colors.transparent,
+          foregroundColor: peekOnBackgroundColor,
+          elevation: 0,
+          centerTitle: true,
+          titleTextStyle: TextStyle(
+            fontFamily: 'Poppins',
+            fontSize: 20,
+            fontWeight: FontWeight.w600,
+            color: peekOnBackgroundColor,
           ),
-          colorScheme: const ColorScheme(
-            brightness: Brightness.dark,
-            primary: peekPrimaryColor,
-            onPrimary: peekSurfaceColor,
-            secondary: peekSecondaryColor,
-            onSecondary: peekOnSecondaryColor,
-            error: peekErrorColor,
-            onError: peekOnErrorColor,
-            background: peekBackgroundColor,
-            onBackground: peekOnBackgroundColor,
-            surface: peekSurfaceColor,
-            onSurface: peekOnSurfaceColor,
-            tertiary: peekAccentColor,
-            onTertiary: Colors.black,
-          ),
-          scaffoldBackgroundColor: peekBackgroundColor,
-          appBarTheme: const AppBarTheme(
-            backgroundColor: Colors.transparent,
-            foregroundColor: peekOnBackgroundColor,
-            elevation: 0,
-            centerTitle: true,
-            titleTextStyle: TextStyle(
+          iconTheme: IconThemeData(color: peekOnBackgroundColor),
+          actionsIconTheme: IconThemeData(color: peekOnBackgroundColor),
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: peekPrimaryColor,
+            foregroundColor: peekSurfaceColor,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(30),
+            ),
+            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+            textStyle: const TextStyle(
               fontFamily: 'Poppins',
-              fontSize: 20,
+              fontSize: 16,
               fontWeight: FontWeight.w600,
-              color: peekOnBackgroundColor,
             ),
-            iconTheme: IconThemeData(color: peekOnBackgroundColor),
-            actionsIconTheme: IconThemeData(color: peekOnBackgroundColor),
+            elevation: 2,
           ),
-          elevatedButtonTheme: ElevatedButtonThemeData(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: peekPrimaryColor,
-              foregroundColor: peekSurfaceColor,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(30),
-              ),
-              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
-              textStyle: const TextStyle(
-                fontFamily: 'Poppins',
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-              ),
-              elevation: 2,
+        ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: peekPrimaryColor,
+            side: const BorderSide(color: peekPrimaryColor, width: 1.5),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(30),
             ),
-          ),
-          outlinedButtonTheme: OutlinedButtonThemeData(
-            style: OutlinedButton.styleFrom(
-              foregroundColor: peekPrimaryColor,
-              side: const BorderSide(color: peekPrimaryColor, width: 1.5),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(30),
-              ),
-              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
-              textStyle: const TextStyle(
-                fontFamily: 'Poppins',
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          textButtonTheme: TextButtonThemeData(
-            style: TextButton.styleFrom(
-              foregroundColor: peekSecondaryColor,
-              textStyle: const TextStyle(
-                fontFamily: 'Poppins',
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          chipTheme: ChipThemeData(
-            backgroundColor: peekSurfaceColor.withOpacity(0.8),
-            labelStyle: TextStyle(
-              color: peekOnSurfaceColor.withOpacity(0.9),
+            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+            textStyle: const TextStyle(
               fontFamily: 'Poppins',
-              fontSize: 11,
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        textButtonTheme: TextButtonThemeData(
+          style: TextButton.styleFrom(
+            foregroundColor: peekSecondaryColor,
+            textStyle: const TextStyle(
+              fontFamily: 'Poppins',
               fontWeight: FontWeight.w500,
             ),
-            iconTheme: IconThemeData(
-              color: peekOnSurfaceColor.withOpacity(0.9),
-              size: 16,
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-            ),
-            side: BorderSide.none,
           ),
-          snackBarTheme: SnackBarThemeData(
-            backgroundColor: peekSurfaceColor,
-            contentTextStyle: const TextStyle(
-              color: peekOnSurfaceColor,
-              fontFamily: 'Poppins',
-            ),
-            actionTextColor: peekSecondaryColor,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            elevation: 4,
+        ),
+        chipTheme: ChipThemeData(
+          backgroundColor: peekSurfaceColor.withOpacity(0.8),
+          labelStyle: TextStyle(
+            color: peekOnSurfaceColor.withOpacity(0.9),
+            fontFamily: 'Poppins',
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
           ),
-          dialogTheme: DialogThemeData(
-            backgroundColor: peekSurfaceColor,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            titleTextStyle: const TextStyle(
-              fontFamily: 'Poppins',
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-              color: peekOnSurfaceColor,
-            ),
-            contentTextStyle: const TextStyle(
-              fontFamily: 'Poppins',
-              fontSize: 14,
-              color: peekOnSurfaceColor,
-            ),
+          iconTheme: IconThemeData(
+            color: peekOnSurfaceColor.withOpacity(0.9),
+            size: 16,
           ),
-          bottomNavigationBarTheme: BottomNavigationBarThemeData(
-            backgroundColor: peekSurfaceColor,
-            selectedItemColor: peekPrimaryColor,
-            unselectedItemColor: Colors.grey.shade600,
-            selectedLabelStyle: const TextStyle(
-              fontWeight: FontWeight.w600,
-              fontFamily: 'Poppins',
-              fontSize: 12,
-            ),
-            unselectedLabelStyle: const TextStyle(
-              fontFamily: 'Poppins',
-              fontSize: 12,
-            ),
-            type: BottomNavigationBarType.fixed,
-            showUnselectedLabels: false,
-            showSelectedLabels: true,
-            elevation: 4,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
           ),
-          textTheme: const TextTheme(
-            displayLarge: TextStyle(
-              fontWeight: FontWeight.w700,
-              letterSpacing: -0.5,
-            ),
-            headlineMedium: TextStyle(fontWeight: FontWeight.w600),
-            titleMedium: TextStyle(fontWeight: FontWeight.w500),
-            bodyMedium: TextStyle(fontWeight: FontWeight.w400, height: 1.4),
-            labelLarge: TextStyle(fontWeight: FontWeight.w600),
-            labelMedium: TextStyle(fontWeight: FontWeight.w500),
-          ).apply(
-            bodyColor: peekOnBackgroundColor,
-            displayColor: peekOnBackgroundColor.withOpacity(0.9),
+          side: BorderSide.none,
+        ),
+        snackBarTheme: SnackBarThemeData(
+          backgroundColor: peekSurfaceColor,
+          contentTextStyle: const TextStyle(
+            color: peekOnSurfaceColor,
+            fontFamily: 'Poppins',
           ),
-          inputDecorationTheme: InputDecorationTheme(
-            filled: true,
-            fillColor: peekSurfaceColor.withOpacity(0.5),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide.none,
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide.none,
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: peekPrimaryColor, width: 1.5),
-            ),
-            labelStyle: TextStyle(
-              color: peekOnSurfaceColor.withOpacity(0.7),
-              fontFamily: 'Poppins',
-            ),
-            hintStyle: TextStyle(
-              color: Colors.grey.shade600,
-              fontFamily: 'Poppins',
-            ),
+          actionTextColor: peekSecondaryColor,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          elevation: 4,
+        ),
+        dialogTheme: DialogThemeData(
+          backgroundColor: peekSurfaceColor,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          titleTextStyle: const TextStyle(
+            fontFamily: 'Poppins',
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: peekOnSurfaceColor,
+          ),
+          contentTextStyle: const TextStyle(
+            fontFamily: 'Poppins',
+            fontSize: 14,
+            color: peekOnSurfaceColor,
+          ),
+        ),
+        bottomNavigationBarTheme: BottomNavigationBarThemeData(
+          backgroundColor: peekSurfaceColor,
+          selectedItemColor: peekPrimaryColor,
+          unselectedItemColor: Colors.grey.shade600,
+          selectedLabelStyle: const TextStyle(
+            fontWeight: FontWeight.w600,
+            fontFamily: 'Poppins',
+            fontSize: 12,
+          ),
+          unselectedLabelStyle: const TextStyle(
+            fontFamily: 'Poppins',
+            fontSize: 12,
+          ),
+          type: BottomNavigationBarType.fixed,
+          showUnselectedLabels: false,
+          showSelectedLabels: true,
+          elevation: 4,
+        ),
+        textTheme: const TextTheme(
+          displayLarge: TextStyle(
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.5,
+          ),
+          headlineMedium: TextStyle(fontWeight: FontWeight.w600),
+          titleMedium: TextStyle(fontWeight: FontWeight.w500),
+          bodyMedium: TextStyle(fontWeight: FontWeight.w400, height: 1.4),
+          labelLarge: TextStyle(fontWeight: FontWeight.w600),
+          labelMedium: TextStyle(fontWeight: FontWeight.w500),
+        ).apply(
+          bodyColor: peekOnBackgroundColor,
+          displayColor: peekOnBackgroundColor.withOpacity(0.9),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: peekSurfaceColor.withOpacity(0.5),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none,
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none,
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: peekPrimaryColor, width: 1.5),
+          ),
+          labelStyle: TextStyle(
+            color: peekOnSurfaceColor.withOpacity(0.7),
+            fontFamily: 'Poppins',
+          ),
+          hintStyle: TextStyle(
+            color: Colors.grey.shade600,
+            fontFamily: 'Poppins',
           ),
         ),
       ),
@@ -1549,4 +1373,4 @@ class _PeekAppState extends ConsumerState<PeekApp> {
       ),
     );
   }
-} // End of _PeekAppState
+}

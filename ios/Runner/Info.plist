@@ -31,10 +31,8 @@
 
 	<key>NSBonjourServices</key>
 	<array>
-		<string>_http._tcp</string>
-		<string>_https._tcp</string>
-		<string>_dart-vm-service._tcp</string>
-		<string>_firebase-emulator._tcp</string>
+		<string>_google._tcp</string>
+		<string>_dartobservatory._tcp</string>
 	</array>
 
 	<key>NSCameraUsageDescription</key>

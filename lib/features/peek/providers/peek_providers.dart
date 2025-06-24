@@ -6,6 +6,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../data/peek_repository.dart';
 import '../../../core/overlay_animation_service.dart';
 
+final authStateProvider = StreamProvider<String?>((ref) {
+  return FirebaseAuth.instance.authStateChanges().map((user) => user?.uid);
+});
+
 /// ✅ Provider for PeekRepository, injecting Firestore and FirebaseAuth
 final peekRepositoryProvider = Provider<PeekRepository>((ref) {
   return PeekRepository(
@@ -21,7 +25,7 @@ final navigatorKeyProvider = Provider<GlobalKey<NavigatorState>>((ref) {
 
 // 2. Provider for the current authenticated user's document stream (real-time updates)
 final userProfileStreamProvider =
-    StreamProvider.autoDispose<DocumentSnapshot<Map<String, dynamic>>?>((ref) {
+    StreamProvider<DocumentSnapshot<Map<String, dynamic>>?>((ref) {
   final userId = FirebaseAuth.instance.currentUser?.uid;
   if (userId == null) {
     debugPrint(
@@ -34,10 +38,10 @@ final userProfileStreamProvider =
 });
 
 // 3. Provider to store the last known reaction counts for the current user
-final lastReactionCountsProvider =
-    StateProvider<({int likes, int dislikes})>((ref) {
-  return (likes: -1, dislikes: -1);
-});
+// final lastReactionCountsProvider =
+//     StateProvider<({int likes, int dislikes})>((ref) {
+//   return (likes: -1, dislikes: -1);
+// });
 
 // 4. Provider for the OverlayAnimationService
 final overlayAnimationServiceProvider =
@@ -48,7 +52,9 @@ final overlayAnimationServiceProvider =
 // 5. Provider that streams pending peek requests for the current user - CORRECTLY FIXED
 final pendingPeekRequestsProvider = StreamProvider.autoDispose<
     List<QueryDocumentSnapshot<Map<String, dynamic>>>>((ref) {
-  final uid = FirebaseAuth.instance.currentUser?.uid;
+  // Watch the auth state to automatically refresh when user changes
+  final authState = ref.watch(authStateProvider);
+  final uid = authState.value;
 
   if (uid == null) {
     debugPrint(
@@ -152,3 +158,27 @@ final peekRequestHistoryProvider = StreamProvider.autoDispose<
     return snapshot.docs;
   });
 });
+
+/// users/<me>/received_reactions
+final newReactionStreamProvider = StreamProvider.autoDispose<
+    List<QueryDocumentSnapshot<Map<String, dynamic>>>>((ref) {
+  final uid = FirebaseAuth.instance.currentUser?.uid;
+  if (uid == null) {
+    return Stream.value([]);
+  }
+  return FirebaseFirestore.instance
+      .collection('users')
+      .doc(uid)
+      .collection('received_reactions')
+      .orderBy('timestamp', descending: false)
+      .snapshots()
+      .map((snap) => snap.docs);
+});
+
+final pendingAnimationProvider = StateProvider<List<String>>((ref) => []);
+
+// Provider to keep track of reaction animations that have already been shown in this session.
+final processedReactionIdsProvider = StateProvider<Set<String>>((ref) => {});
+
+// This allows us to programmatically dismiss it if the request is cancelled.
+final activePeekRequestDialogProvider = StateProvider<String?>((ref) => null);

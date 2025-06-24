@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:peek/features/peek/pages/peek_sender_wait_page.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -37,12 +38,13 @@ import '../features/premium/pages/premium_page.dart';
 import '../features/menu/privacy_page.dart';
 import '../features/peek/reaction_screen.dart';
 import '../features/peek/peek_sent_confirmation_page.dart';
+import 'package:peek/main.dart';
 
 // HIDE TOP APPBAR WIDGET
 const List<String> routesInShellWithoutAppBar = [
   // Example: if '/settings/profile-edit' was a child of ShellRoute and needed a custom AppBar or no AppBar
   // '/settings/profile-edit',
-  '/stats',
+  // '/stats',
   '/settings'
 ];
 
@@ -106,12 +108,12 @@ const List<String> routesWithoutBottomNav = [
   // '/stats',    // Stats is now part of ShellRoute
 ];
 
-final rootNavigatorKey = GlobalKey<NavigatorState>();
+// final rootNavigatorKey = GlobalKey<NavigatorState>();
 // This key is for the shell navigator.
 final shellNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'shell');
 
-final rootNavigatorKeyProvider =
-    Provider<GlobalKey<NavigatorState>>((ref) => rootNavigatorKey);
+// final rootNavigatorKeyProvider =
+//     Provider<GlobalKey<NavigatorState>>((ref) => rootNavigatorKey);
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authStateChangesProvider);
@@ -127,11 +129,10 @@ final routerProvider = Provider<GoRouter>((ref) {
   });
 
   return GoRouter(
-    navigatorKey: rootNavigatorKey, // Use the global key defined in main.dart
+    navigatorKey: rootNavigatorKey,
     refreshListenable: refreshListenable,
     initialLocation: '/splash-start',
     debugLogDiagnostics: true,
-
     redirect: (context, state) async {
       debugPrint(
           "🔄 Router redirect called - location: ${state.matchedLocation}");
@@ -284,8 +285,22 @@ final routerProvider = Provider<GoRouter>((ref) {
         name: 'peek-accepted',
         builder: (context, state) {
           final requestId = state.uri.queryParameters['requestId']!;
-          final imageUrl = state.uri.queryParameters['imageUrl']!;
-          return PeekAcceptedPage(requestId: requestId, imageUrl: imageUrl);
+          // MODIFIED: imageUrl is no longer needed or passed to PeekAcceptedPage.
+          // final imageUrl = state.uri.queryParameters['imageUrl']!;
+          return PeekAcceptedPage(
+            requestId: requestId,
+          );
+        },
+      ),
+      GoRoute(
+        path: '/peek-sender-wait',
+        name: 'peek-sender-wait',
+        builder: (context, state) {
+          final requestId = state.uri.queryParameters['requestId'];
+          if (requestId == null) {
+            return _errorScreen('❌ Missing requestId for sender wait page');
+          }
+          return PeekSenderWaitPage(requestId: requestId);
         },
       ),
       GoRoute(
@@ -318,12 +333,16 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/peek-image',
         name: 'peek-image',
         pageBuilder: (context, state) {
-          final requestId = state.uri.queryParameters['requestId'];
-          final imageUrl = state.uri.queryParameters['imageUrl'];
+          // MODIFIED: Read parameters from `extra` for robustness.
+          final params = state.extra as Map<String, String>?;
+          final requestId = params?['requestId'];
+          final imageUrl = params?['imageUrl'];
+
           if (requestId == null || imageUrl == null) {
             return MaterialPage(
               key: state.pageKey,
-              child: _errorScreen('❌ Missing requestId or imageUrl'),
+              child: _errorScreen(
+                  '❌ Missing requestId or imageUrl for PeekImageView'),
             );
           }
           return CustomTransitionPage(
@@ -348,18 +367,20 @@ final routerProvider = Provider<GoRouter>((ref) {
           final requestId = state.uri.queryParameters['requestId'];
           final originalSenderUid =
               state.uri.queryParameters['originalSenderUid'];
-          final imageUrl = state.uri.queryParameters['imageUrl'];
-          if (requestId == null ||
-              originalSenderUid == null ||
-              imageUrl == null) {
+
+          // MODIFIED: Remove imageUrl extraction and check
+          // final imageUrl = state.uri.queryParameters['imageUrl'];
+
+          if (requestId == null || originalSenderUid == null) {
+            // MODIFIED: Simplified check
             debugPrint(
-                "[Router] Error: Missing parameters for ReactionScreen. RequestId: $requestId, OriginalSenderUid: $originalSenderUid, ImageUrl: $imageUrl");
+                "[Router] Error: Missing parameters for ReactionScreen. RequestId: $requestId, OriginalSenderUid: $originalSenderUid");
             return _errorScreen('Error: Missing reaction data.');
           }
           return ReactionScreen(
             requestId: requestId,
             originalSenderUid: originalSenderUid,
-            imageUrl: imageUrl,
+            // MODIFIED: Do not pass imageUrl here
           );
         },
       ),

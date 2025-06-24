@@ -272,17 +272,18 @@ class _PeekImageViewState extends ConsumerState<PeekImageView>
   Future<void> _decideNextNavigation() async {
     if (!mounted) return;
 
+    // It checks if the sender's ID was successfully fetched.
     if (_originalSenderId != null && _originalSenderId!.isNotEmpty) {
       debugPrint(
-          "[PeekImageView] Navigating to Reaction Screen. RequestId: ${widget.requestId}, OriginalSenderUid: $_originalSenderId, ImageUrl: $_imageUrl");
+          "[PeekImageView] Navigating to Reaction Screen. RequestId: ${widget.requestId}, OriginalSenderUid: $_originalSenderId");
 
-      // Ensure imageUrl is URL encoded if it contains special characters, though Firebase URLs are usually safe.
-      // GoRouter handles encoding query parameters automatically.
+      // MODIFIED: Removed the imageUrl from the navigation parameters.
       context.go(
-          '/peek-reaction?requestId=${widget.requestId}&originalSenderUid=$_originalSenderId&imageUrl=${Uri.encodeComponent(_imageUrl)}');
+          '/peek-reaction?requestId=${widget.requestId}&originalSenderUid=$_originalSenderId');
     } else {
+      // This is a fallback if the sender's ID couldn't be found for some reason.
       debugPrint(
-          "[PeekImageView] _originalSenderId is null or empty (isReceiverPremium: $_isReceiverPremium). Navigating to home. This is expected if receiver is not premium or senderId was missing.");
+          "[PeekImageView] _originalSenderId is null or empty. Navigating to home.");
       context.go('/'); // Fallback to home
     }
 
