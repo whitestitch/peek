@@ -700,23 +700,30 @@ class PeekController extends StateNotifier<PeekControllerState> {
     }
   }
 
-  Future<void> cancelPeek(String requestId) async {
+  Future<bool> cancelPeek(String requestId) async {
     if (requestId.isEmpty) {
       debugPrint("[PeekController] cancelPeek: requestId is empty.");
-      return;
+      return false;
     }
 
     final userId = _auth.currentUser?.uid;
     debugPrint(
-        "[PeekController] Received request to cancel peek $requestId for user $userId");
+        "[PeekController] User $userId is cancelling peek request $requestId");
     try {
-      await _repo.deleteRequest(requestId);
-      debugPrint("[PeekController] Deleted peek request $requestId.");
+      // Instead of deleting, we update the status. This is a more explicit signal
+      // that other listeners (like the receiver's dialog handler) can react to.
+      await _firestore.collection('peek_requests').doc(requestId).update({
+        'status': 'cancelled_by_sender',
+      });
+
+      debugPrint(
+          "[PeekController] Updated peek request $requestId to 'cancelled_by_sender'.");
       await _analytics
           .logEvent(name: 'peek_request_user_cancelled', parameters: {
         'request_id_partial':
             requestId.length > 8 ? requestId.substring(0, 8) : requestId
       });
+      return true;
     } catch (e) {
       debugPrint(
           "❌ [PeekController] Failed to cancel peek request $requestId: $e");
@@ -728,6 +735,30 @@ class PeekController extends StateNotifier<PeekControllerState> {
             .toString()
             .substring(0, e.toString().length > 99 ? 99 : e.toString().length)
       });
+      return false;
+    }
+  }
+
+  Future<void> declinePeekByReceiver(String requestId) async {
+    if (requestId.isEmpty) {
+      debugPrint("[PeekController] declinePeekByReceiver: requestId is empty.");
+      return;
+    }
+    try {
+      await _firestore.collection('peek_requests').doc(requestId).update({
+        'status': 'cancelled_by_receiver',
+        'declinedAt': FieldValue.serverTimestamp(),
+      });
+      debugPrint(
+          "[PeekController] Updated peek request $requestId to 'cancelled_by_receiver'.");
+      await _analytics
+          .logEvent(name: 'peek_request_receiver_cancelled', parameters: {
+        'request_id_partial':
+            requestId.length > 8 ? requestId.substring(0, 8) : requestId
+      });
+    } catch (e) {
+      debugPrint(
+          "❌ [PeekController] Failed to decline peek request $requestId: $e");
     }
   }
 

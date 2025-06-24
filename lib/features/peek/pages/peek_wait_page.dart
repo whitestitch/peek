@@ -3,10 +3,10 @@ import 'package:flutter/material.dart' as material;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-// Assuming peek_controller.dart exists and defines peekControllerProvider
-// Adjust the import path if necessary
+import 'package:peek/core/overlay_animation_service.dart';
 import 'package:peek/features/peek/controllers/peek_controller.dart';
-import 'package:rive/rive.dart'; // <<< Import Rive
+import 'package:peek/features/peek/providers/peek_providers.dart';
+import 'package:rive/rive.dart';
 import 'package:peek/theme/colors.dart';
 
 /// Waits for acceptance from a receiver; on accept, routes into SplashPage.
@@ -63,8 +63,7 @@ class _PeekWaitPageState extends ConsumerState<PeekWaitPage> {
 
         final status = data['status'] as String?;
         final imageUrl = data['imageUrl'] as String?;
-        // You might want to get User B's display name to show in the status message
-        // final receiverName = data['receiverDisplayName'] as String?;
+        final reaction = data['reaction'] as String?;
 
         material.debugPrint(
           "[PeekWaitPage] Listener update: status=$status, imageUrl=${imageUrl != null ? 'present' : 'null'}",
@@ -73,49 +72,22 @@ class _PeekWaitPageState extends ConsumerState<PeekWaitPage> {
         // Handle different statuses
         switch (status) {
           case 'accepted':
-            if (imageUrl != null && imageUrl.isNotEmpty) {
+            // The request has been accepted. Navigate to the confirmation page
+            // which will then be responsible for listening for the image.
+            if (!_navigated) {
               material.debugPrint(
-                "[PeekWaitPage] Status 'accepted' AND imageUrl IS PRESENT. Navigating to image confirmation page.",
-              );
-              // CORRECTED: Navigate to the confirmation page instead of directly to splash.
-              _goToImageConfirmationPage(widget.requestId, imageUrl);
-            } else {
-              // Status is 'accepted', but URL isn't here YET.
-              material.debugPrint(
-                "[PeekWaitPage] Status 'accepted', but imageUrl is still MISSING. User A remains on PeekWaitPage, listening.",
-              );
-              // The commented-out block for navigating to /peek-accepted with empty imageUrl
-              // was for a different scenario. For this flow, if imageUrl is missing, we just wait.
-
-              // Navigate to PeekAcceptedPage to show "Peek Accepted!" to the SENDER
-              // if (mounted && !_navigated) {
-              //   _navigated = true;
-              //   _cancelAll();
-              //   context.go(Uri(
-              //     path: '/peek-accepted',
-              //     queryParameters: {
-              //       'requestId': widget.requestId,
-              //       'imageUrl': '',
-              //     },
-              //   ).toString());
-              // }
+                  "[PeekWaitPage] Status 'accepted'. Navigating to PeekAcceptedPage.");
+              _navigated = true;
+              _cancelAll();
+              context.go('/peek-accepted?requestId=${widget.requestId}');
             }
-
             break;
 
-          // User B has captured and sent the image.
           case 'responded_with_image':
-            if (imageUrl != null && imageUrl.isNotEmpty) {
-              material.debugPrint(
-                "[PeekWaitPage] Status 'responded_with_image' AND imageUrl IS PRESENT. Navigating to splash.",
-              );
-              // _goToSplash(imageUrl);
+            // This case is now primarily handled by PeekAcceptedPage.
+            // This acts as a fallback in case the listener transition is slow.
+            if (imageUrl != null && imageUrl.isNotEmpty && !_navigated) {
               _goToImageConfirmationPage(widget.requestId, imageUrl);
-            } else {
-              // This state is unexpected: status implies image is ready, but URL is missing.
-              material.debugPrint(
-                "⚠️ [PeekWaitPage] Status 'responded_with_image' but imageUrl is MISSING. This is unexpected. Waiting for potential correction or local timeout.",
-              );
             }
             break;
 
@@ -299,7 +271,7 @@ class _PeekWaitPageState extends ConsumerState<PeekWaitPage> {
           'Something went wrong ($message). Returning home.',
         ), // Simplified msg
         backgroundColor: material.Colors.redAccent,
-        duration: Duration(seconds: 3),
+        duration: const Duration(seconds: 5),
       ),
     );
 
@@ -325,7 +297,8 @@ class _PeekWaitPageState extends ConsumerState<PeekWaitPage> {
   void dispose() {
     material.debugPrint(
         "[PeekWaitPage] Disposing for request ${widget.requestId}.");
-    _cancelAll(); // Ensure resources are cleaned up
+    // Ensure resources are cleaned up
+    _cancelAll();
     super.dispose();
   }
 
@@ -333,17 +306,29 @@ class _PeekWaitPageState extends ConsumerState<PeekWaitPage> {
     if (!mounted || _navigated) return;
     material.debugPrint(
         "[PeekWaitPage] User initiated stop searching for ${widget.requestId}.");
+
     _navigated = true;
     _cancelAll();
+
     try {
-      // Ensure PeekController has 'cancelPeek' method
-      await ref
+      final success = await ref
           .read(peekControllerProvider.notifier)
-          .cancelPeek(widget.requestId); // <<< Keep this call
-      material.debugPrint("[PeekWaitPage] Peek request cancellation sent.");
+          .cancelPeek(widget.requestId);
+
+      if (mounted && success) {
+        // Show a confirmation SnackBar on success.
+        material.ScaffoldMessenger.of(context).showSnackBar(
+          const material.SnackBar(
+            content: material.Text('Peek request cancelled.'),
+            behavior: material.SnackBarBehavior.floating,
+          ),
+        );
+      }
     } catch (e) {
       material.debugPrint("⚠️ [PeekWaitPage] Error calling cancelPeek: $e");
     }
+
+    // Navigate home after attempting cancellation.
     if (mounted) context.go('/');
   }
 

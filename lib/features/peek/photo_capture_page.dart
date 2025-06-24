@@ -4,6 +4,7 @@ import 'package:firebase_analytics/firebase_analytics.dart';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:peek/features/peek/controllers/peek_controller.dart';
 import 'package:peek/theme/colors.dart';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
@@ -843,6 +844,11 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
             icon: const Icon(Icons.close),
             tooltip: 'Cancel',
             onPressed: () {
+              // Signal to the sender that the peek was cancelled by the receiver.
+              ref
+                  .read(peekControllerProvider.notifier)
+                  .declinePeekByReceiver(widget.requestId);
+
               SystemChrome.setPreferredOrientations(
                 DeviceOrientation.values,
               ); // Unlock orientation

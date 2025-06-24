@@ -37,6 +37,59 @@ class FirestoreService {
     "Zircon"
   ];
 
+  // --- SPACE
+
+  /// ✅ NEW: Creates a temporary document to trigger a real-time event on the sender's device.
+  Future<void> triggerReactionEvent({
+    required String targetUserId,
+    required String reactionType, // "like", "dislike", etc.
+    required String peekRequestId,
+  }) async {
+    if (targetUserId.isEmpty) {
+      debugPrint(
+          "❌ [FirestoreService] triggerReactionEvent: targetUserId is empty.");
+      return;
+    }
+    try {
+      // This document's creation is the event. It can be auto-deleted later if desired.
+      await _db
+          .collection('users')
+          .doc(targetUserId)
+          .collection('received_reactions')
+          .add({
+        'reactionType': reactionType,
+        'peekRequestId': peekRequestId,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+      debugPrint(
+          "[FirestoreService] Reaction event '$reactionType' triggered for user $targetUserId.");
+    } catch (e) {
+      debugPrint(
+          "❌ [FirestoreService] Error triggering reaction event for user $targetUserId: $e");
+    }
+  }
+
+  Future<void> incrementLikesReceived(String targetUserId) async {
+    if (targetUserId.isEmpty) {
+      debugPrint(
+          "❌ [FirestoreService] incrementLikesReceived: targetUserId is empty.");
+      return; // Or throw an error
+    }
+    final userDocRef = _db.collection('users').doc(targetUserId);
+    try {
+      // We keep this for analytics, but it's no longer used for the real-time animation.
+      await userDocRef.update({
+        'likesReceivedCount': FieldValue.increment(1),
+      });
+      debugPrint(
+          "[FirestoreService] Likes received count (for analytics) incremented for user $targetUserId.");
+    } catch (e) {
+      debugPrint(
+          "❌ [FirestoreService] Error incrementing likes received for user $targetUserId: $e");
+    }
+  }
+// --- SPACE
+
   // --- Existing Notes Methods (Exactly as you provided) ---
   Future<void> addNote(String text) async {
     final user = _auth.currentUser;
@@ -274,25 +327,25 @@ class FirestoreService {
     }
   }
 
-  Future<void> incrementLikesReceived(String targetUserId) async {
-    if (targetUserId.isEmpty) {
-      debugPrint(
-          "❌ [FirestoreService] incrementLikesReceived: targetUserId is empty.");
-      return; // Or throw an error
-    }
-    final userDocRef = _db.collection('users').doc(targetUserId);
-    try {
-      await userDocRef.update({
-        'likesReceivedCount': FieldValue.increment(1),
-      });
-      debugPrint(
-          "[FirestoreService] Likes received incremented for user $targetUserId.");
-    } catch (e) {
-      debugPrint(
-          "❌ [FirestoreService] Error incrementing likes received for user $targetUserId: $e");
-      // Decide if rethrow is needed or just log
-    }
-  }
+  // Future<void> incrementLikesReceived(String targetUserId) async {
+  //   if (targetUserId.isEmpty) {
+  //     debugPrint(
+  //         "❌ [FirestoreService] incrementLikesReceived: targetUserId is empty.");
+  //     return; // Or throw an error
+  //   }
+  //   final userDocRef = _db.collection('users').doc(targetUserId);
+  //   try {
+  //     await userDocRef.update({
+  //       'likesReceivedCount': FieldValue.increment(1),
+  //     });
+  //     debugPrint(
+  //         "[FirestoreService] Likes received incremented for user $targetUserId.");
+  //   } catch (e) {
+  //     debugPrint(
+  //         "❌ [FirestoreService] Error incrementing likes received for user $targetUserId: $e");
+  //     // Decide if rethrow is needed or just log
+  //   }
+  // }
 
   /// Increments the 'dislikesReceivedCount' for the specified user.
   /// [targetUserId] is the ID of the user whose peek received a dislike.
@@ -313,6 +366,28 @@ class FirestoreService {
       debugPrint(
           "❌ [FirestoreService] Error incrementing dislikes received for user $targetUserId: $e");
       // Decide if rethrow is needed or just log
+    }
+  }
+
+  /// This is the trigger that the waiting sender will listen for.
+  Future<void> addReactionToPeek(String requestId, String reactionType) async {
+    if (requestId.isEmpty || reactionType.isEmpty) {
+      debugPrint(
+          "❌ [FirestoreService] addReactionToPeek: a parameter is empty.");
+      return;
+    }
+    final peekDocRef = _db.collection('peek_requests').doc(requestId);
+    try {
+      await peekDocRef.update({
+        'reaction': reactionType, // e.g., 'like' or 'dislike'
+        'reactedAt': FieldValue.serverTimestamp(),
+      });
+      debugPrint(
+          "[FirestoreService] Reaction '$reactionType' added to peek request $requestId.");
+    } catch (e) {
+      debugPrint(
+          "❌ [FirestoreService] Error adding reaction to peek request $requestId: $e");
+      // Decide if rethrow is needed
     }
   }
 

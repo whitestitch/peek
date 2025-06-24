@@ -193,6 +193,11 @@ class NotificationService {
         // Navigate to home page where the pendingPeekRequestsProvider
         // will automatically detect the new request and show the dialog
         targetUri = Uri(path: '/');
+        // Force a small delay to ensure the navigation completes before dialog shows
+        Future.delayed(const Duration(milliseconds: 500), () {
+          // The dialog will be triggered by the listener in main.dart
+          debugPrint("[NotificationService] Navigation delay complete");
+        });
         break;
 
       // User's request accepted, image ready to view
