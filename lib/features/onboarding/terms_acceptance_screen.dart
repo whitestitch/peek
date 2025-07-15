@@ -160,7 +160,7 @@ class _TermsAcceptanceScreenState extends ConsumerState<TermsAcceptanceScreen> {
 
                   // Logo
                   SvgPicture.asset(
-                    'assets/images/peekio_logo.svg',
+                    'assets/images/peekio_eye.svg',
                     width: 80,
                     height: 80,
                     colorFilter: const ColorFilter.mode(
@@ -326,7 +326,7 @@ class _TermsAcceptanceScreenState extends ConsumerState<TermsAcceptanceScreen> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor:
                             _termsAccepted ? peekPrimaryColor : Colors.grey,
-                        foregroundColor: peekOnPrimaryColor,
+                        foregroundColor: peekSurfaceColor,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(30),
                         ),

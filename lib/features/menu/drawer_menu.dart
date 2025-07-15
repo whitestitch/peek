@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:peek/theme/colors.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:peek/features/premium/providers/premium_controller.dart';
 
@@ -32,27 +33,41 @@ class DrawerMenu extends ConsumerWidget {
               padding:
                   const EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0),
               decoration: const BoxDecoration(
-                color: peekSurfaceColor, // Color for the header background
+                color: peekBackgroundColor, // Color for the header background
                 // Optional: add a bottom border if desired
                 // border: Border(
                 //   bottom: BorderSide(color: Colors.grey.shade700, width: 0.5),
                 // ),
               ),
-              child: const Align(
-                alignment: Alignment.centerLeft, // Align text to the left
-                child: Text(
-                  'Peekio Menu',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w600,
-                    color: peekOnSurfaceColor,
-                  ),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SvgPicture.asset(
+                      'assets/images/peekio_logo.svg',
+                      height: 28,
+                      colorFilter: const ColorFilter.mode(
+                        peekWhiteColor, // Match text color
+                        BlendMode.srcIn,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Text(
+                      ' Menu',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w600,
+                        color: peekWhiteColor,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
 
             ListTile(
-              leading: const Icon(Icons.star),
+              leading: const Icon(Icons.star_outline_rounded),
               title: const Text('Peek Premium'),
               onTap: () => context.go('/premium'),
             ),
@@ -102,7 +117,7 @@ class DrawerMenu extends ConsumerWidget {
             // ),
 
             ListTile(
-                leading: const Icon(Icons.bar_chart),
+                leading: const Icon(Icons.bar_chart_rounded),
                 title: const Text('My Stats'),
                 onTap: () {
                   Navigator.pop(context); // Close drawer
@@ -119,18 +134,17 @@ class DrawerMenu extends ConsumerWidget {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.lock),
+              leading: const Icon(Icons.lock_outline_rounded),
               title: const Text('Privacy & Safety'),
               onTap: () => context.go('/privacy'),
             ),
             ListTile(
-              leading: const Icon(Icons.info_outline),
+              leading: const Icon(Icons.info_outline_rounded),
               title: const Text('About Peek'),
               onTap: () => context.go('/info'),
             ),
             ListTile(
-              leading: const Icon(
-                  Icons.slideshow_rounded), // Example: Slideshow icon
+              leading: const Icon(Icons.slideshow_rounded),
               title: const Text(
                   'View Tutorial'), // Or "How Peek Works", "Show Intro"
               onTap: () {

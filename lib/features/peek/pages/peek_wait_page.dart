@@ -8,6 +8,7 @@ import 'package:peek/features/peek/controllers/peek_controller.dart';
 import 'package:peek/features/peek/providers/peek_providers.dart';
 import 'package:rive/rive.dart';
 import 'package:peek/theme/colors.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 /// Waits for acceptance from a receiver; on accept, routes into SplashPage.
 /// Navigates home on rejection or timeout.
@@ -25,8 +26,9 @@ class _PeekWaitPageState extends ConsumerState<PeekWaitPage> {
   bool _hasTimedOut = false; // Flag to track if timeout occurred
   bool _navigated = false; // Flag to prevent multiple navigation calls
 
-  static const String _backgroundImagePath = 'assets/images/wait_peek_bg.jpg';
-  static const String _riveAnimationPath = 'assets/animations/peek_radar.riv';
+  // static const String _backgroundImagePath = 'assets/images/wait_peek_bg.jpg';
+  static const String _riveAnimationPath =
+      'assets/animations/peek_wait_radar.riv';
   static const String _riveAnimationName = 'peek_radar';
 
   @override
@@ -311,25 +313,19 @@ class _PeekWaitPageState extends ConsumerState<PeekWaitPage> {
     _cancelAll();
 
     try {
-      final success = await ref
+      // Call the controller to update the status to 'cancelled_by_sender'
+      // This will be picked up by the other user's listener.
+      ref
           .read(peekControllerProvider.notifier)
-          .cancelPeek(widget.requestId);
-
-      if (mounted && success) {
-        // Show a confirmation SnackBar on success.
-        material.ScaffoldMessenger.of(context).showSnackBar(
-          const material.SnackBar(
-            content: material.Text('Peek request cancelled.'),
-            behavior: material.SnackBarBehavior.floating,
-          ),
-        );
-      }
+          .cancelPeekBySender(widget.requestId);
     } catch (e) {
       material.debugPrint("⚠️ [PeekWaitPage] Error calling cancelPeek: $e");
     }
 
-    // Navigate home after attempting cancellation.
-    if (mounted) context.go('/');
+    // Navigate to the home page and trigger the slide panel.
+    if (mounted) {
+      context.go('/?show=peekCancelled&reason=sender_cancelled');
+    }
   }
 
   @override
@@ -351,7 +347,10 @@ class _PeekWaitPageState extends ConsumerState<PeekWaitPage> {
           )
         // Otherwise, show the waiting indicator
         : const material.Padding(
-            padding: const material.EdgeInsets.symmetric(horizontal: 35.0),
+            padding: const material.EdgeInsets.symmetric(
+              vertical: 2,
+              horizontal: 8,
+            ),
             child: material.Column(
               mainAxisSize: material.MainAxisSize.min,
               crossAxisAlignment: material.CrossAxisAlignment.center,
@@ -386,108 +385,99 @@ class _PeekWaitPageState extends ConsumerState<PeekWaitPage> {
         fit: material.StackFit.expand,
         children: [
           // --- Layer 1: Background Image ---
-          material.Image.asset(
-            // <<< Use prefix
-            _backgroundImagePath,
-            fit: material.BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) {
-              material
-                  .debugPrint("❌ Error loading wait background image: $error");
-              return material.Container(
-                  color: peekBackgroundColor); // <<< Use prefix
-            },
-          ),
+          // material.Image.asset(
+          //   _backgroundImagePath,
+          //   fit: material.BoxFit.cover,
+          //   errorBuilder: (context, error, stackTrace) {
+          //     material
+          //         .debugPrint("❌ Error loading wait background image: $error");
+          //     return material.Container(
+          //         color: peekBackgroundColor); // <<< Use prefix
+          //   },
+          // ),
 
           // --- Layer 2: Rive Animation (Centered) ---
-          material.SizedBox(
-            height: 100,
-            child: RiveAnimation.asset(
-              // No prefix needed for Rive
-              _riveAnimationPath,
-              animations: const [_riveAnimationName],
-              fit: material.BoxFit.fitHeight,
-              placeHolder: const material.SizedBox.shrink(), // <<< Use prefix
-              // REMOVED onError parameter
-              onInit: (artboard) {
-                // You can still use onInit if needed
-                material.debugPrint("Rive loaded: ${artboard.name}");
-              },
+          material.Center(
+            child: material.SizedBox(
+              height: 750,
+              width: 750,
+              child: RiveAnimation.asset(
+                _riveAnimationPath,
+                animations: const [_riveAnimationName],
+                fit: material.BoxFit.cover,
+                placeHolder: const material.SizedBox.shrink(),
+                onInit: (artboard) {
+                  material.debugPrint("Rive loaded: ${artboard.name}");
+                },
+              ),
             ),
           ),
 
+          // --- Layer 2: UI Content (Text and Button) ---
           material.Padding(
-            // Use Padding for safe area and bottom offset
-            padding:
-                material.MediaQuery.of(context).padding + // Include safe area
-                    const material.EdgeInsets.only(
-                        bottom: 40.0,
-                        left: 20.0,
-                        right: 20.0), // Adjust bottom padding
+            padding: const material.EdgeInsets.symmetric(horizontal: 40.0),
             child: material.Column(
-              mainAxisAlignment:
-                  material.MainAxisAlignment.end, // Align to bottom
-              crossAxisAlignment: material.CrossAxisAlignment.center,
               children: [
-                // Spacer pushes content down
+                // This Spacer pushes all the content below it to the bottom of the screen.
                 const material.Spacer(),
 
-                // Display Waiting or Timeout message
-                mainContentWidget, // Use the variable defined above
+                // The "Waiting for..." text content
+                mainContentWidget,
 
                 const material.SizedBox(
-                    height: 40), // Space between text and button
+                    height: 30), // Space between text and button
 
-                // Conditional Stop Button
+                // The Stop button
                 if (!_hasTimedOut)
-                  material.OutlinedButton(
-                    onPressed: _stopSearching, // Correct method call
-                    style: material.OutlinedButton.styleFrom(/* Keep Style */),
-                    child: const material.Text(
-                      'Stop', /* Keep Style */
+                  material.SizedBox(
+                    width: double.infinity, // Make button wider for better UI
+                    child: material.OutlinedButton(
+                      onPressed: _stopSearching,
+                      child: const material.Text('Stop'),
                     ),
-                  )
-                else
-                  // Placeholder to maintain space when button hidden
-                  const material.SizedBox(
-                      height: 50 + 14 * 2), // Approx button height + padding
+                  ),
 
-                // No extra SizedBox needed at the very end, Padding handles it
+                // Bottom padding to lift the button from the edge
+                const material.SizedBox(height: 60),
               ],
             ),
           ),
 
-          // Optional: Darkening Overlay
-          // material.Container(color: material.Colors.black.withOpacity(0.3)),
-
-          // --- Layer 3: Main Content (Waiting/Timeout UI) ---
-          // material.Column(
-          //   // Use a Column to structure vertically
-          //   children: [
-          //     const material.Spacer(), // <<< ADD Spacer to push content down
-          //     mainContentWidget, // <<< Place the determined content widget here
-          //     // Add padding below the text content before the absolute bottom edge
-          //     material.SizedBox(
-          //         height: material.MediaQuery.of(context).size.height *
-          //             0.15), // <<< Example bottom padding (adjust multiplier)
-          //   ],
-          // ),
+          // --- Layer 3: Top Logo ---
+          material.Padding(
+            padding: material.EdgeInsets.only(
+              top: material.MediaQuery.of(context).padding.top + 20,
+              left: 35.0,
+            ),
+            child: material.Align(
+              alignment: material.Alignment.topLeft,
+              child: material.Row(
+                mainAxisSize: material.MainAxisSize.min,
+                crossAxisAlignment: material.CrossAxisAlignment.center,
+                children: [
+                  SvgPicture.asset(
+                    'assets/images/peekio_logo.svg',
+                    height: 30, // Adjusted for text balance
+                    colorFilter: const material.ColorFilter.mode(
+                      peekWhiteColor,
+                      material.BlendMode.srcIn,
+                    ),
+                  ),
+                  const material.SizedBox(width: 12),
+                  const material.Text(
+                    "Peekio",
+                    style: material.TextStyle(
+                      fontWeight: material.FontWeight.w600,
+                      color: peekWhiteColor,
+                      fontSize: 32,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );
-    // Optional: Add AppBar if needed for cancellation
-    // appBar: AppBar(
-    //   title: const Text("Waiting..."),
-    //   leading: IconButton(
-    //     icon: const Icon(Icons.close),
-    //     onPressed: () {
-    //        // Implement cancellation logic if desired
-    //        _cancelAll();
-    //        _navigated = true; // Prevent listener nav
-    //        // Maybe update Firestore status to 'cancelled'?
-    //        context.go('/');
-    //     },
-    //   ),
-    // ),
-    // body: Center(child: bodyContent),
   }
 }

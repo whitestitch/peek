@@ -34,80 +34,93 @@ class _HomePageState extends ConsumerState<HomePage> {
     material.WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _checkPromoModal();
-        _checkIfPeekWasCancelled();
+        // _checkIfPeekWasCancelled();
       }
     });
   }
 
-  void _checkIfPeekWasCancelled() {
-    // This method is called in initState's post-frame callback.
-    final uri = GoRouterState.of(context).uri;
-    if (uri.queryParameters['show'] == 'peekCancelled') {
-      material.showModalBottomSheet(
-        context: context,
-        backgroundColor:
-            material.Colors.transparent, // Make sheet background transparent
-        isScrollControlled: true, // Allows custom height
-        isDismissible: true, // Allow tap-to-dismiss
-        builder: (context) {
-          return material.Stack(
-            alignment: material.Alignment.topCenter,
-            children: [
-              // The main content container with rounded corners
-              material.Container(
-                margin: const material.EdgeInsets.only(
-                    top: 24), // Space for close button
-                height: material.MediaQuery.of(context).size.height * 0.4,
-                width: double.infinity,
-                decoration: const material.BoxDecoration(
-                  color: peekSurfaceColor,
-                  borderRadius: material.BorderRadius.vertical(
-                    top: material.Radius.circular(24),
+  void _showPeekCancelledSheet(String title, String message) {
+    material.showModalBottomSheet(
+      context: context,
+      backgroundColor:
+          material.Colors.transparent, // Make sheet background transparent
+      isScrollControlled: true, // Allows custom height
+      isDismissible: true, // Allow tap-to-dismiss
+      builder: (ctx) {
+        // Auto-close after 5 seconds
+        Future.delayed(const Duration(seconds: 5), () {
+          if (ctx.mounted) {
+            material.Navigator.of(ctx).pop();
+          }
+        });
+        return material.Stack(
+          alignment: material.Alignment.topCenter,
+          children: [
+            // The main content container with rounded corners
+            material.Container(
+              margin: const material.EdgeInsets.only(
+                  top: 24), // Space for close button
+              height: material.MediaQuery.of(context).size.height * 0.4,
+              width: double.infinity,
+              decoration: const material.BoxDecoration(
+                color: peekBackgroundColor,
+                borderRadius: material.BorderRadius.vertical(
+                  top: material.Radius.circular(24),
+                ),
+              ),
+              padding: const material.EdgeInsets.all(24.0),
+              child: material.Column(
+                mainAxisAlignment: material.MainAxisAlignment.center,
+                children: [
+                  const material.Icon(
+                    material.Icons.cancel_outlined,
+                    size: 60,
+                    color: material.Colors.white70,
                   ),
-                ),
-                padding: const material.EdgeInsets.all(24.0),
-                child: const material.Column(
-                  mainAxisAlignment: material.MainAxisAlignment.center,
-                  children: [
-                    material.Icon(
-                      material.Icons.cancel_outlined,
-                      size: 60,
-                      color: material.Colors.white70,
+                  const material.SizedBox(height: 20),
+                  material.Text(
+                    title,
+                    style: const material.TextStyle(
+                        fontSize: 24,
+                        fontWeight: material.FontWeight.bold,
+                        color: material.Colors.white),
+                  ),
+                  const material.SizedBox(height: 8),
+                  material.Text(
+                    message,
+                    textAlign: material.TextAlign.center,
+                    style: const material.TextStyle(
+                        fontSize: 16, color: material.Colors.white70),
+                  ),
+                  const material.SizedBox(height: 32),
+                  material.SizedBox(
+                    width: double.infinity,
+                    child: material.ElevatedButton(
+                      style: material.ElevatedButton.styleFrom(
+                        backgroundColor: peekSecondaryColor,
+                      ),
+                      onPressed: () => material.Navigator.of(ctx).pop(),
+                      child: const material.Text('OK'),
                     ),
-                    material.SizedBox(height: 20),
-                    material.Text(
-                      "Peek Canceled",
-                      style: material.TextStyle(
-                          fontSize: 24,
-                          fontWeight: material.FontWeight.bold,
-                          color: material.Colors.white),
-                    ),
-                    material.SizedBox(height: 8),
-                    material.Text(
-                      "The other user was not available to Peek.",
-                      textAlign: material.TextAlign.center,
-                      style: material.TextStyle(
-                          fontSize: 16, color: material.Colors.white70),
-                    ),
-                  ],
-                ),
+                  )
+                ],
               ),
-              // Positioned Close Button
-              material.Positioned(
-                top: 24 + 8, // Position relative to the top of the Stack
-                right: 12,
-                child: material.IconButton(
-                  icon: const material.Icon(material.Icons.close,
-                      color: material.Colors.white54),
-                  onPressed: () => material.Navigator.of(context).pop(),
-                  tooltip: 'Close',
-                ),
+            ),
+            // Positioned Close Button
+            material.Positioned(
+              top: 24 + 8, // Position relative to the top of the Stack
+              right: 12,
+              child: material.IconButton(
+                icon: const material.Icon(material.Icons.close,
+                    color: material.Colors.white54),
+                onPressed: () => material.Navigator.of(context).pop(),
+                tooltip: 'Close',
               ),
-            ],
-          );
-        },
-      );
-    }
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Future<void> _checkPromoModal() async {
@@ -195,8 +208,27 @@ class _HomePageState extends ConsumerState<HomePage> {
 
   @override
   material.Widget build(material.BuildContext context) {
+    final goRouterState = GoRouterState.of(context);
+    if (goRouterState.uri.queryParameters['show'] == 'peekCancelled') {
+      // Determine which message to show based on the 'reason' parameter.
+      final reason = goRouterState.uri.queryParameters['reason'];
+
+      final title =
+          reason == 'sender_cancelled' ? "Peek Stopped" : "Peek Cancelled";
+
+      final message = reason == 'sender_cancelled'
+          ? "You've stopped a peek."
+          : "The other user was not available to Peek.";
+
+      material.WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          context.go('/');
+          _showPeekCancelledSheet(title, message);
+        }
+      });
+    }
+
     final homeStateAsync = ref.watch(homeStateProvider);
-    // Note: isPeekingLoading is now handled inside the data builder for accuracy
 
     return material.Center(
       child: homeStateAsync.when(
@@ -263,8 +295,8 @@ class _HomePageState extends ConsumerState<HomePage> {
                           ),
                         ),
                         material.SizedBox(
-                          width: 230,
-                          height: 230,
+                          width: 280,
+                          height: 280,
                           child: material.ElevatedButton(
                             onPressed:
                                 isButtonEnabled ? _attemptStartPeeking : null,
@@ -303,7 +335,15 @@ class _HomePageState extends ConsumerState<HomePage> {
                                                 const material.EdgeInsets.all(
                                                     15),
                                             child: SvgPicture.asset(
-                                              'assets/images/peekio_logo.svg',
+                                              'assets/images/peekio_eye.svg',
+                                              // height: 200,
+                                              // ignore: deprecated_member_use
+                                              // color: peekPrimaryColor,
+                                              // colorFilter:
+                                              //     const material.ColorFilter.mode(
+                                              //   material.Colors.white,
+                                              //   material.BlendMode.srcIn,
+                                              // ),
                                             ),
                                           ),
                           ),
@@ -311,80 +351,38 @@ class _HomePageState extends ConsumerState<HomePage> {
                       ],
                     ),
                   ),
-                  const material.SizedBox(height: 10),
+
+                  const material.SizedBox(height: 20),
+
                   if (!isPremiumForUI)
                     material.SizedBox(
                       width: double.infinity,
-                      child: material.ElevatedButton.icon(
+                      child: material.OutlinedButton.icon(
                         onPressed:
                             isLoading ? null : () => context.go('/premium'),
                         icon: const material.Icon(
                             material.Icons.star_purple500_outlined),
                         label: const material.Text('Upgrade to Premium'),
-                        style: material.ElevatedButton.styleFrom(
-                          backgroundColor: material.Colors.amber.shade600,
-                          foregroundColor: material.Colors.black87,
-                        ),
+
+                        // style: material.ElevatedButton.styleFrom(
+                        //   backgroundColor: peekPrimaryColor,
+                        //   foregroundColor: material.Colors.black87,
+                        // ),
                       ),
                     ),
-                  const material.SizedBox(height: 20),
-                  if (kDebugMode)
-                    material.Padding(
-                      padding: const material.EdgeInsets.only(bottom: 20.0),
-                      child: material.OutlinedButton.icon(
-                        icon: const material.Icon(material.Icons.person_add,
-                            color: material.Colors.greenAccent),
-                        label: const material.Text("DEBUG: Create Test User",
-                            style: material.TextStyle(
-                                color: material.Colors.greenAccent)),
-                        onPressed: () async {
-                          final user = FirebaseAuth.instance.currentUser;
-                          if (user != null) {
-                            try {
-                              await FirebaseFirestore.instance
-                                  .collection('users')
-                                  .doc(user.uid)
-                                  .set({
-                                'uid': user.uid,
-                                'displayName':
-                                    'Test User ${user.uid.substring(0, 6)}',
-                                'createdAt': FieldValue.serverTimestamp(),
-                                'isPremium': false,
-                                'dailyPeekCount': 0,
-                              });
-                              material.ScaffoldMessenger.of(context)
-                                  .showSnackBar(
-                                const material.SnackBar(
-                                  content: material.Text('Test user created!'),
-                                  backgroundColor: material.Colors.green,
-                                ),
-                              );
-                            } catch (e) {
-                              material.ScaffoldMessenger.of(context)
-                                  .showSnackBar(
-                                material.SnackBar(
-                                  content: material.Text('Error: $e'),
-                                  backgroundColor: material.Colors.red,
-                                ),
-                              );
-                            }
-                          }
-                        },
-                        style: material.OutlinedButton.styleFrom(
-                          side: const material.BorderSide(
-                              color: material.Colors.greenAccent),
-                        ),
-                      ),
-                    ),
-                  material.SizedBox(
-                    width: double.infinity,
-                    child: material.OutlinedButton.icon(
-                      onPressed:
-                          isLoading ? null : () => context.go('/onboarding'),
-                      icon: const material.Icon(material.Icons.slideshow),
-                      label: const material.Text('View Tutorial'),
-                    ),
-                  ),
+
+                  // -------------  Space
+                  // const material.SizedBox(height: 20),
+                  // material.SizedBox(
+                  //   width: double.infinity,
+                  //   child: material.OutlinedButton.icon(
+                  //     onPressed:
+                  //         isLoading ? null : () => context.go('/onboarding'),
+                  //     icon: const material.Icon(material.Icons.slideshow),
+                  //     label: const material.Text('View Tutorial'),
+                  //   ),
+                  // ),
+                  // -------------  Space
                 ],
               ),
             ),
@@ -401,7 +399,7 @@ class _HomePageState extends ConsumerState<HomePage> {
         mainAxisAlignment: material.MainAxisAlignment.center,
         children: [
           const material.Icon(material.Icons.error_outline,
-              color: material.Colors.redAccent, size: 40),
+              color: peekErrorColor, size: 40),
           const material.SizedBox(height: 16),
           material.Text(
             message,
@@ -421,9 +419,13 @@ class _HomePageState extends ConsumerState<HomePage> {
       return material.Row(
         mainAxisAlignment: material.MainAxisAlignment.center,
         children: [
-          material.Text(
+          const material.Text(
             'Welcome Back!',
-            style: material.Theme.of(context).textTheme.headlineMedium,
+            style: material.TextStyle(
+              fontSize: 32,
+              fontWeight: material.FontWeight.bold,
+              color: peekWhiteColor,
+            ),
           ),
           const material.SizedBox(width: 8),
           material.Chip(
@@ -444,7 +446,11 @@ class _HomePageState extends ConsumerState<HomePage> {
       children: [
         material.Text(
           titleText,
-          style: material.Theme.of(context).textTheme.headlineMedium,
+          style: const material.TextStyle(
+            fontSize: 32,
+            fontWeight: material.FontWeight.bold,
+            color: peekWhiteColor,
+          ),
         ),
         material.Padding(
           padding: const material.EdgeInsets.only(top: 10.0),

@@ -6,6 +6,7 @@ import '../controllers/subscription_controller.dart';
 import '../providers/premium_controller.dart';
 import '../controllers/subscription_state.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:peek/theme/colors.dart';
 
 class PeekPremiumPage extends ConsumerWidget {
   const PeekPremiumPage({super.key});
@@ -21,7 +22,7 @@ class PeekPremiumPage extends ConsumerWidget {
     final Color statusColor = Colors.grey.shade500;
     // Use const where possible
     return ListTile(
-      leading: Icon(icon, color: tileColor, size: 28),
+      leading: Icon(icon, color: tileColor),
       title: Text(title, style: TextStyle(color: tileColor, fontSize: 16)),
       trailing: status != null
           ? Text(
@@ -78,7 +79,7 @@ class PeekPremiumPage extends ConsumerWidget {
     final String priceString = product?.price ?? '...';
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: peekBackgroundColor,
       appBar: AppBar(
         title: const Text('Peek Premium'),
         leading: IconButton(
@@ -92,7 +93,7 @@ class PeekPremiumPage extends ConsumerWidget {
             }
           },
         ),
-        backgroundColor: Colors.black,
+        backgroundColor: Colors.transparent,
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
@@ -157,36 +158,33 @@ class PeekPremiumPage extends ConsumerWidget {
             // --- Feature List ---
             _buildFeatureTile(
               icon: Icons.all_inclusive,
-              title: "Unlimited Peeks Per Day",
+              title: "Unlimited Daily Peeks",
             ),
             _buildFeatureTile(
               icon: Icons.flash_on,
-              title: "Peek Without Cooldowns",
-            ),
-            _buildFeatureTile(
-              icon: Icons.hourglass_bottom,
-              title: "Longer Image View Duration",
-            ),
-            const Divider(height: 24, color: Colors.white24),
-            _buildFeatureTile(
-              icon: Icons.location_on_outlined,
-              title: "See General Location of Peeks",
-              // status: "Optional Toggle",
-            ),
-            _buildFeatureTile(
-              icon: Icons.visibility_outlined,
-              title: "See Who Peeked You",
-              // status: "Optional Toggle",
+              title: "No Cooldowns Between Peeks",
             ),
             _buildFeatureTile(
               icon: Icons.bar_chart,
-              title: "Peeks Stats",
-              // status: "Optional Toggle",
+              title: "Access Your Peeks Stats",
+            ),
+            const Divider(height: 24, color: Colors.white24),
+            _buildFeatureTile(
+              icon: Icons.drive_file_rename_outline,
+              title: "Set a Custom Display Name",
+            ),
+            _buildFeatureTile(
+              icon: Icons.visibility_outlined,
+              title: "Reveal Who Peeked You",
+            ),
+            _buildFeatureTile(
+              icon: Icons.location_on_outlined,
+              title: "See Sender's General Location",
             ),
             const Divider(height: 24, color: Colors.white24),
             _buildFeatureTile(
               icon: Icons.chat_outlined,
-              title: "Temporary Anonymous Chat",
+              title: "Anonymous Chat",
               status: "Coming Soon",
               isAvailable: false,
             ),
@@ -211,14 +209,15 @@ class PeekPremiumPage extends ConsumerWidget {
               child: Text(
                 priceString, // Shows '...' or actual price
                 style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                      color: product != null
-                          ? Colors.deepPurpleAccent
-                          : Colors.grey, // Adjust color
+                      color: product != null ? peekWhiteColor : Colors.grey,
                       fontWeight: FontWeight.bold,
+                      fontSize: 42,
                     ),
               ),
             ),
-            const SizedBox(height: 8),
+
+            const SizedBox(height: 20),
+
             Center(
               child: Text(
                 "Subscription auto-renews. Cancel anytime.", // Clearer text
@@ -248,7 +247,7 @@ class PeekPremiumPage extends ConsumerWidget {
                         color: Colors.white,
                       ),
                     )
-                  : const Icon(Icons.workspace_premium_outlined),
+                  : const Icon(Icons.star_purple500_outlined),
               label: Text(
                 isLoading
                     ? 'Processing...'
@@ -260,8 +259,8 @@ class PeekPremiumPage extends ConsumerWidget {
               ),
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 16),
-                backgroundColor: Colors.deepPurple,
-                foregroundColor: Colors.white,
+                backgroundColor: peekPrimaryColor,
+                foregroundColor: peekSurfaceColor,
                 disabledBackgroundColor: Colors.grey.shade800,
                 disabledForegroundColor: Colors.grey.shade500,
                 shape: RoundedRectangleBorder(

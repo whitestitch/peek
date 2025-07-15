@@ -472,21 +472,6 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
-                          // Like Button
-                          ElevatedButton(
-                            onPressed: (_isSubmitting || _isProcessingAction)
-                                ? null
-                                : () => _handleReaction('like'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: peekPrimaryColor,
-                              shape: const CircleBorder(),
-                              padding:
-                                  const EdgeInsets.all(22), // Adjusted padding
-                              elevation: 5,
-                            ),
-                            child: Icon(Icons.favorite_rounded,
-                                size: 30, color: peekBackgroundColor),
-                          ),
                           // Dislike Button
                           ElevatedButton(
                             onPressed: (_isSubmitting || _isProcessingAction)
@@ -502,6 +487,22 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
                             ),
                             child: Icon(Icons.thumb_down_alt_rounded,
                                 size: 30, color: Colors.white70),
+                          ),
+
+                          // Like Button
+                          ElevatedButton(
+                            onPressed: (_isSubmitting || _isProcessingAction)
+                                ? null
+                                : () => _handleReaction('like'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: peekPrimaryColor,
+                              shape: const CircleBorder(),
+                              padding:
+                                  const EdgeInsets.all(22), // Adjusted padding
+                              elevation: 5,
+                            ),
+                            child: Icon(Icons.favorite_rounded,
+                                size: 30, color: peekBackgroundColor),
                           ),
                         ],
                       ),

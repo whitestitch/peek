@@ -267,7 +267,7 @@ exports.autoPingReceiverOnRequestCreate = onDocumentCreated(
       try {
         const payload = {
           notification: { // Standard notification object
-            title: "👁 Someone wants to Peek!",
+            title: "👁 Someone wants to Peekio!",
             body: "Open the app to respond to the request.",
           },
           data: { // Your custom data
@@ -304,9 +304,24 @@ exports.autoPingReceiverOnRequestCreate = onDocumentCreated(
     },
 );
 
+/*
+// We comment it out to remove the "unused variable" warning in the editor.
 const PEEK_STORAGE_BUCKET =
   process.env.FIREBASE_STORAGE_BUCKET || admin.app().options.storageBucket;
+*/
 
+/*
+// ==================================================================
+// DEVELOPMENT FIX: Image moderation is temporarily disabled.
+//
+// REASON: This function calls the Google Cloud Vision API, which
+// requires a billing account on your project. This allows you to
+// continue development without setting up billing.
+//
+// TO RE-ENABLE FOR PRODUCTION:
+// 1. Enable billing on your Google Cloud project.
+// 2. Uncomment this entire block.
+// ==================================================================
 exports.moderateImageUpload = onObjectFinalized(
     {bucket: PEEK_STORAGE_BUCKET, region: "us-central1"},
     async (event) => {
@@ -354,6 +369,7 @@ exports.moderateImageUpload = onObjectFinalized(
       return null;
     },
 );
+*/
 
 exports.cleanupExpiredPeeks = onSchedule(
     {

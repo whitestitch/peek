@@ -67,9 +67,9 @@ class AboutPage extends StatelessWidget {
               alignment: Alignment.centerLeft,
               child: SvgPicture.asset(
                 'assets/images/peekio_logo.svg',
-                height: 28,
+                height: 50,
                 // ignore: deprecated_member_use
-                color: peekPrimaryColor,
+                color: peekWhiteColor,
                 fit: BoxFit.cover,
                 //     errorBuilder: (context, error, stackTrace) {
                 //   return const Icon(Icons.error_outline,

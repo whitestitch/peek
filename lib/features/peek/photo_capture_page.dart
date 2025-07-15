@@ -42,7 +42,7 @@ class PhotoCapturePage extends ConsumerStatefulWidget {
 }
 
 class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   // --- State Variables (Keep As Is) ---
   CameraController? _controller;
   bool _isCameraInitializing = false;
@@ -52,16 +52,29 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
   Uint8List? _capturedImageBytes;
   File? _tempProcessedFile;
   int _selectedCameraIndex = -1;
+
   bool _isChangingCamera = false;
   String? _initializationError;
   final FirebaseAnalytics _analytics = FirebaseAnalytics.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  bool _countdownHasBeenTriggered = false;
+  bool _isTimeoutHandled = false;
+
   bool _isSenderPremium = false;
   bool _senderSharesLocation = false;
+
   bool _senderAllowsLocationReveal = false;
   bool _isFetchingLocation = false;
   String? _senderDisplayName;
   String? _senderAvatarUrl;
+  Timer? _countdownTimer;
+  int? _secondsRemaining;
+
+  late final AnimationController _pulseController;
+  late final Animation<double> _pulseAnimation;
+
+  // Timer? _previewTimer;
+  // int? _previewSecondsRemaining;
 
   // --- initState (Keep As Is) ---
   @override
@@ -76,9 +89,197 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
         if (mounted) {
           _findAndInitializeCamera();
           _loadUserSettings();
+          _listenForCaptureDeadline();
         }
       });
     });
+
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    )..repeat(reverse: true);
+
+    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.15).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
+  }
+
+  void _listenForCaptureDeadline() {
+    FirebaseFirestore.instance
+        .collection('peek_requests')
+        .doc(widget.requestId)
+        .snapshots()
+        .listen((snapshot) {
+      if (!mounted || !snapshot.exists) return;
+      final data = snapshot.data();
+      final expiresAt = data?['captureExpiresAt'] as Timestamp?;
+      final status = data?['status'] as String?;
+
+      // Check if the sender cancelled the peek
+      if (status == 'cancelled_by_sender') {
+        // The check is here
+        debugPrint(
+            "[PhotoCapturePage] Peek was cancelled by the sender. Closing.");
+        if (mounted) {
+          // The navigation to show the panel is also here
+          context.go('/?show=peekCancelled');
+        }
+        return;
+      }
+
+      if (expiresAt != null && _countdownTimer == null) {
+        _startCountdown(expiresAt.toDate());
+      }
+    });
+  }
+
+  void _startCountdown(DateTime deadline) {
+    if (!mounted || (_countdownTimer?.isActive ?? false)) return;
+
+    // Immediately set the initial countdown value without waiting for the first tick.
+    if (mounted) {
+      setState(() {
+        final now = DateTime.now();
+        final initialRemaining =
+            (deadline.difference(now).inMilliseconds / 1000).ceil();
+        _secondsRemaining = initialRemaining > 0 ? initialRemaining : 0;
+      });
+    }
+
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      final now = DateTime.now();
+      final remaining = (deadline.difference(now).inMilliseconds / 1000).ceil();
+
+      if (remaining < 0) {
+        timer.cancel();
+        // Ensure UI shows 0 before navigating, in case a frame was skipped.
+        if (mounted && _secondsRemaining != 0) {
+          setState(() => _secondsRemaining = 0);
+        }
+        _handleTimeout();
+      } else {
+        // This will now correctly display all values including 0.
+        if (mounted) {
+          setState(() {
+            _secondsRemaining = remaining;
+          });
+        }
+      }
+    });
+  }
+
+  void _handleTimeout() {
+    if (_isTimeoutHandled) return;
+    _isTimeoutHandled = true;
+
+    _countdownTimer?.cancel();
+    if (!mounted) return;
+
+    debugPrint(
+        "[PhotoCapturePage] Capture time expired for ${widget.requestId}.");
+    ref
+        .read(peekControllerProvider.notifier)
+        .expirePeekCapture(widget.requestId);
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        // Auto-close after 5 seconds
+        Future.delayed(const Duration(seconds: 5), () {
+          if (ctx.mounted) {
+            Navigator.of(ctx).pop();
+          }
+        });
+
+        return Stack(
+          alignment: Alignment.topCenter,
+          children: [
+            Container(
+              margin: const EdgeInsets.only(
+                top: 24,
+              ),
+              width: double.infinity,
+              decoration: const BoxDecoration(
+                color: peekBackgroundColor,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              padding: const EdgeInsets.fromLTRB(
+                48,
+                48,
+                24,
+                100,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.timer_off_outlined,
+                      size: 60, color: Colors.white70),
+                  const SizedBox(height: 20),
+                  const Text("Time's Up!",
+                      style:
+                          TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  const Text("You didn't take a photo in time.",
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 16, color: Colors.white70)),
+
+                  // NEW "OK" BUTTON
+                  const SizedBox(height: 32),
+                  ElevatedButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: peekSecondaryColor,
+                      foregroundColor: Colors.black,
+                      minimumSize: const Size(double.infinity, 50),
+                      // shape: const CircleBorder(),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(30),
+                      ),
+                    ),
+                    child: const Text('OK',
+                        style: TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+            ),
+            Positioned(
+              top: 24 + 8,
+              right: 12,
+              child: IconButton(
+                icon: const Icon(Icons.close, color: Colors.white54),
+                onPressed: () => Navigator.of(ctx).pop(),
+              ),
+            ),
+          ],
+        );
+      },
+    ).then((_) {
+      // After the sheet is closed (either by timer or manually), navigate home.
+      if (mounted) {
+        context.go('/');
+      }
+    });
+  }
+
+  void _triggerCountdownStart() {
+    // Ensure this is only called once
+    if (_countdownHasBeenTriggered || !mounted) return;
+
+    debugPrint(
+        "[PhotoCapturePage] Camera is ready, triggering countdown start.");
+    setState(() {
+      _countdownHasBeenTriggered = true;
+    });
+    ref
+        .read(peekControllerProvider.notifier)
+        .startCaptureCountdown(widget.requestId);
   }
 
   Future<void> _loadUserSettings() async {
@@ -295,6 +496,7 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
           _isCameraInitialized = true;
           _isCameraInitializing = false;
         });
+        _triggerCountdownStart();
       }
       return;
     }
@@ -341,11 +543,13 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
         return;
       }
       setState(() {
-        _controller =
-            newController; // Assign the successfully initialized controller
+        _controller = newController;
         _isCameraInitialized = true;
         _isCameraInitializing = false;
       });
+
+      _triggerCountdownStart();
+
       debugPrint(
           "[PhotoCapturePage] Camera initialized successfully: ${newController.description.name}");
     } catch (error) {
@@ -516,6 +720,9 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
         !_isCameraInitialized ||
         _controller == null ||
         !_controller!.value.isInitialized) return;
+
+    // _countdownTimer?.cancel();
+
     setState(() => _isTakingPicture = true);
     try {
       final XFile imageFile = await _controller!.takePicture();
@@ -541,8 +748,11 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
         _capturedImageBytes = processedBytes;
         _isTakingPicture = false;
       });
+
+      // SPACE
     } catch (e) {
       debugPrint("❌ [PhotoCapturePage] Error taking or processing picture: $e");
+
       if (mounted) {
         _showErrorSnackbar("Couldn't capture photo. Please try again.");
         setState(() => _isTakingPicture = false);
@@ -554,6 +764,7 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
   Future<void> _uploadPhoto() async {
     // ... (Keep existing code) ...
     if (_capturedImageBytes == null || _uploading || !mounted) return;
+    // _previewTimer?.cancel();
     setState(() => _uploading = true);
     final timestamp = DateTime.now().millisecondsSinceEpoch;
     final storagePath = 'peeks/${widget.requestId}/$timestamp.jpg';
@@ -668,8 +879,9 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
 
   // --- _retakePicture (Keep As Is - already clears bytes) ---
   void _retakePicture() {
-    // ... (Keep existing code) ...
     if (_uploading) return;
+    // _previewTimer?.cancel();
+
     setState(() {
       _capturedImageBytes = null;
       _isTakingPicture = false;
@@ -728,10 +940,11 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
     });
   }
 
-  // --- dispose (Keep As Is) ---
   @override
   void dispose() {
-    // ... (Keep existing code) ...
+    _pulseController.dispose();
+    _countdownTimer?.cancel();
+
     WidgetsBinding.instance.removeObserver(this);
     _controller?.dispose();
     _deleteTempFile();
@@ -761,12 +974,32 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
       );
     }
 
-    // State 2: Image captured preview (Keep As Is)
+    // State 2: Image captured preview
     if (_capturedImageBytes != null) {
-      /* ... preview UI ... */
       return Scaffold(
         backgroundColor: Colors.black,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          automaticallyImplyLeading: false,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.close),
+              onPressed: () {
+                // _previewTimer?.cancel();
+                ref
+                    .read(peekControllerProvider.notifier)
+                    .declinePeekByReceiver(widget.requestId);
+                context.go('/?show=peekCancelled');
+              },
+            ),
+          ],
+        ),
+        extendBodyBehindAppBar: true,
+        // ========== SPACE
+        // ========== SPACE
         body: Stack(
+          alignment: Alignment.center,
           fit: StackFit.expand,
           children: [
             Image.memory(
@@ -779,49 +1012,72 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
                 );
               },
             ),
-            Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              child: Container(
-                padding: EdgeInsets.fromLTRB(
-                  20,
-                  20,
-                  20,
-                  MediaQuery.of(context).padding.bottom + 20,
-                ),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Colors.black.withOpacity(0.8), Colors.transparent],
-                    begin: Alignment.bottomCenter,
-                    end: Alignment.topCenter,
-                    stops: const [0.0, 0.5],
+
+            // ========== SPACE
+            // ========== SPACE
+            // if (_secondsRemaining != null)
+            //   Center(
+            //     child: ScaleTransition(
+            //       scale: _pulseAnimation,
+            //       child: Text(
+            //         '$_secondsRemaining',
+            //         style: TextStyle(
+            //           color: peekWhiteColor.withAlpha(150),
+            //           fontSize: 120, // Make the number much larger
+            //           fontWeight: FontWeight.w600,
+            //           // Add a shadow for better readability over the image
+            //           shadows: [
+            //             Shadow(
+            //               blurRadius: 10.0,
+            //               color: Colors.black54.withAlpha(50),
+            //               offset: const Offset(2.0, 2.0),
+            //             ),
+            //           ],
+            //         ),
+            //       ),
+            //     ),
+            //   ),
+
+            if (_secondsRemaining != null) _buildCountdownWidget(),
+          ],
+        ),
+
+        bottomNavigationBar: BottomAppBar(
+          color: Colors.black.withOpacity(0.5),
+          elevation: 0,
+          child: Padding(
+            padding:
+                const EdgeInsets.symmetric(vertical: 10.0, horizontal: 20.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                TextButton.icon(
+                  onPressed: _uploading ? null : _retakePicture,
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: const Text('Retake'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    textStyle: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
-                    IconButton(
-                      iconSize: 35,
-                      padding: const EdgeInsets.all(15),
-                      tooltip: 'Retake',
-                      icon: const Icon(Icons.refresh_rounded),
-                      color: Colors.white,
-                      onPressed: _retakePicture,
+                TextButton.icon(
+                  onPressed: _uploading ? null : _uploadPhoto,
+                  icon: const Icon(Icons.send_rounded),
+                  label: const Text('Send'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: peekPrimaryColor,
+                    textStyle: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
                     ),
-                    IconButton(
-                      iconSize: 35,
-                      padding: const EdgeInsets.all(15),
-                      tooltip: 'Send Peek',
-                      icon: const Icon(Icons.send_rounded),
-                      color: Colors.greenAccent,
-                      onPressed: _uploadPhoto,
-                    ),
-                  ],
+                  ),
                 ),
-              ),
+              ],
             ),
-          ],
+          ),
         ),
       );
     }
@@ -866,7 +1122,30 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
       body: _buildCameraView(),
     );
   }
-  // --- END MODIFIED build ---
+
+  // NEW: A reusable widget for the pulsing countdown timer
+  Widget _buildCountdownWidget() {
+    return Center(
+      child: ScaleTransition(
+        scale: _pulseAnimation,
+        child: Text(
+          '$_secondsRemaining',
+          style: TextStyle(
+            color: peekWhiteColor.withAlpha(150),
+            fontSize: 120,
+            fontWeight: FontWeight.w600,
+            shadows: [
+              Shadow(
+                blurRadius: 10.0,
+                color: Colors.black54.withAlpha(50),
+                offset: const Offset(2.0, 2.0),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   // --- *** MODIFIED: _buildCameraView (UI Changes for Bottom Bar) *** ---
   Widget _buildCameraView() {
@@ -880,7 +1159,7 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
           padding: const EdgeInsets.all(30.0),
           child: Text(
             'Camera Error:\n$_initializationError',
-            style: const TextStyle(color: Colors.redAccent, fontSize: 16),
+            style: const TextStyle(color: peekErrorColor, fontSize: 16),
             textAlign: TextAlign.center,
           ),
         ),
@@ -920,6 +1199,32 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
       children: [
         // Camera Preview (fills the stack)
         Center(child: cameraPreviewWidget),
+        if (_secondsRemaining != null) _buildCountdownWidget(),
+
+        // Countdown Timer UI
+        // if (_secondsRemaining != null)
+        //   Center(
+        //     child: ScaleTransition(
+        //       scale: _pulseAnimation,
+        //       child: Text(
+        //         '$_secondsRemaining',
+        //         style: TextStyle(
+        //           color: peekWhiteColor.withAlpha(150),
+        //           fontSize: 120, // Make the number much larger
+        //           fontWeight: FontWeight.w600,
+        //           // Add a shadow for better readability over the image
+        //           shadows: [
+        //             Shadow(
+        //               blurRadius: 10.0,
+        //               color: Colors.black54.withAlpha(50),
+        //               offset: const Offset(2.0, 2.0),
+        //             ),
+        //           ],
+        //         ),
+        //       ),
+        //     ),
+        //   ),
+        // ),
 
         // --- MODIFIED: Bottom Control Bar ---
         Positioned(

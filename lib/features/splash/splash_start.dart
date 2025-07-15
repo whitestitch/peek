@@ -33,35 +33,7 @@ class _SplashStartPageState extends State<SplashStartPage>
     _progressController = AnimationController(
       vsync: this,
       duration: _splashDuration,
-    )..forward().then((_) {
-        _handleSplashComplete();
-      });
-  }
-
-  Future<void> _handleSplashComplete() async {
-    if (!mounted) return;
-
-    debugPrint(
-        "[SplashStart] Splash animation complete, checking auth state...");
-
-    // Check if user is already authenticated
-    final currentUser = FirebaseAuth.instance.currentUser;
-
-    if (currentUser == null) {
-      debugPrint("[SplashStart] No user found, signing in anonymously...");
-      try {
-        final userCredential = await FirebaseAuth.instance.signInAnonymously();
-        debugPrint(
-            "[SplashStart] ✅ Anonymous sign-in successful: ${userCredential.user?.uid}");
-      } catch (e) {
-        debugPrint("[SplashStart] ❌ Anonymous sign-in failed: $e");
-      }
-    } else {
-      debugPrint(
-          "[SplashStart] ✅ User already authenticated: ${currentUser.uid}");
-    }
-
-    // Router will handle navigation based on auth state change
+    )..forward();
   }
 
   @override
@@ -101,7 +73,7 @@ class _SplashStartPageState extends State<SplashStartPage>
               RotationTransition(
                 turns: _rotationController,
                 child: SvgPicture.asset(
-                  'assets/images/peekio_logo.svg',
+                  'assets/images/peekio_eye.svg',
                   width: 60,
                   height: 60,
                   colorFilter: const ColorFilter.mode(

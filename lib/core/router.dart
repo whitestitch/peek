@@ -211,7 +211,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       }
 
       // If the user is fully set up and is on any of the initial screens, go to home.
-      if (onSplash || onAuthFlow) {
+      // if (onSplash || onAuthFlow) {
+      //   return '/';
+      // }
+      if (onboardingComplete && onSplash) {
         return '/';
       }
 
@@ -229,6 +232,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/onboarding',
+        name: 'onboarding',
         builder: (context, state) => const OnboardingPage(),
       ),
       ShellRoute(
@@ -254,17 +258,22 @@ final routerProvider = Provider<GoRouter>((ref) {
             pageBuilder: (context, state) =>
                 const NoTransitionPage(child: SettingsPage()),
           ),
+          // GoRoute(
+          //   path: '/onboarding',
+          //   name: 'onboarding',
+          //   pageBuilder: (context, state) =>
+          //       const NoTransitionPage(child: OnboardingPage()),
+          // ),
         ],
       ),
 
       // SPACE
-      // --- ALL OTHER NON-SHELL ROUTES ---
 
-      GoRoute(
-        path: '/onboarding',
-        name: 'onboarding',
-        builder: (context, state) => const OnboardingPage(),
-      ),
+      // GoRoute(
+      //   path: '/onboarding',
+      //   name: 'onboarding',
+      //   builder: (context, state) => const OnboardingPage(),
+      // ),
       GoRoute(
         path: '/receive',
         name: 'receive',

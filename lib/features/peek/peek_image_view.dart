@@ -641,7 +641,7 @@ class _PeekImageViewState extends ConsumerState<PeekImageView>
               left: 15,
               child: Container(
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
                   color: Colors.black
                       .withOpacity(0.6), // Semi-transparent background
