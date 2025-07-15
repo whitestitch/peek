@@ -12,6 +12,7 @@ import 'package:peek/features/peek/controllers/peek_controller.dart';
 
 import 'package:peek/shared/upgrade_prompt_dialog.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:peek/theme/colors.dart';
 
 /// A simple, immutable class to hold the state of the HomePage.
 @immutable
@@ -197,8 +198,7 @@ class HomeStateNotifier extends AutoDisposeAsyncNotifier<HomeState> {
     material.ScaffoldMessenger.of(context).removeCurrentSnackBar();
     material.ScaffoldMessenger.of(context).showSnackBar(
       material.SnackBar(
-          content: material.Text(message),
-          backgroundColor: material.Colors.redAccent[700]),
+          content: material.Text(message), backgroundColor: peekErrorColor),
     );
   }
 

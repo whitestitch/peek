@@ -139,7 +139,7 @@ class _PeekReceiverPageState extends material.State<PeekReceiverPage> {
             content: material.Text(accept
                 ? 'Failed to accept Peek. Please try again.'
                 : 'Failed to decline Peek. Please try again.'),
-            backgroundColor: material.Colors.redAccent,
+            backgroundColor: peekErrorColor,
           ),
         );
       }

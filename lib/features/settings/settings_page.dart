@@ -261,38 +261,54 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     showDialog(
       context: context,
       builder: (dialogContext) {
-        // Use a StatefulWidget for the dialog content to manage the text field state locally if needed,
-        // but for simple cases, using the main page's controller is fine.
         return AlertDialog(
-          backgroundColor: peekSurfaceColor, // Use theme color
+          backgroundColor: peekSurfaceColor,
           title: const Text("Edit Display Name"),
-          content: TextField(
-            controller: _displayNameController,
-            autofocus: true,
-            maxLength: 30, // Example length limit
-            decoration: const InputDecoration(
-              hintText: "Enter your display name",
-              counterText: "", // Hide the counter
-              // Consider adding error handling/validation if needed
+          content: SizedBox(
+            width: MediaQuery.of(dialogContext).size.width,
+            child: TextField(
+              controller: _displayNameController,
+              autofocus: true,
+              maxLength: 30,
+              decoration: InputDecoration(
+                hintText: "Enter your display name",
+                counterText: "",
+                // 1. Add a white border to the input field
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide:
+                      const BorderSide(color: peekWhiteColor, width: 0.8),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide:
+                      const BorderSide(color: peekWhiteColor, width: 1.2),
+                ),
+              ),
             ),
           ),
+          // 2. Align "Cancel" to the left and "Save" to the right
+          actionsAlignment: MainAxisAlignment.spaceBetween,
           actions: [
             TextButton(
               child: const Text("Cancel"),
-              onPressed: () => Navigator.of(dialogContext).pop(),
+              onPressed: _isUpdatingDisplayName
+                  ? null
+                  : () => Navigator.of(dialogContext).pop(),
+              style: TextButton.styleFrom(
+                foregroundColor: peekNeutralColor,
+              ),
             ),
-            // Show loading indicator on the save button while saving
             ValueListenableBuilder<TextEditingValue>(
               valueListenable: _displayNameController,
               builder: (context, value, child) {
                 final bool canSave =
                     value.text.trim().isNotEmpty && !_isUpdatingDisplayName;
-                return TextButton(
+                return ElevatedButton(
                   onPressed: canSave
                       ? () async {
                           final success = await _updateDisplayName(
                               _displayNameController.text);
-                          // Use dialogContext to pop, and check if it's still mounted
                           if (success && dialogContext.mounted) {
                             Navigator.of(dialogContext).pop();
                           }
@@ -301,8 +317,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   child: _isUpdatingDisplayName
                       ? const SizedBox(
                           width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2))
+                          height: 10,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: peekSurfaceColor,
+                          ))
                       : const Text("Save"),
                 );
               },
@@ -345,7 +364,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     );
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: peekBackgroundColor,
       appBar: AppBar(
         title: const Text('Settings'),
         leading: IconButton(
@@ -360,46 +379,26 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         children: [
           // Avatar
           Container(
-            padding: const EdgeInsets.symmetric(
-                vertical: 40, horizontal: 20), // Adjusted padding
-            alignment: Alignment.center,
-            child: CircleAvatar(
-              radius: 55, // Slightly larger radius for image
-
-              // backgroundColor: theme.colorScheme.surface
-              //     .withOpacity(0.8),
-              backgroundColor: Colors.transparent,
-              child: Padding(
-                // Add padding inside the circle so logo isn't edge-to-edge
-                padding: const EdgeInsets.all(15.0), // Adjust padding as needed
-                // child: Image.asset(
-                //   logoPath,
-                //   height: 80,
-                //   fit: BoxFit.cover,
-                //   errorBuilder: (context, error, stackTrace) {
-                //     debugPrint(
-                //         "Error loading settings logo: $logoPath - $error");
-                //     return const Icon(Icons.error_outline,
-                //         size: 40, color: Colors.redAccent);
-                //   },
-                // ),
-                child: SvgPicture.asset('assets/images/peekio_logo.svg',
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) {
-                  debugPrint("Error loading settings logo: $logoPath - $error");
-                  return const Icon(Icons.error_outline,
-                      size: 40, color: Colors.redAccent);
-                }),
-              ),
-              // REMOVED: child: const Text('👀', style: TextStyle(fontSize: 50)),
+            padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 20),
+            alignment: Alignment.topCenter,
+            child: SvgPicture.asset(
+              'assets/images/peekio_logo.svg',
+              height: 50,
+              errorBuilder: (context, error, stackTrace) {
+                debugPrint(
+                    "Error loading settings logo: assets/images/peekio_logo.svg - $error");
+                return const Icon(Icons.error_outline,
+                    size: 40, color: Colors.redAccent);
+              },
             ),
           ),
           // Subscription
           ListTile(
             contentPadding: listTilePadding,
             leading: Icon(
-              Icons.badge_outlined, // Icon for display name
-              color: theme.iconTheme.color?.withOpacity(0.8),
+              Icons.badge_outlined,
+              color: !isPremium ? peekNeutralColor : peekPrimaryColor,
+              // color: peekPrimaryColor,
             ),
             title: const Text('Display Name'),
             subtitle: Column(
@@ -407,10 +406,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (_isLoadingDisplayName)
-                  const Text("Loading...", style: TextStyle(color: Colors.grey))
+                  const Text("Loading...",
+                      style: TextStyle(color: peekNeutralColor))
                 else
                   Text(
-                    displayName, // Show current name from provider
+                    displayName,
                     style: TextStyle(
                         color: theme.textTheme.bodyMedium?.color
                             ?.withOpacity(0.9)),
@@ -428,9 +428,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             ),
             trailing: isPremium // Only show edit button for premium users
                 ? IconButton(
-                    icon: Icon(Icons.edit_outlined,
-                        size: 20,
-                        color: theme.iconTheme.color?.withOpacity(0.7)),
+                    icon: const Icon(
+                      Icons.edit_outlined,
+                      size: 20,
+                      color: peekWhiteColor,
+                    ),
                     tooltip: "Edit Display Name",
                     onPressed: _isLoadingDisplayName || _isUpdatingDisplayName
                         ? null
@@ -450,12 +452,47 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
           sectionDivider,
 
+          SwitchListTile(
+            contentPadding: listTilePadding,
+            secondary: const Icon(
+              Icons.my_location_rounded,
+              color: peekPrimaryColor,
+            ),
+            title: const Text(
+              'Share My General Location',
+              // style: TextStyle(color: null), // Default color for all users
+            ),
+            subtitle: Text(
+              "Allow others to see your general location (city or region) when they peek you.",
+              style: subtitleStyle.copyWith(
+                  color: theme.textTheme.bodySmall?.color
+                      ?.withOpacity(0.7) // Consistent subtitle style
+                  ),
+            ),
+            value: currentPreference, // Uses _localLocationSharingEnabled
+            onChanged: _isUpdatingPreference
+                ? null
+                : _updateLocationPreference, // Calls the existing update method
+            activeColor: theme.colorScheme.primary,
+          ),
+          if (_isUpdatingPreference)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 4.0),
+              child: Center(
+                  child: SizedBox(
+                      height: 15,
+                      width: 15,
+                      child: CircularProgressIndicator(strokeWidth: 2))),
+            ),
+
+          sectionDivider,
+
           // Toggle for User SEEING OTHERS' locations ("Location Reveal")
           SwitchListTile(
             contentPadding: listTilePadding,
             secondary: Icon(
               Icons.travel_explore,
-              color: isPremium ? theme.iconTheme.color : Colors.grey.shade600,
+              color: !isPremium ? peekNeutralColor : peekPrimaryColor,
             ),
             title: Text(
               'Location Reveal',
@@ -494,44 +531,26 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
           sectionDivider,
 
-          SwitchListTile(
+          // About
+          ListTile(
             contentPadding: listTilePadding,
-            secondary: Icon(
-              Icons.my_location_rounded,
-              color: theme.iconTheme.color, // Always allow this setting
+            leading: const Icon(
+              Icons.info_outline_rounded,
+              color: peekPrimaryColor,
             ),
-            title: const Text(
-              'Share My General Location',
-              // style: TextStyle(color: null), // Default color for all users
+            title: const Text('About Peek'),
+            trailing: const Icon(
+              Icons.chevron_right,
             ),
-            subtitle: Text(
-              "Allow others to see your general location (city or region) when they peek you.",
-              style: subtitleStyle.copyWith(
-                  color: theme.textTheme.bodySmall?.color
-                      ?.withOpacity(0.7) // Consistent subtitle style
-                  ),
-            ),
-            value: currentPreference, // Uses _localLocationSharingEnabled
-            onChanged: _isUpdatingPreference
-                ? null
-                : _updateLocationPreference, // Calls the existing update method
-            activeColor: theme.colorScheme.primary,
+            onTap: () => context.go('/info'),
           ),
-          if (_isUpdatingPreference)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 4.0),
-              child: Center(
-                  child: SizedBox(
-                      height: 15,
-                      width: 15,
-                      child: CircularProgressIndicator(strokeWidth: 2))),
-            ),
-
-          sectionDivider,
 
           ListTile(
             contentPadding: listTilePadding,
-            leading: const Icon(Icons.rate_review_outlined),
+            leading: const Icon(
+              Icons.rate_review_outlined,
+              color: peekPrimaryColor,
+            ),
             title: const Text('Rate Peek'),
             trailing: const Icon(Icons.chevron_right),
             onTap: _requestReview,
@@ -539,7 +558,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           // Help
           ListTile(
             contentPadding: listTilePadding,
-            leading: const Icon(Icons.help_outline_rounded),
+            leading: const Icon(
+              Icons.help_outline_rounded,
+              color: peekPrimaryColor,
+            ),
             title: const Text('Help & Contact Us'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => _launchUrlHelper(
@@ -554,19 +576,15 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           // Privacy
           ListTile(
             contentPadding: listTilePadding,
-            leading: const Icon(Icons.lock_outline_rounded),
+            leading: const Icon(
+              Icons.lock_outline_rounded,
+              color: peekPrimaryColor,
+            ),
             title: const Text('Privacy & Safety'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => context.go('/privacy'),
           ),
-          // About
-          ListTile(
-            contentPadding: listTilePadding,
-            leading: const Icon(Icons.info_outline_rounded),
-            title: const Text('About Peek'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => context.go('/info'),
-          ),
+
           sectionDivider,
           // Version
           Padding(

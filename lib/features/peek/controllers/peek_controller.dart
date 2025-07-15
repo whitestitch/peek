@@ -674,6 +674,47 @@ class PeekController extends StateNotifier<PeekControllerState> {
     }
   }
 
+  Future<void> expirePeekCapture(String requestId) async {
+    if (requestId.isEmpty) {
+      debugPrint("[PeekController] expirePeekCapture: requestId is empty.");
+      return;
+    }
+    try {
+      // Update the status to a new 'expired_capture' state.
+      await _firestore.collection('peek_requests').doc(requestId).update({
+        'status': 'expired_capture',
+      });
+      debugPrint('[PeekController] Peek capture expired: $requestId');
+      await _analytics
+          .logEvent(name: 'peek_request_capture_expired', parameters: {
+        'request_id_partial':
+            requestId.length > 8 ? requestId.substring(0, 8) : requestId
+      });
+    } catch (e) {
+      debugPrint(
+          '[PeekController] Failed to expire peek capture $requestId: $e');
+    }
+  }
+
+  Future<void> startCaptureCountdown(String requestId) async {
+    if (requestId.isEmpty) {
+      debugPrint("[PeekController] startCaptureCountdown: requestId is empty.");
+      return;
+    }
+    try {
+      await _firestore.collection('peek_requests').doc(requestId).update({
+        'captureExpiresAt': Timestamp.fromDate(
+          DateTime.now().add(const Duration(seconds: 10)),
+        ),
+      });
+      debugPrint(
+          '[PeekController] Capture countdown started for request: $requestId');
+    } catch (e) {
+      debugPrint(
+          '[PeekController] Failed to start capture countdown for $requestId: $e');
+    }
+  }
+
   Future<void> debugResetUserLimits() async {
     if (!kDebugMode) {
       debugPrint(
@@ -710,8 +751,6 @@ class PeekController extends StateNotifier<PeekControllerState> {
     debugPrint(
         "[PeekController] User $userId is cancelling peek request $requestId");
     try {
-      // Instead of deleting, we update the status. This is a more explicit signal
-      // that other listeners (like the receiver's dialog handler) can react to.
       await _firestore.collection('peek_requests').doc(requestId).update({
         'status': 'cancelled_by_sender',
       });
@@ -759,6 +798,23 @@ class PeekController extends StateNotifier<PeekControllerState> {
     } catch (e) {
       debugPrint(
           "❌ [PeekController] Failed to decline peek request $requestId: $e");
+    }
+  }
+
+  void cancelPeekBySender(String requestId) async {
+    if (requestId.isEmpty) {
+      debugPrint("[PeekController] cancelPeekBySender: requestId is empty.");
+      return;
+    }
+    try {
+      await _firestore.collection('peek_requests').doc(requestId).update({
+        'status': 'cancelled_by_sender',
+      });
+      debugPrint(
+          "[PeekController] Updated peek request $requestId to 'cancelled_by_sender'.");
+    } catch (e) {
+      debugPrint(
+          "❌ [PeekController] Failed to cancel peek request $requestId: $e");
     }
   }
 

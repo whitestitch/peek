@@ -11,6 +11,7 @@ class OnboardingSlide extends material.StatelessWidget {
   final String subtitle;
   final String? textParagraph;
   final bool isHeroImageFullWidth;
+  final bool showTextContent;
 
   const OnboardingSlide(
       {super.key,
@@ -19,7 +20,8 @@ class OnboardingSlide extends material.StatelessWidget {
       required this.title,
       required this.subtitle,
       this.textParagraph,
-      required this.isHeroImageFullWidth});
+      required this.isHeroImageFullWidth,
+      this.showTextContent = true});
 
   // Helper for error placeholder
   material.Widget _errorPlaceholder(
@@ -44,7 +46,7 @@ class OnboardingSlide extends material.StatelessWidget {
             child: material.Icon(material.Icons.error_outline,
                 color: isOverlay
                     ? material.Colors.red.withOpacity(0.6)
-                    : material.Colors.redAccent,
+                    : peekErrorColor,
                 size: isOverlay ? 25 : 40)));
   }
 
@@ -142,7 +144,7 @@ class OnboardingSlide extends material.StatelessWidget {
             child: material.SizedBox(
               // Use SizedBox to constrain the height consistently
               height: showRiveAnimation || !isHeroImageFullWidth
-                  ? screenHeight * 0.40
+                  ? screenHeight * 0.50
                   : null,
               width: screenWidth, // Allow full width
               child: showRiveAnimation
@@ -181,54 +183,55 @@ class OnboardingSlide extends material.StatelessWidget {
           // material.SizedBox(height: spaceBelowCentralImage),
 
           // 3. Text Content Area (Centered)
-          material.Padding(
-            padding: const material.EdgeInsets.only(
-                top: 30.0, left: 35.0, right: 35.0),
-            child: material.Column(
-              mainAxisSize: material.MainAxisSize.min,
-              crossAxisAlignment: material.CrossAxisAlignment.center,
-              children: [
-                material.Text(
-                  title,
-                  textAlign: material.TextAlign.center,
-                  // Restore style from your code
-                  style: textTheme.headlineSmall?.copyWith(
-                    fontWeight: material.FontWeight.w600,
-                    color: peekWhiteColor,
-                    letterSpacing: 0.5,
-                    fontSize: 36,
-                  ),
-                ),
-                const material.SizedBox(height: 15),
-                material.Text(
-                  subtitle,
-                  textAlign: material.TextAlign.center,
-                  // Restore style from your code
-                  style: textTheme.titleMedium?.copyWith(
-                    fontWeight: material.FontWeight.w500,
-                    color: peekOnBackgroundColor.withOpacity(0.85),
-                    fontSize: 18,
-                  ),
-                ),
-                if (textParagraph != null) ...[
-                  const material.SizedBox(height: 25),
+          if (showTextContent)
+            material.Padding(
+              padding: const material.EdgeInsets.only(
+                  top: 30.0, left: 35.0, right: 35.0),
+              child: material.Column(
+                mainAxisSize: material.MainAxisSize.min,
+                crossAxisAlignment: material.CrossAxisAlignment.center,
+                children: [
                   material.Text(
-                    textParagraph!,
+                    title,
                     textAlign: material.TextAlign.center,
                     // Restore style from your code
-                    style: textTheme.bodyMedium?.copyWith(
-                      color: peekWhiteColor.withOpacity(1),
-                      height: 1.55,
-                      fontSize: 16,
-                      fontWeight: material.FontWeight.w400,
+                    style: textTheme.headlineSmall?.copyWith(
+                      fontWeight: material.FontWeight.w600,
+                      color: peekWhiteColor,
+                      letterSpacing: 0.5,
+                      fontSize: 36,
                     ),
                   ),
-                  // const Spacer(),
-                  // SizedBox(height: finalBottomSpace),
+                  const material.SizedBox(height: 15),
+                  material.Text(
+                    subtitle,
+                    textAlign: material.TextAlign.center,
+                    // Restore style from your code
+                    style: textTheme.titleMedium?.copyWith(
+                      fontWeight: material.FontWeight.w500,
+                      color: peekOnBackgroundColor.withOpacity(0.85),
+                      fontSize: 18,
+                    ),
+                  ),
+                  if (textParagraph != null) ...[
+                    const material.SizedBox(height: 25),
+                    material.Text(
+                      textParagraph!,
+                      textAlign: material.TextAlign.center,
+                      // Restore style from your code
+                      style: textTheme.bodyMedium?.copyWith(
+                        color: peekWhiteColor.withOpacity(1),
+                        height: 1.55,
+                        fontSize: 16,
+                        fontWeight: material.FontWeight.w400,
+                      ),
+                    ),
+                    // const Spacer(),
+                    // SizedBox(height: finalBottomSpace),
+                  ],
                 ],
-              ],
+              ),
             ),
-          ),
           // Bottom spacing handled by SingleChildScrollView padding
           material.SizedBox(height: finalBottomSpace),
         ],

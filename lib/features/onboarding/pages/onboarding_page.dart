@@ -47,11 +47,22 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
       'logo': 'assets/images/peekio_logo.svg',
       'image': 'assets/images/onboarding_03.png',
       'isHeroFullWidth': false,
+      'title': 'Think Fast:\n10 Sec!',
+      'subtitle': 'Ready, Set, Peek',
+      'text':
+          'You have 10 seconds to capture your moment. Share your world instantly.',
+      // 'Peek is fully anonymous and safe.\nYour camera, your world — shared\nin the moment only.',
+      'background': 'assets/images/onboarding_bg_03.jpg',
+    },
+    {
+      'logo': 'assets/images/peekio_logo.svg',
+      'image': 'assets/images/onboarding_04.png',
+      'isHeroFullWidth': false,
       'title': '100% Private',
       'subtitle': 'No Data Saved.',
       'text':
           'Peek is fully anonymous and safe.\nYour camera, your world — shared\nin the moment only.',
-      'background': 'assets/images/onboarding_bg_03.jpg',
+      'background': 'assets/images/onboarding_bg_04.jpg',
     },
   ];
 
@@ -104,38 +115,32 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      // Keep fallback background color
-      backgroundColor: peekBackgroundColor,
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          // Layer 1: Animated Background Image
-          AnimatedSwitcher(
-            // Use AnimatedSwitcher to fade between backgrounds
-            duration: const Duration(milliseconds: 500), // Fade duration
-            child: Image.asset(
-              // Use key to ensure switcher recognizes changes
-              key: ValueKey<String>(slides[_currentPage]['background']!),
-              // Get background path based on current page index
-              slides[_currentPage]
-                  ['background']!, // Assumes path is always present
-              fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) {
-                debugPrint(
-                    "❌ Error loading background image: ${slides[_currentPage]['background']}\nError: $error");
-                return Container(color: peekBackgroundColor); // Fallback
-              },
-            ),
+    // The Stack remains the root to allow the background to go edge-to-edge.
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // Layer 1: Animated Background Image (fills the whole screen)
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 500),
+          child: Image.asset(
+            key: ValueKey<String>(slides[_currentPage]['background']!),
+            slides[_currentPage]['background']!,
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stackTrace) {
+              debugPrint(
+                  "❌ Error loading background image: ${slides[_currentPage]['background']}\nError: $error");
+              return Container(color: peekBackgroundColor); // Fallback
+            },
           ),
+        ),
 
-          // Optional: Overlay Layer
-          // Container(color: Colors.black.withOpacity(0.4)),
-
-          // Layer 2: Content
-          SafeArea(
+        // Layer 2: A transparent Scaffold to hold the re-ordered UI content.
+        Scaffold(
+          backgroundColor: Colors.transparent, // CRUCIAL
+          body: SafeArea(
             child: Column(
               children: [
+                // Section 1: PageView for Logo & Image, taking up available space
                 Expanded(
                   child: PageView.builder(
                     controller: _pageController,
@@ -143,30 +148,102 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                     onPageChanged: _onPageChanged,
                     itemBuilder: (context, index) {
                       final slide = slides[index];
-                      // Determine if hero image should be full width for this slide
                       final bool isFullWidthLayout =
                           slide['isHeroFullWidth'] as bool? ?? false;
 
+                      // This OnboardingSlide now only renders the top part (logo/image)
                       return OnboardingSlide(
-                        key: ValueKey('slide_$index'),
+                        key: ValueKey('slide_image_$index'),
                         logoAsset: slide['logo']! as String,
-                        imageAsset: slide['image']!
-                            as String, // Pass base image/background path
-                        title: slide['title']! as String,
-                        subtitle: slide['subtitle']! as String,
-                        textParagraph: slide['text'] as String?,
-                        isHeroImageFullWidth:
-                            isFullWidthLayout, // Keep this flag
+                        imageAsset: slide['image']! as String,
+                        title: '', // Not used, text is rendered below
+                        subtitle: '', // Not used
+                        isHeroImageFullWidth: isFullWidthLayout,
+                        showTextContent: false, // This ensures text is hidden
                       );
                     },
                   ),
                 ),
+
+                // Section 3: Textual Content for the current page
+                _buildTextualContent(),
+                const SizedBox(height: 30),
+
+                // Section 2: Navigation Controls
                 _buildNavigationControls(),
-                const SizedBox(height: 20),
+                const SizedBox(height: 0), // Spacing after controls
               ],
             ),
           ),
-        ],
+        ),
+      ],
+    );
+  }
+
+  // NEW: Builds the text content area that animates with page changes
+  Widget _buildTextualContent() {
+    final slideData = slides[_currentPage];
+    final textTheme = Theme.of(context).textTheme;
+
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 300),
+      transitionBuilder: (Widget child, Animation<double> animation) {
+        // Fade and slide transition for a smooth appearance
+        return FadeTransition(
+          opacity: animation,
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0.0, 0.2),
+              end: Offset.zero,
+            ).animate(
+                CurvedAnimation(parent: animation, curve: Curves.easeOut)),
+            child: child,
+          ),
+        );
+      },
+      child: Padding(
+        // A Key is crucial for AnimatedSwitcher to detect content change
+        key: ValueKey<int>(_currentPage),
+        padding: const EdgeInsets.symmetric(horizontal: 35.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min, // Takes up only needed space
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Text(
+              slideData['title']!,
+              textAlign: TextAlign.center,
+              style: textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: peekWhiteColor,
+                letterSpacing: 0.5,
+                fontSize: 36,
+              ),
+            ),
+            const SizedBox(height: 15),
+            Text(
+              slideData['subtitle']!,
+              textAlign: TextAlign.center,
+              style: textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w500,
+                color: peekOnBackgroundColor.withOpacity(0.85),
+                fontSize: 18,
+              ),
+            ),
+            if (slideData['text'] != null) ...[
+              const SizedBox(height: 25),
+              Text(
+                slideData['text']!,
+                textAlign: TextAlign.center,
+                style: textTheme.bodyMedium?.copyWith(
+                  color: peekWhiteColor.withOpacity(1),
+                  height: 1.55,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w400,
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -187,6 +264,10 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
               onPressed: !isLastSlide ? _skipOnboarding : null,
               style: TextButton.styleFrom(
                 foregroundColor: peekOnBackgroundColor.withOpacity(0.7),
+                textStyle: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
               child: const Text('Skip'),
             ),
@@ -216,6 +297,10 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
               backgroundColor: peekPrimaryColor,
               foregroundColor: peekSurfaceColor,
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              textStyle: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+              ),
             ),
             child: Text(isLastSlide ? 'Done' : 'Next'),
           ),

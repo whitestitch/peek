@@ -2,6 +2,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/material.dart';
@@ -45,7 +46,7 @@ import 'services/notification_service.dart';
 
 void testEmulatorConnection() async {
   // Use the Firestore port or Emulator UI port that worked in your browser
-  final url = Uri.parse('http://192.168.1.4:8080'); // Or :4000 for Emulator UI
+  final url = Uri.parse('http://3:8080'); // Or :4000 for Emulator UI
   try {
     final response = await http.get(url);
     print('APP HTTP TEST: Status Code: ${response.statusCode}');
@@ -135,12 +136,11 @@ Future<void> main() async {
   FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
   debugPrint("✅ Background message handler registered.");
 
-  // 3. Lock orientation to portrait only
+  // 3. Lock orientation to portrait only (Stricter)
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
-    DeviceOrientation.portraitDown,
   ]);
-  debugPrint("✅ App locked to portrait orientation.");
+  debugPrint("✅ App locked to portrait-up orientation.");
 
   FirebaseApp? defaultApp;
   bool firebaseCoreInitialized = false;
@@ -222,7 +222,7 @@ Future<void> main() async {
             final possibleHosts = [
               myMachineIP, // Your machine's actual IP
               '192.168.1.2', // Common router gateway
-              '192.168.1.3', // Alternative
+              '192.168.1.4', // Alternative
               '192.168.0.2', // Different subnet
               '192.168.0.3',
               '192.168.0.4',
@@ -362,6 +362,10 @@ Future<void> main() async {
           .useFunctionsEmulator(host, 5001);
       debugPrint("✅ Functions Emulator configured for -> $host:5001");
 
+      // Configure Storage Emulator
+      await FirebaseStorage.instance.useStorageEmulator(host, 9199);
+      debugPrint("✅ Storage Emulator configured for -> $host:9199");
+
       debugPrint("✅ All Firebase Emulators configured successfully");
 
       // await Future.delayed(const Duration(seconds: 1));
@@ -372,6 +376,21 @@ Future<void> main() async {
   } else if (kDebugMode) {
     debugPrint(
         "⚠️ Emulator configuration skipped - Debug: $kDebugMode, Initialized: $firebaseCoreInitialized");
+  }
+
+  // This is now done here to ensure all services are configured first.
+  if (FirebaseAuth.instance.currentUser == null) {
+    debugPrint("[main] No user found. Attempting anonymous sign-in...");
+    try {
+      await FirebaseAuth.instance.signInAnonymously();
+      debugPrint("[main] ✅ Anonymous sign-in successful.");
+    } catch (e) {
+      debugPrint("[main] ❌ Anonymous sign-in failed: $e");
+      // You could show a fatal error dialog here if needed, as the app cannot proceed.
+    }
+  } else {
+    debugPrint(
+        "[main] ✅ User ${FirebaseAuth.instance.currentUser!.uid} already signed in.");
   }
 
   runApp(
@@ -665,9 +684,14 @@ class _PeekAppState extends ConsumerState<PeekApp> with WidgetsBindingObserver {
           .update({
         'status': 'accepted',
         'acceptedAt': FieldValue.serverTimestamp(),
+        // Set the deadline for photo capture.
+        // 'captureExpiresAt': Timestamp.fromDate(
+        //   // DateTime.now().add(const Duration(seconds: 15)),
+        //   DateTime.now().add(const Duration(seconds: 14)),
+        // ),
       });
       debugPrint(
-          "✅ [PeekApp] Peek request $requestId status updated to 'accepted' in Firestore.");
+          "✅ [PeekApp] Peek request $requestId status updated to 'accepted' with capture deadline in Firestore.");
 
       ref
           .read(routerProvider)
@@ -684,7 +708,7 @@ class _PeekAppState extends ConsumerState<PeekApp> with WidgetsBindingObserver {
           ScaffoldMessenger.of(scaffoldMessengerContext).showSnackBar(
             SnackBar(
               content: Text('Failed to accept peek: ${e.toString()}'),
-              backgroundColor: Colors.redAccent,
+              backgroundColor: peekErrorColor,
             ),
           );
         } else {
@@ -718,7 +742,7 @@ class _PeekAppState extends ConsumerState<PeekApp> with WidgetsBindingObserver {
           ScaffoldMessenger.of(scaffoldMessengerContext).showSnackBar(
             SnackBar(
               content: Text('Failed to decline peek: ${e.toString()}'),
-              backgroundColor: Colors.redAccent,
+              backgroundColor: peekErrorColor,
             ),
           );
         } else {
@@ -797,8 +821,10 @@ class _PeekAppState extends ConsumerState<PeekApp> with WidgetsBindingObserver {
     // This listener handles showing AND hiding the dialog for NEW incoming peek requests.
     ref.listen<AsyncValue<List<QueryDocumentSnapshot<Map<String, dynamic>>>>>(
       pendingPeekRequestsProvider,
-      (previous, next) {
-        next.whenData((requests) {
+      (previous, next) async {
+        // Make the listener callback async
+        await next.whenData((requests) async {
+          // Make the whenData callback async
           final requestIds = requests.map((req) => req.id).toSet();
           debugPrint(
               "[PeekApp] Pending peek requests updated: ${requests.length} requests. IDs: $requestIds");
@@ -807,13 +833,27 @@ class _PeekAppState extends ConsumerState<PeekApp> with WidgetsBindingObserver {
           final activeDialogId = ref.read(activePeekRequestDialogProvider);
           if (activeDialogId != null && !requestIds.contains(activeDialogId)) {
             debugPrint(
-                "[PeekApp] Active dialog for request $activeDialogId is no longer pending. Closing dialog.");
-            // Pop the dialog if its request is no longer in the pending list.
+                "[PeekApp] Active dialog for request $activeDialogId is no longer pending.");
+
+            // FIX: First, get the final status of the document.
+            final doc = await FirebaseFirestore.instance
+                .collection('peek_requests')
+                .doc(activeDialogId)
+                .get();
+
+            // SECOND: Pop the dialog regardless of the status.
             if (rootNavigatorKey.currentContext != null &&
                 Navigator.of(rootNavigatorKey.currentContext!).canPop()) {
               Navigator.of(rootNavigatorKey.currentContext!).pop();
             }
             ref.read(activePeekRequestDialogProvider.notifier).state = null;
+
+            // THIRD: After the dialog is closed, navigate if it was cancelled.
+            if (doc.exists && doc.data()?['status'] == 'cancelled_by_sender') {
+              debugPrint(
+                  "[PeekApp] Request was cancelled by sender. Navigating to show panel.");
+              rootNavigatorKey.currentContext?.go('/?show=peekCancelled');
+            }
           }
 
           // Show a dialog for the first new request, if no dialog is already showing.
@@ -883,7 +923,7 @@ class _PeekAppState extends ConsumerState<PeekApp> with WidgetsBindingObserver {
             padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
             textStyle: const TextStyle(
               fontFamily: 'Poppins',
-              fontSize: 16,
+              fontSize: 18,
               fontWeight: FontWeight.w600,
             ),
             elevation: 2,
@@ -898,7 +938,7 @@ class _PeekAppState extends ConsumerState<PeekApp> with WidgetsBindingObserver {
             ),
             padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
             textStyle: const TextStyle(
-              fontFamily: 'Poppins',
+              // fontFamily: 'Poppins',
               fontSize: 16,
               fontWeight: FontWeight.w600,
             ),

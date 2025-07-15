@@ -7,7 +7,7 @@ import 'package:peek/theme/colors.dart';
 
 class PeekAcceptedPage extends material.StatefulWidget {
   final String requestId;
-  static String pageBackgroundPath = 'assets/images/onboarding_bg_02.jpg';
+  static String pageBackgroundPath = 'assets/images/peek_accepted_bg.jpg';
 
   const PeekAcceptedPage({
     material.Key? key,
@@ -74,7 +74,7 @@ class _PeekAcceptedPageState extends material.State<PeekAcceptedPage> {
               colors: const [
                 peekPrimaryColor,
                 peekSecondaryColor,
-                material.Colors.pinkAccent,
+                peekAccentColor,
               ],
             ),
           ),
@@ -84,27 +84,38 @@ class _PeekAcceptedPageState extends material.State<PeekAcceptedPage> {
               child: material.Column(
                 mainAxisAlignment: material.MainAxisAlignment.center,
                 children: [
-                  material.Container(
-                    width: 120,
-                    height: 120,
-                    decoration: const material.BoxDecoration(
-                      color: peekPrimaryColor,
-                      shape: material.BoxShape.circle,
-                    ),
-                    child: const material.Icon(
-                      material.Icons.check_circle_outline,
-                      color: peekBackgroundColor,
-                      size: 60,
-                    ),
+                  material.Image.asset(
+                    'assets/images/yes.png',
+                    width: 260,
+                    height: 260,
+                    errorBuilder: (context, error, stackTrace) {
+                      // Fallback in case the image fails to load
+                      return const material.Icon(
+                        material.Icons.check_circle_outline,
+                        color: peekPrimaryColor,
+                        size: 350,
+                      );
+                    },
                   ),
-                  const material.SizedBox(height: 32),
+                  // const material.SizedBox(height: 32),
                   const material.Text(
                     "Peek Accepted!",
                     style: material.TextStyle(
                       fontSize: 32,
-                      fontWeight: material.FontWeight.bold,
+                      fontWeight: material.FontWeight.w600,
                       color: peekWhiteColor,
                     ),
+                  ),
+
+                  const material.SizedBox(height: 15),
+
+                  // Subtitle
+                  material.Text(
+                    'Some one in the World...',
+                    style: material.Theme.of(context)
+                        .textTheme
+                        .titleMedium
+                        ?.copyWith(color: peekWhiteColor.withOpacity(0.85)),
                   ),
                 ],
               ),

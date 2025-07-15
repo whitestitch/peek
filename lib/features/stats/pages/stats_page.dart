@@ -1,6 +1,8 @@
 // lib/features/stats/pages/stats_page.dart
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' as material;
+import 'package:flutter_svg/svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -346,154 +348,165 @@ class _StatsPageState extends ConsumerState<StatsPage> {
     final Color likeCardColor = Colors.green.shade400; // For stat cards
     final Color dislikeCardColor = Colors.red.shade400; // For stat cards
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Your Peek Stats'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new),
-          onPressed: () => context.go('/'),
+    // Define the background path, consistent with other pages
+    const String backgroundPath = 'assets/images/stats_bg.jpg';
+
+    // The Stack is now the root widget of the page content
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // Layer 1: Background Image (This remains)
+        Image.asset(
+          backgroundPath,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            return Container(color: peekBackgroundColor);
+          },
         ),
-        elevation: 0,
-        backgroundColor: Colors.transparent,
-      ),
-      body: userProfileAsyncValue.when(
-        loading: () => const Center(
-            child: CircularProgressIndicator(color: peekPrimaryColor)),
-        error: (err, stack) {
-          debugPrint("[StatsPage] Error loading user profile: $err");
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(20.0),
-              child: Text(
-                "Could not load your stats. Please try again later.",
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.red.shade300),
-              ),
-            ),
-          );
-        },
-        data: (userDocSnapshot) {
-          if (!isPremium) {
+
+        // Layer 2: The page content (The Scaffold and AppBar are removed from here)
+        userProfileAsyncValue.when(
+          loading: () => const Center(
+              child: CircularProgressIndicator(color: peekPrimaryColor)),
+          error: (err, stack) {
+            debugPrint("[StatsPage] Error loading user profile: $err");
             return Center(
               child: Padding(
-                padding: const EdgeInsets.all(30.0),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.lock_outline_rounded,
-                        size: 60, color: Colors.grey.shade600),
-                    const SizedBox(height: 20),
-                    Text(
-                      "Peek Stats are a Premium Feature",
-                      textAlign: TextAlign.center,
-                      style:
-                          Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                color: Colors.white,
-                              ),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      "Upgrade to Peek Premium to see how others react to your Peeks!",
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            color: Colors.grey.shade400,
-                          ),
-                    ),
-                    const SizedBox(height: 30),
-                    ElevatedButton.icon(
-                      icon: const Icon(Icons.star_rounded),
-                      label: const Text("Go Premium"),
-                      onPressed: () {
-                        context.go('/premium');
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: peekAccentColor,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 30, vertical: 15),
-                      ),
-                    )
-                  ],
+                padding: const EdgeInsets.all(20.0),
+                child: Text(
+                  "Could not load your stats. Please try again later.",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.red.shade300),
                 ),
               ),
             );
-          }
+          },
+          data: (userDocSnapshot) {
+            if (!isPremium) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(30.0),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      SvgPicture.asset(
+                        'assets/images/lock.svg',
+                        height: 180,
+                        colorFilter: ColorFilter.mode(
+                            peekSecondaryColor.withOpacity(0.6),
+                            BlendMode.srcIn),
+                      ),
+                      const SizedBox(height: 20),
+                      Text(
+                        "Peek Stats are a Premium Feature",
+                        textAlign: TextAlign.center,
+                        style:
+                            Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                  // color: Colors.white,
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.w600,
+                                  color: peekWhiteColor,
+                                ),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        "Upgrade to Peek Premium to see how others react to your Peeks!",
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                              color: Colors.grey.shade400,
+                            ),
+                      ),
+                      const SizedBox(height: 30),
+                      // ElevatedButton.icon(
+                      material.OutlinedButton.icon(
+                        icon: const Icon(Icons.star_rounded),
+                        label: const Text("Upgrade"),
+                        onPressed: () {
+                          context.go('/premium');
+                        },
+                        // style: ElevatedButton.styleFrom(
+                        //   backgroundColor: peekSecondaryColor,
+                        //   padding: const EdgeInsets.symmetric(
+                        //       horizontal: 30, vertical: 15),
+                        // ),
+                      )
+                    ],
+                  ),
+                ),
+              );
+            }
 
-          if (userDocSnapshot == null || !userDocSnapshot.exists) {
-            return const Center(
-              child: Text("No user data found to display stats.",
-                  style: TextStyle(color: Colors.white70)),
+            if (userDocSnapshot == null || !userDocSnapshot.exists) {
+              return const Center(
+                child: Text("No user data found to display stats.",
+                    style: TextStyle(color: Colors.white70)),
+              );
+            }
+
+            final userData = userDocSnapshot.data();
+            final likesReceived = userData?['likesReceivedCount'] as int? ?? 0;
+            final dislikesReceived =
+                userData?['dislikesReceivedCount'] as int? ?? 0;
+            final totalReactions = likesReceived + dislikesReceived;
+
+            return SingleChildScrollView(
+              padding: const EdgeInsets.all(20.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: <Widget>[
+                  Text(
+                    "Your Peek Performance",
+                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    "Reactions to Your Peeks",
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          color: Colors.grey.shade400,
+                        ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 30),
+                  SizedBox(
+                    height: 300,
+                    child: _buildMonthlyLineChart(
+                        context, likesReceived, dislikesReceived),
+                  ),
+                  const SizedBox(height: 40),
+                  _buildStatCard(
+                    context: context,
+                    icon: Icons.favorite_rounded,
+                    label: "Total Likes Received",
+                    value: likesReceived.toString(),
+                    iconColor: likeCardColor,
+                  ),
+                  const SizedBox(height: 15),
+                  _buildStatCard(
+                    context: context,
+                    icon: Icons.thumb_down_alt_rounded,
+                    label: "Total Dislikes Received",
+                    value: dislikesReceived.toString(),
+                    iconColor: dislikeCardColor,
+                  ),
+                  const SizedBox(height: 15),
+                  _buildStatCard(
+                    context: context,
+                    icon: Icons.functions_rounded,
+                    label: "Total Reactions",
+                    value: totalReactions.toString(),
+                    iconColor: Colors.blueGrey.shade300,
+                  ),
+                  const SizedBox(height: 30),
+                ],
+              ),
             );
-          }
-
-          final userData = userDocSnapshot.data();
-          final likesReceived = userData?['likesReceivedCount'] as int? ?? 0;
-          final dislikesReceived =
-              userData?['dislikesReceivedCount'] as int? ?? 0;
-          final totalReactions = likesReceived + dislikesReceived;
-
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(20.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: <Widget>[
-                Text(
-                  "Your Peek Performance",
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                      ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  "Reactions to Your Peeks",
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: Colors.grey.shade400,
-                      ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 30),
-                SizedBox(
-                  height: 300,
-                  child: _buildMonthlyLineChart(
-                      context, likesReceived, dislikesReceived),
-                ),
-                const SizedBox(height: 40),
-                _buildStatCard(
-                  context: context,
-                  icon: Icons.favorite_rounded,
-                  label: "Total Likes Received",
-                  value: likesReceived.toString(),
-                  iconColor: likeCardColor,
-                ),
-                const SizedBox(height: 15),
-                _buildStatCard(
-                  context: context,
-                  icon: Icons.thumb_down_alt_rounded,
-                  label: "Total Dislikes Received",
-                  value: dislikesReceived.toString(),
-                  iconColor: dislikeCardColor,
-                ),
-                const SizedBox(height: 15),
-                _buildStatCard(
-                  context: context,
-                  icon: Icons.functions_rounded,
-                  label: "Total Reactions",
-                  value: totalReactions.toString(),
-                  iconColor: Colors.blueGrey.shade300,
-                ),
-                const SizedBox(height: 30),
-                // if (totalReactions == 0 && isPremium)
-                //   Text(
-                //     "Send some Peeks to see your stats grow!",
-                //     style: TextStyle(color: Colors.grey.shade500, fontSize: 14),
-                //     textAlign: TextAlign.center,
-                //   )
-              ],
-            ),
-          );
-        },
-      ),
+          },
+        ),
+      ],
     );
   }
 
