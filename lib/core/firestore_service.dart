@@ -4,19 +4,59 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'; // Import Riverpod
 import 'package:flutter/foundation.dart';
+import 'package:peek/main.dart';
 
-// --- Riverpod Provider for the Service ---
+// DEBUG
+// DEBUG
+// DEBUG
 final firestoreServiceProvider = Provider<FirestoreService>((ref) {
-  return FirestoreService(FirebaseFirestore.instance, FirebaseAuth.instance);
+  // Pass the ref to the service so it can read other providers
+  return FirestoreService(
+      ref, FirebaseFirestore.instance, FirebaseAuth.instance);
 });
+// END DEBUG
+// END DEBUG
+// END DEBUG
+
+// LIVE
+// LIVE
+// LIVE
+// --- Riverpod Provider for the Service ---
+// final firestoreServiceProvider = Provider<FirestoreService>((ref) {
+//   return FirestoreService(FirebaseFirestore.instance, FirebaseAuth.instance);
+// });
+
+// END LIVE
+// END LIVE
+// END LIVE
 // --- End Provider ---
 
 class FirestoreService {
   final FirebaseFirestore _db;
   final FirebaseAuth _auth;
+  // DEBUG
+  // DEBUG
+  // DEBUG
+  final Ref _ref;
+  // END DEBUG
+// END DEBUG
+// END DEBUG
 
-  // Modified constructor to accept instances
-  FirestoreService(this._db, this._auth);
+// DEBUG
+  // DEBUG
+  // DEBUG
+  FirestoreService(this._ref, this._db, this._auth); // Update this line
+  // END DEBUG
+  // END DEBUG
+  // END DEBUG
+
+  // LIVE
+// LIVE
+// LIVE
+  // FirestoreService(this._db, this._auth);
+  // END LIVE
+// END LIVE
+// END LIVE
 
   String? get _currentUserId => _auth.currentUser?.uid;
 
@@ -45,48 +85,16 @@ class FirestoreService {
     required String reactionType, // "like", "dislike", etc.
     required String peekRequestId,
   }) async {
-    if (targetUserId.isEmpty) {
-      debugPrint(
-          "❌ [FirestoreService] triggerReactionEvent: targetUserId is empty.");
-      return;
-    }
-    try {
-      // This document's creation is the event. It can be auto-deleted later if desired.
-      await _db
-          .collection('users')
-          .doc(targetUserId)
-          .collection('received_reactions')
-          .add({
-        'reactionType': reactionType,
-        'peekRequestId': peekRequestId,
-        'timestamp': FieldValue.serverTimestamp(),
-      });
-      debugPrint(
-          "[FirestoreService] Reaction event '$reactionType' triggered for user $targetUserId.");
-    } catch (e) {
-      debugPrint(
-          "❌ [FirestoreService] Error triggering reaction event for user $targetUserId: $e");
-    }
+    // Server (onReactionCreated) writes the sender’s reaction event.
+    debugPrint(
+        "[FirestoreService] triggerReactionEvent: handled server-side; no-op.");
+    return;
   }
 
   Future<void> incrementLikesReceived(String targetUserId) async {
-    if (targetUserId.isEmpty) {
-      debugPrint(
-          "❌ [FirestoreService] incrementLikesReceived: targetUserId is empty.");
-      return; // Or throw an error
-    }
-    final userDocRef = _db.collection('users').doc(targetUserId);
-    try {
-      // We keep this for analytics, but it's no longer used for the real-time animation.
-      await userDocRef.update({
-        'likesReceivedCount': FieldValue.increment(1),
-      });
-      debugPrint(
-          "[FirestoreService] Likes received count (for analytics) incremented for user $targetUserId.");
-    } catch (e) {
-      debugPrint(
-          "❌ [FirestoreService] Error incrementing likes received for user $targetUserId: $e");
-    }
+    debugPrint(
+        "[FirestoreService] incrementLikesReceived: handled server-side; no-op.");
+    return;
   }
 // --- SPACE
 
@@ -244,129 +252,70 @@ class FirestoreService {
   /// If the document doesn't exist, it creates it with essential fields including a generated name.
   /// Returns the ensured display name (or null if user is not logged in).
   /// IMPORTANT: Call this method during your user creation/first login flow.
-  Future<String?> ensureDisplayNameExists() async {
-    final user = _auth.currentUser;
-    if (user == null) return null;
-    final userId = user.uid;
+  Future<String?> ensureDisplayNameExists({required String userId}) async {
     final userDocRef = _db.collection('users').doc(userId);
-    String? finalDisplayName;
 
     try {
-      // First check if document exists
-      final docSnap = await userDocRef.get();
+      String? ensuredName;
 
-      if (!docSnap.exists) {
-        // Document doesn't exist, create it directly
-        finalDisplayName = _generateNickname();
-        debugPrint(
-            "[FirestoreService] Creating new user document for $userId with display name: $finalDisplayName");
-
-        await userDocRef.set({
-          'uid': userId,
-          'displayName': finalDisplayName,
-          'createdAt': FieldValue.serverTimestamp(),
-          'updatedAt': FieldValue.serverTimestamp(),
-          'isPremium': false,
-          'likesReceivedCount': 0,
-          'dislikesReceivedCount': 0,
-          'dailyPeekCount': 0,
-          'peekCountLastReset': null,
-          'lastPeekRequestTimestamp': null,
-          'blockedSenderIds': [],
-          'shareLocationPreference': false,
-          'seeOthersLocationPreference': false,
-        });
-
-        debugPrint("✅ User document created successfully for $userId");
-        return finalDisplayName;
-      }
-
-      // Document exists, check if it needs displayName
-      final currentData = docSnap.data() ?? {};
-      final currentName = currentData['displayName'] as String?;
-
-      if (currentName == null || currentName.trim().isEmpty) {
-        finalDisplayName = _generateNickname();
-        debugPrint(
-            "[FirestoreService] Updating display name for existing user $userId: $finalDisplayName");
-
+      // 1) Non-destructive write to avoid a read before the doc exists.
+      //    If the doc exists and we have write permission, this just bumps updatedAt.
+      //    If it doesn't exist, update() will throw 'not-found' which we handle below.
+      try {
         await userDocRef.update({
-          'displayName': finalDisplayName,
           'updatedAt': FieldValue.serverTimestamp(),
         });
-
-        debugPrint("✅ Display name updated successfully for $userId");
-      } else {
-        finalDisplayName = currentName;
         debugPrint(
-            "✅ User $userId already has display name: $finalDisplayName");
+            "[FirestoreService] User doc exists for $userId (updated timestamp).");
+        // We intentionally skip reading displayName here to avoid read-permission issues on some rulesets.
+      } on FirebaseException catch (fe) {
+        if (fe.code == 'not-found' ||
+            fe.code == 'failed-precondition' ||
+            fe.code == 'permission-denied') {
+          // 2) Create (or upsert) the doc without doing a prior get().
+          ensuredName = _generateNickname();
+          debugPrint(
+              "[FirestoreService] Creating user doc for $userId (reason: ${fe.code}) with name: $ensuredName");
+          await userDocRef.set(
+              {
+                'uid': userId,
+                'displayName': ensuredName,
+                'createdAt': FieldValue.serverTimestamp(),
+                'updatedAt': FieldValue.serverTimestamp(),
+                'isPremium': false,
+                // Initial defaults
+                'likesReceivedCount': 0,
+                'dislikesReceivedCount': 0,
+                'dailyPeekCount': 0,
+                'peekCountLastReset': null,
+                'lastPeekRequestTimestamp': null,
+                'blockedSenderIds': [],
+                'shareLocationPreference': false,
+                'seeOthersLocationPreference': false,
+              },
+              SetOptions(
+                  merge: true)); // merge so we never clobber an existing doc
+          debugPrint("✅ User document created/merged for $userId");
+        } else {
+          rethrow; // Bubble up unknown write errors
+        }
       }
 
-      return finalDisplayName;
+      // We don't read back here to avoid rules that forbid reads pre-existence or without specific fields.
+      return ensuredName; // null means doc already existed; non-null means we created one.
     } catch (e, stack) {
       debugPrint("❌ Error in ensureDisplayNameExists for user $userId: $e");
       debugPrint("Stack trace: $stack");
-
-      // Try one more time with basic set
-      try {
-        finalDisplayName = _generateNickname();
-        await userDocRef.set({
-          'uid': userId,
-          'displayName': finalDisplayName,
-          'createdAt': FieldValue.serverTimestamp(),
-          'isPremium': false,
-          'dailyPeekCount': 0,
-        }, SetOptions(merge: true));
-
-        debugPrint("✅ Fallback set successful for $userId");
-        return finalDisplayName;
-      } catch (fallbackError) {
-        debugPrint("❌ Even fallback failed: $fallbackError");
-        return null;
-      }
+      return null;
     }
   }
-
-  // Future<void> incrementLikesReceived(String targetUserId) async {
-  //   if (targetUserId.isEmpty) {
-  //     debugPrint(
-  //         "❌ [FirestoreService] incrementLikesReceived: targetUserId is empty.");
-  //     return; // Or throw an error
-  //   }
-  //   final userDocRef = _db.collection('users').doc(targetUserId);
-  //   try {
-  //     await userDocRef.update({
-  //       'likesReceivedCount': FieldValue.increment(1),
-  //     });
-  //     debugPrint(
-  //         "[FirestoreService] Likes received incremented for user $targetUserId.");
-  //   } catch (e) {
-  //     debugPrint(
-  //         "❌ [FirestoreService] Error incrementing likes received for user $targetUserId: $e");
-  //     // Decide if rethrow is needed or just log
-  //   }
-  // }
 
   /// Increments the 'dislikesReceivedCount' for the specified user.
   /// [targetUserId] is the ID of the user whose peek received a dislike.
   Future<void> incrementDislikesReceived(String targetUserId) async {
-    if (targetUserId.isEmpty) {
-      debugPrint(
-          "❌ [FirestoreService] incrementDislikesReceived: targetUserId is empty.");
-      return; // Or throw an error
-    }
-    final userDocRef = _db.collection('users').doc(targetUserId);
-    try {
-      await userDocRef.update({
-        'dislikesReceivedCount': FieldValue.increment(1),
-      });
-      debugPrint(
-          "[FirestoreService] Dislikes received incremented for user $targetUserId.");
-    } catch (e) {
-      debugPrint(
-          "❌ [FirestoreService] Error incrementing dislikes received for user $targetUserId: $e");
-      // Decide if rethrow is needed or just log
-    }
+    debugPrint(
+        "[FirestoreService] incrementDislikesReceived: handled server-side; no-op.");
+    return;
   }
 
   /// This is the trigger that the waiting sender will listen for.
@@ -376,18 +325,27 @@ class FirestoreService {
           "❌ [FirestoreService] addReactionToPeek: a parameter is empty.");
       return;
     }
-    final peekDocRef = _db.collection('peek_requests').doc(requestId);
-    try {
-      await peekDocRef.update({
-        'reaction': reactionType, // e.g., 'like' or 'dislike'
-        'reactedAt': FieldValue.serverTimestamp(),
-      });
+    final reactorUid = _auth.currentUser?.uid;
+    if (reactorUid == null) {
       debugPrint(
-          "[FirestoreService] Reaction '$reactionType' added to peek request $requestId.");
+          "❌ [FirestoreService] addReactionToPeek: no authenticated user.");
+      return;
+    }
+    final reactionRef = _db
+        .collection('peek_requests')
+        .doc(requestId)
+        .collection('reactions')
+        .doc(reactorUid);
+    try {
+      await reactionRef.set({
+        'type': reactionType.toLowerCase(), // "like" | "dislike"
+        'createdAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      debugPrint(
+          "[FirestoreService] Reaction '$reactionType' created for $requestId by $reactorUid.");
     } catch (e) {
       debugPrint(
-          "❌ [FirestoreService] Error adding reaction to peek request $requestId: $e");
-      // Decide if rethrow is needed
+          "❌ [FirestoreService] Error creating reaction for $requestId: $e");
     }
   }
 

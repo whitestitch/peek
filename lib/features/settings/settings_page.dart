@@ -28,8 +28,8 @@ class SettingsPage extends ConsumerStatefulWidget {
 class _SettingsPageState extends ConsumerState<SettingsPage> {
   bool _localLocationSharingEnabled = false;
   bool _isUpdatingPreference = false;
-  bool _localSeeOthersLocationEnabled = false;
-  bool _isUpdatingSeeOthersPreference = false;
+  // bool _localSeeOthersLocationEnabled = false;
+  // bool _isUpdatingSeeOthersPreference = false;
 
   String? _currentDisplayName; // To store the fetched display name
   bool _isLoadingDisplayName = true; // Flag to show loading indicator initially
@@ -59,9 +59,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             _localLocationSharingEnabled =
                 data?['shareLocationPreference'] as bool? ?? false;
 
-            // Load preference for "Location Reveal" (seeing others' locations)
-            _localSeeOthersLocationEnabled =
-                data?['seeOthersLocationPreference'] as bool? ?? false;
+            // // Load preference for "Location Reveal" (seeing others' locations)
+            // _localSeeOthersLocationEnabled =
+            //     data?['seeOthersLocationPreference'] as bool? ?? false;
 
             _currentDisplayName = data?['displayName'] as String? ??
                 "Anon"; // Use fetched name or fallback
@@ -164,44 +164,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         setState(() {
           _isUpdatingPreference = false;
         }); // Use the correct state variable
-      }
-    }
-  }
-
-  // For "Location Reveal" (user seeing other's location)
-  Future<void> _updateSeeOthersLocationPreference(bool newValue) async {
-    if (_isUpdatingSeeOthersPreference) return;
-    // Don't update local state immediately
-    setState(() {
-      _isUpdatingSeeOthersPreference = true;
-    });
-    bool success = false; // Track success
-    try {
-      // ASSUMPTION: Your FirestoreService has a method like 'updateUserPreference(Map<String, dynamic> data)'
-      await ref
-          .read(firestoreServiceProvider)
-          .updateUserPreference({'seeOthersLocationPreference': newValue});
-      debugPrint(
-          "[SettingsPage] Location Reveal preference update successful.");
-      success = true; // Mark success
-    } catch (e) {
-      debugPrint(
-          "❌ [SettingsPage] Failed to update Location Reveal preference: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Failed to save preference. Please try again.')),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          // Only update local state if Firestore update was successful
-          if (success) {
-            _localSeeOthersLocationEnabled = newValue;
-          }
-          _isUpdatingSeeOthersPreference = false;
-        });
       }
     }
   }
@@ -341,7 +303,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     // Use local state for now
     final bool currentPreference = _localLocationSharingEnabled;
     // For "Location Reveal" toggle
-    final bool currentSeeOthersPreference = _localSeeOthersLocationEnabled;
+    // final bool currentSeeOthersPreference = _localSeeOthersLocationEnabled;
     final String displayName = _currentDisplayName ?? "Loading...";
     final theme = Theme.of(context);
     final listTilePadding = EdgeInsets.symmetric(
@@ -476,50 +438,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             activeColor: theme.colorScheme.primary,
           ),
           if (_isUpdatingPreference)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 4.0),
-              child: Center(
-                  child: SizedBox(
-                      height: 15,
-                      width: 15,
-                      child: CircularProgressIndicator(strokeWidth: 2))),
-            ),
-
-          sectionDivider,
-
-          // Toggle for User SEEING OTHERS' locations ("Location Reveal")
-          SwitchListTile(
-            contentPadding: listTilePadding,
-            secondary: Icon(
-              Icons.travel_explore,
-              color: !isPremium ? peekNeutralColor : peekPrimaryColor,
-            ),
-            title: Text(
-              'Location Reveal',
-              style: TextStyle(color: isPremium ? null : Colors.grey.shade600),
-            ),
-            subtitle: Text(
-              "See the general location (city or region) of the person you're peeking.",
-              style: TextStyle(
-                color: isPremium
-                    ? theme.textTheme.bodySmall?.color
-                    : Colors.grey.shade700,
-                fontSize: 12,
-              ),
-            ),
-            // Reads from local state
-            value: isPremium ? currentSeeOthersPreference : false,
-            // Checks correct loading flag
-            // Calls correct update method
-            onChanged: isPremium && !_isUpdatingSeeOthersPreference
-                ? _updateSeeOthersLocationPreference
-                : null,
-            activeColor: theme.colorScheme.primary,
-            inactiveThumbColor: isPremium ? null : Colors.grey.shade700,
-            inactiveTrackColor: isPremium ? null : Colors.grey.shade800,
-          ),
-
-          if (_isUpdatingSeeOthersPreference) // Checks correct loading flag
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 4.0),
               child: Center(

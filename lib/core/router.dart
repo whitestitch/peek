@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:peek/core/providers.dart';
 import 'package:peek/features/peek/pages/peek_sender_wait_page.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
@@ -39,6 +40,9 @@ import '../features/menu/privacy_page.dart';
 import '../features/peek/reaction_screen.dart';
 import '../features/peek/peek_sent_confirmation_page.dart';
 import 'package:peek/main.dart';
+
+// Helper provider to ensure sign-in is only triggered once.
+final _signInTriggeredProvider = StateProvider<bool>((ref) => false);
 
 // HIDE TOP APPBAR WIDGET
 const List<String> routesInShellWithoutAppBar = [
@@ -116,24 +120,38 @@ final shellNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'shell');
 //     Provider<GlobalKey<NavigatorState>>((ref) => rootNavigatorKey);
 
 final routerProvider = Provider<GoRouter>((ref) {
-  final authState = ref.watch(authStateChangesProvider);
+  final authState = ref.watch(authStateProvider);
 
   // This ValueNotifier will trigger the router to re-evaluate its redirects
   // whenever the authentication state changes. This is the key to the fix.
+  // Use a simple tick so we always notify (even if auth value is "equal").
+  final refreshTick = ValueNotifier<int>(0);
   final refreshListenable = ValueNotifier<AsyncValue<User?>>(authState);
 
   // Update the listenable when auth state changes
-  ref.listen(authStateChangesProvider, (previous, next) {
+  ref.listen(authStateProvider, (previous, next) {
     debugPrint("🔄 Auth state changed in router - updating refresh listenable");
-    refreshListenable.value = next;
+    refreshTick.value++;
+  });
+
+  // Also refresh when the user document readiness changes,
+  // so we can leave /splash-start as soon as the doc exists.
+  ref.listen(userDocumentProvider, (prev, next) {
+    debugPrint("🔄 User document changed - refreshing router redirects");
+    // Bump the same notifier; ValueNotifier notifies even with the same value.
+    // Force a notify regardless of equality.
+    refreshTick.value++;
   });
 
   return GoRouter(
     navigatorKey: rootNavigatorKey,
-    refreshListenable: refreshListenable,
+    refreshListenable: refreshTick,
     initialLocation: '/splash-start',
     debugLogDiagnostics: true,
     redirect: (context, state) async {
+      // Watch the initialization provider.
+      final userDocument = ref.read(userDocumentProvider);
+
       debugPrint(
           "🔄 Router redirect called - location: ${state.matchedLocation}");
       debugPrint(
@@ -149,20 +167,26 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isLoggedIn = authState.valueOrNull != null;
       final onSplash = state.matchedLocation == '/splash-start';
 
-      // If the user is not logged in, they MUST stay on the splash screen.
-      // The `signInAnonymously` in main() will update authState, and refreshListenable
-      // will trigger this redirect to run again.
+      // Case A: NOT logged in → keep on splash and trigger anon sign-in once
       if (!isLoggedIn) {
-        if (onSplash && !authState.isLoading) {
-          debugPrint("🔄 Router: Triggering anonymous sign-in from splash");
-          FirebaseAuth.instance.signInAnonymously().then((userCredential) {
-            debugPrint(
-                "🔄 Router: Anonymous sign-in completed: ${userCredential.user?.uid}");
-          }).catchError((error) {
-            debugPrint("🔄 Router: Anonymous sign-in error: $error");
-          });
+        if (onSplash) {
+          if (!ref.read(_signInTriggeredProvider)) {
+            Future(() {
+              ref.read(_signInTriggeredProvider.notifier).state = true;
+              FirebaseAuth.instance.signInAnonymously();
+            });
+          }
+          return null; // stay on splash while sign-in happens
         }
+        return '/splash-start';
+      }
 
+      // Case B: Logged in but user doc not ready → keep/return to splash
+      if (userDocument.isLoading ||
+          userDocument.hasError ||
+          !userDocument.hasValue) {
+        debugPrint(
+            "🔄 Gatekeeper: Logged in but user document not ready (loading=${userDocument.isLoading}, hasError=${userDocument.hasError}, hasValue=${userDocument.hasValue}). Staying on/returning to splash.");
         return onSplash ? null : '/splash-start';
       }
 
@@ -342,10 +366,10 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/peek-image',
         name: 'peek-image',
         pageBuilder: (context, state) {
-          // MODIFIED: Read parameters from `extra` for robustness.
-          final params = state.extra as Map<String, String>?;
-          final requestId = params?['requestId'];
-          final imageUrl = params?['imageUrl'];
+          final params = state.extra as Map<String, dynamic>?;
+          final requestId = params?['requestId'] as String?;
+          final imageUrl = params?['imageUrl'] as String?;
+          final senderLocation = params?['senderLocation'] as String?;
 
           if (requestId == null || imageUrl == null) {
             return MaterialPage(
@@ -356,7 +380,11 @@ final routerProvider = Provider<GoRouter>((ref) {
           }
           return CustomTransitionPage(
             key: state.pageKey,
-            child: PeekImageView(requestId: requestId, imageUrl: imageUrl),
+            child: PeekImageView(
+              requestId: requestId,
+              imageUrl: imageUrl,
+              senderLocation: senderLocation,
+            ),
             transitionsBuilder:
                 (context, animation, secondaryAnimation, child) {
               return FadeTransition(

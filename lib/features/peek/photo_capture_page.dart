@@ -87,8 +87,7 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
     ]).then((_) {
       Future.delayed(const Duration(milliseconds: 50), () {
         if (mounted) {
-          _findAndInitializeCamera();
-          _loadUserSettings();
+          _preCaptureAndInitCamera();
           _listenForCaptureDeadline();
         }
       });
@@ -359,28 +358,12 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
         return null;
       }
 
-      // 4. Check and Request Permissions
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
+      // 4. Check Permissions (do NOT request here; prompt is handled pre-capture)
+      final permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
         debugPrint(
-            "[PhotoCapturePage] _getCurrentUserCity: Location permission denied, requesting...");
-        permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) {
-          debugPrint(
-              "[PhotoCapturePage] _getCurrentUserCity: Location permission denied by user.");
-          if (mounted)
-            _showErrorSnackbar("Location permission needed to share location.");
-          return null;
-        }
-      }
-
-      if (permission == LocationPermission.deniedForever) {
-        debugPrint(
-            "[PhotoCapturePage] _getCurrentUserCity: Location permission denied forever.");
-        if (mounted)
-          _showErrorSnackbar(
-              "Location permission permanently denied. Enable in settings.");
-        // Optionally, open app settings: await Geolocator.openAppSettings();
+            "[PhotoCapturePage] _getCurrentUserCity: Location not granted. Skipping city.");
         return null;
       }
 
@@ -435,6 +418,32 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
         setState(() => _isFetchingLocation = false);
       }
     }
+  }
+
+  // --- Pre-capture gate: request location (if needed) before camera, then init camera ---
+  Future<void> _preCaptureAndInitCamera() async {
+    // Load user settings so we know whether the sender wants to share location.
+    await _loadUserSettings();
+    if (!mounted) return;
+
+    // If the sender opted in, handle the OS permission BEFORE camera init & countdown.
+    if (_senderSharesLocation) {
+      try {
+        final status = await Geolocator.checkPermission();
+
+        if (status == LocationPermission.denied) {
+          // Request OS permission directly (system sheet only).
+          await Geolocator.requestPermission();
+        }
+
+        // If deniedForever, we just proceed without location (no blocking).
+      } catch (e) {
+        debugPrint("⚠️ [PhotoCapturePage] Pre-capture location gate error: $e");
+      }
+    }
+
+    if (!mounted) return;
+    _findAndInitializeCamera(); // Starts camera and (later) the capture countdown
   }
 
   // --- _findAndInitializeCamera (Keep As Is) ---
@@ -768,18 +777,46 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
     setState(() => _uploading = true);
     final timestamp = DateTime.now().millisecondsSinceEpoch;
     final storagePath = 'peeks/${widget.requestId}/$timestamp.jpg';
-    final storageRef = FirebaseStorage.instance.ref(storagePath);
+
+    // Always target the real project bucket that exists (new Firebase default):
+    // gs://peekio-db.firebasestorage.app
+    final storageRef = FirebaseStorage.instanceFor(
+      bucket: 'gs://peekio-db.firebasestorage.app',
+    ).ref(storagePath);
+
     final firestoreRef = FirebaseFirestore.instance
         .collection('peek_requests')
         .doc(widget.requestId);
     try {
-      await storageRef.putData(
-        _capturedImageBytes!,
+      final bytes = _capturedImageBytes!;
+      debugPrint(
+        "[PhotoCapturePage] Upload starting: bucket=${storageRef.bucket}, "
+        "path=${storageRef.fullPath}, bytes=${bytes.length}",
+      );
+      final snap = await storageRef.putData(
+        bytes,
         SettableMetadata(contentType: 'image/jpeg'),
       );
-      debugPrint("[PhotoCapturePage] Image bytes uploaded directly.");
+      debugPrint(
+        "[PhotoCapturePage] Upload finished: state=${snap.state}, "
+        "bytes=${snap.bytesTransferred}/${snap.totalBytes}",
+      );
 
-      final downloadUrl = await storageRef.getDownloadURL();
+      // Use the uploaded object's ref and retry getDownloadURL briefly if needed.
+      String downloadUrl;
+      int attempts = 0;
+      while (true) {
+        try {
+          downloadUrl = await snap.ref.getDownloadURL();
+          break;
+        } on FirebaseException catch (e) {
+          attempts++;
+          debugPrint(
+              "[PhotoCapturePage] getDownloadURL attempt $attempts failed: code=${e.code}, message=${e.message}");
+          if (attempts >= 3) rethrow;
+          await Future.delayed(Duration(milliseconds: 400 * attempts));
+        }
+      }
 
       Map<String, dynamic> peekData = {
         'status': 'responded_with_image', // MODIFIED: More descriptive status
@@ -795,8 +832,7 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
       // Conditionally add sender's location
       if (_senderSharesLocation) {
         // Only check if the sender agreed to share.
-        String? cityRegion =
-            await _getCurrentUserCity(); // This function now correctly gates on _senderSharesLocation
+        String? cityRegion = await _getCurrentUserCity();
         if (cityRegion != null && cityRegion.isNotEmpty) {
           peekData['senderLocation'] = cityRegion;
           debugPrint(

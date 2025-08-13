@@ -5,6 +5,7 @@ import 'package:flutter/material.dart' as material;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:peek/features/peek/reaction_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:peek/shared/upgrade_prompt_dialog.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -17,6 +18,7 @@ import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:peek/theme/colors.dart';
 import 'package:rive/rive.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:peek/main.dart';
 
 class HomePage extends ConsumerStatefulWidget {
   const HomePage({super.key});
@@ -40,12 +42,20 @@ class _HomePageState extends ConsumerState<HomePage> {
   }
 
   void _showPeekCancelledSheet(String title, String message) {
+    // Get the context from the global key for safety during navigation
+    final material.BuildContext? scaffoldContext =
+        rootNavigatorKey.currentContext;
+    if (scaffoldContext == null) {
+      material
+          .debugPrint("❌ Cannot show cancelled sheet: root context is null.");
+      return;
+    }
+
     material.showModalBottomSheet(
-      context: context,
-      backgroundColor:
-          material.Colors.transparent, // Make sheet background transparent
-      isScrollControlled: true, // Allows custom height
-      isDismissible: true, // Allow tap-to-dismiss
+      context: scaffoldContext,
+      backgroundColor: material.Colors.transparent,
+      isScrollControlled: true,
+      isDismissible: true,
       builder: (ctx) {
         // Auto-close after 5 seconds
         Future.delayed(const Duration(seconds: 5), () {
@@ -113,7 +123,7 @@ class _HomePageState extends ConsumerState<HomePage> {
               child: material.IconButton(
                 icon: const material.Icon(material.Icons.close,
                     color: material.Colors.white54),
-                onPressed: () => material.Navigator.of(context).pop(),
+                onPressed: () => material.Navigator.of(ctx).pop(),
                 tooltip: 'Close',
               ),
             ),
@@ -357,11 +367,18 @@ class _HomePageState extends ConsumerState<HomePage> {
                   if (!isPremiumForUI)
                     material.SizedBox(
                       width: double.infinity,
+                      // SPACE
+
                       child: material.OutlinedButton.icon(
+                        style: material.OutlinedButton.styleFrom(
+                          padding: const material.EdgeInsets.symmetric(
+                              horizontal: 24, vertical: 18),
+                        ),
                         onPressed:
                             isLoading ? null : () => context.go('/premium'),
                         icon: const material.Icon(
-                            material.Icons.star_purple500_outlined),
+                          material.Icons.star_purple500_outlined,
+                        ),
                         label: const material.Text('Upgrade to Premium'),
 
                         // style: material.ElevatedButton.styleFrom(
@@ -370,7 +387,37 @@ class _HomePageState extends ConsumerState<HomePage> {
                         // ),
                       ),
                     ),
+                  // DEBUG
+                  // DEBUG
+                  // DEBUG
 
+                  if (kDebugMode)
+                    material.Padding(
+                      padding: const material.EdgeInsets.only(top: 10),
+                      child: material.TextButton.icon(
+                        icon: const material.Icon(
+                            material.Icons.bug_report_outlined),
+                        label: const material.Text('DEV: Test Reaction Screen'),
+                        style: material.TextButton.styleFrom(
+                          foregroundColor: material.Colors.yellow.shade700,
+                        ),
+                        onPressed: () {
+                          // Navigate directly to the ReactionScreen with dummy data
+                          material.Navigator.of(context).push(
+                            material.MaterialPageRoute(
+                              builder: (context) => const ReactionScreen(
+                                requestId: 'test-request-id',
+                                originalSenderUid: 'test-sender-uid',
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+
+                  // END DEBUG
+                  // END DEBUG
+                  // END DEBUG
                   // -------------  Space
                   // const material.SizedBox(height: 20),
                   // material.SizedBox(

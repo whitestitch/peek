@@ -1,14 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:peek/core/providers.dart';
 import 'package:peek/features/home/home_page.dart';
 import 'package:peek/features/onboarding/pages/onboarding_page.dart';
-
-/// This provider creates a stream that listens to Firebase's auth state.
-/// Riverpod will automatically manage the stream's lifecycle.
-final authStateChangesProvider = StreamProvider<User?>(
-  (ref) => FirebaseAuth.instance.authStateChanges(),
-);
 
 /// The AuthWrapper widget acts as a gatekeeper. It listens to the auth state
 /// and displays the correct UI based on whether a user is logged in, logged out,
@@ -19,7 +14,8 @@ class AuthWrapper extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     // Watch the provider that listens to auth state changes.
-    final authState = ref.watch(authStateChangesProvider);
+
+    final authState = ref.watch(authStateProvider);
 
     // Use .when to gracefully handle all possible states: loading, error, and data.
     return authState.when(

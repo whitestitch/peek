@@ -41,18 +41,18 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyBFctI-qM68_pf2VSxH5qNJMbxQRdSfnbs',
-    appId: '1:96119580821:android:5a073baaaedf340e17939c',
+    appId: '1:96119580821:android:44958f8030bf285217939c',
     messagingSenderId: '96119580821',
     projectId: 'peek-fire',
-    storageBucket: 'peek-fire.appspot.com',
+    storageBucket: 'peek-fire.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyAtTWVA82YltlEc9OnrYGQ44p6bsPmPSFg',
-    appId: '1:96119580821:ios:889ce1d2cd69dd8117939c',
+    appId: '1:96119580821:ios:5f2c560c976c292b17939c',
     messagingSenderId: '96119580821',
     projectId: 'peek-fire',
-    storageBucket: 'peek-fire.appspot.com',
+    storageBucket: 'peek-fire.firebasestorage.app',
     iosBundleId: 'com.fab.peek',
   );
 

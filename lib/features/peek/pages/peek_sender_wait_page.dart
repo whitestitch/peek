@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:peek/features/peek/controllers/peek_controller.dart';
+import 'package:peek/features/peek/providers/peek_providers.dart';
 import 'package:peek/theme/colors.dart';
 
 class PeekSenderWaitPage extends ConsumerStatefulWidget {
@@ -68,6 +69,7 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
       final status = data?['status'] as String?;
       final imageUrl = data?['imageUrl'] as String?;
       final expiresAt = data?['captureExpiresAt'] as Timestamp?;
+      final senderLocation = data?['senderLocation'] as String?;
 
       // Start countdown if deadline exists
       if (expiresAt != null && _countdownTimer == null) {
@@ -79,9 +81,19 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
           imageUrl != null &&
           imageUrl.isNotEmpty) {
         material.debugPrint(
-            "[PeekSenderWaitPage] Received image response. Navigating to splash.");
-        _navigateToNext(
-            '/splash?requestId=${widget.requestId}&initialImageUrl=${Uri.encodeComponent(imageUrl)}');
+            "[PeekSenderWaitPage] Received image response. Navigating to splash with location: $senderLocation");
+
+        // Build the query parameters map
+        final queryParams = {
+          'requestId': widget.requestId,
+          'initialImageUrl': imageUrl,
+          // Conditionally add the senderLocation if it exists
+          if (senderLocation != null) 'senderLocation': senderLocation,
+        };
+
+        // Use Uri to build the path and query, then navigate
+        final uri = Uri(path: '/splash', queryParameters: queryParams);
+        _navigateToNext(uri.toString());
       } else if (status == 'cancelled_by_receiver' || status == 'declined') {
         material.debugPrint(
             "[PeekSenderWaitPage] Peek was cancelled or declined by receiver. Navigating home.");
@@ -244,6 +256,8 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
 
   @override
   material.Widget build(material.BuildContext context) {
+    ref.watch(reactionOverlayListenerProvider);
+
     return material.Scaffold(
       backgroundColor: peekBackgroundColor,
 

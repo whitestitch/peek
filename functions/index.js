@@ -1,5 +1,6 @@
 const {onCall, HttpsError} = require("firebase-functions/v2/https");
 const {onDocumentCreated} = require("firebase-functions/v2/firestore");
+
 const {onObjectFinalized} = require("firebase-functions/v2/storage");
 const {onSchedule} = require("firebase-functions/v2/scheduler");
 
@@ -7,6 +8,7 @@ const admin = require("firebase-admin");
 const {FieldValue, Timestamp} = require("firebase-admin/firestore");
 const vision = require("@google-cloud/vision");
 const logger = require("firebase-functions/logger");
+
 const {getStorage} = require("firebase-admin/storage");
 
 // Initialize Firebase Admin SDK ONCE
@@ -14,6 +16,7 @@ if (admin.apps.length === 0) {
   admin.initializeApp();
 }
 const db = admin.firestore();
+
 const visionClient = new vision.ImageAnnotatorClient();
 
 const isEmulator = () => {
@@ -58,9 +61,33 @@ async function findPotentialRecipient(
 }
 
 exports.initiatePeekRequest = onCall(
-    {region: "us-central1", timeoutSeconds: 60},
+    {
+      region: "us-central1",
+      timeoutSeconds: 60,
+      enforceAppCheck: false,
+    },
     async (request) => {
+      logger.info("🚀 Function version: 2.0 - Anonymous Auth Fix");
+
+      // Manual App Check verification.
+      // In production, request.app will be defined.
+      // For debug builds, we'll check for a specific flag from the client.
+      if (!request.app && request.data.debug !== true) {
+        logger.error(
+            "🚨 Manual App Check failed. No valid token and not a debug call.", {
+              hasAppCheckToken: !!request.app,
+              debugFlag: request.data.debug,
+            });
+        throw new HttpsError(
+            "unauthenticated",
+            "The function must be called from a verified app.",
+        );
+      }
+
+      logger.info("✅ Manual App Check passed or was bypassed for emulator.");
+
       logger.info("🔍 initiatePeekRequest called with:", {
+
         hasAuth: !!request.auth,
         authUid: request.auth && request.auth.uid,
         isEmulator: isEmulator(),
@@ -68,39 +95,22 @@ exports.initiatePeekRequest = onCall(
         emulatorMode: request.data && request.data.emulatorMode,
       });
 
-      let senderUid;
+      // let senderUid;
 
-      try {
-      // In emulator mode with emulatorMode flag, skip auth check entirely
-        if (isEmulator() &&
-          request.data && request.data.emulatorMode && request.data.senderUid) {
-          senderUid = request.data.senderUid;
-          logger.info(
-              "🔧 Emulator mode bypass - using senderUid directly:", senderUid);
-        } else if (request.auth && request.auth.uid) {
-          senderUid = request.auth.uid;
-          logger.info("✅ Using request.auth.uid:", senderUid);
-        } else if (isEmulator() && request.data && request.data.senderUid) {
-        // Fallback for emulator without explicit flag
-          senderUid = request.data.senderUid;
-          logger.info("🔧 Emulator fallback - using senderUid:", senderUid);
-        } else {
-          logger.error("❌ No authentication context or senderUid provided");
-          throw new HttpsError(
-              "unauthenticated",
-              "The function must be called while authenticated.",
-          );
-        }
-      } catch (authError) {
-        logger.error("Authentication check failed:", authError);
-        if (authError instanceof HttpsError) {
-          throw authError;
-        }
+      if (!request.auth || !request.auth.uid) {
+        logger.error(
+            "❌ Function called without valid authentication context.", {
+              auth: request.auth,
+            });
         throw new HttpsError(
             "unauthenticated",
-            "Authentication validation failed",
+            "The function must be called while authenticated.",
         );
       }
+
+      // If we reach this point, request.auth.uid is guaranteed to exist.
+      // We can declare and initialize senderUid as a constant here.
+      const senderUid = request.auth.uid;
 
       logger.info(`📝 Processing peek request for user: ${senderUid}`);
 
@@ -266,30 +276,36 @@ exports.autoPingReceiverOnRequestCreate = onDocumentCreated(
 
       try {
         const payload = {
-          notification: { // Standard notification object
+          // Visible alert content
+          notification: {
             title: "👁 Someone wants to Peekio!",
             body: "Open the app to respond to the request.",
           },
-          data: { // Your custom data
-            requestId,
+          // Custom data for your app
+          data: {
+            requestId: requestId,
             type: "peek_request_received",
           },
-          apns: { // Apple Push Notification Service specific payload
+          token: fcmToken,
+          // Platform-specific configuration
+          android: {
+            priority: "high",
+            notification: {
+              // Must match the channel ID created in notification_service.dart
+              channel_id: "peek_requests_channel",
+            },
+          },
+          apns: {
             payload: {
               aps: {
-                alert: { // Ensures the alert is shown
-                  title: "👁 Someone wants to Peek!",
-                  body: "Open the app to respond to the request.",
-                },
-                sound: "default", // Standard sound
-                badge: 1, // Optional: to set the app icon badge
-                // silent background updates AND a visible notification.
-                // If only for visible notification, 'alert' is key.
+                "sound": "default",
+                // This flag helps wake the app for background processing
+                "content-available": 1,
               },
             },
           },
-          token: fcmToken,
         };
+
         await admin.messaging().send(payload);
         logger.info(
             `✅ autoPingReceiver: Ping sent to ${receiverUid}`,
@@ -304,26 +320,8 @@ exports.autoPingReceiverOnRequestCreate = onDocumentCreated(
     },
 );
 
-/*
-// We comment it out to remove the "unused variable" warning in the editor.
-const PEEK_STORAGE_BUCKET =
-  process.env.FIREBASE_STORAGE_BUCKET || admin.app().options.storageBucket;
-*/
-
-/*
-// ==================================================================
-// DEVELOPMENT FIX: Image moderation is temporarily disabled.
-//
-// REASON: This function calls the Google Cloud Vision API, which
-// requires a billing account on your project. This allows you to
-// continue development without setting up billing.
-//
-// TO RE-ENABLE FOR PRODUCTION:
-// 1. Enable billing on your Google Cloud project.
-// 2. Uncomment this entire block.
-// ==================================================================
 exports.moderateImageUpload = onObjectFinalized(
-    {bucket: PEEK_STORAGE_BUCKET, region: "us-central1"},
+    {region: "us-central1"},
     async (event) => {
       const fileData = event.data;
       if (!fileData || !fileData.name || !fileData.bucket) {
@@ -369,7 +367,7 @@ exports.moderateImageUpload = onObjectFinalized(
       return null;
     },
 );
-*/
+
 
 exports.cleanupExpiredPeeks = onSchedule(
     {
@@ -402,6 +400,106 @@ exports.cleanupExpiredPeeks = onSchedule(
       } catch (error) {
         logger.error("❌ Error committing expired peeks batch:", error);
       }
+      return null;
+    },
+);
+
+// When a receiver creates a reaction document, update sender stats and notify.
+
+exports.onReactionCreated = onDocumentCreated(
+    {
+      document: "peek_requests/{requestId}/reactions/{uid}",
+      region: "us-central1",
+    },
+    async (event) => {
+      const snap = event.data;
+      if (!snap) return null;
+      const data = snap.data();
+      if (!data) return null;
+
+      const {requestId, uid: reactorUid} = event.params;
+      const reaction = (
+        data.type || data.reaction || "").toString().toLowerCase();
+      if (!reaction) {
+        logger.warn(`onReactionCreated: missing reaction type for
+          ${requestId}/${reactorUid}`);
+        return null;
+      }
+
+      const peekRef = db.collection("peek_requests").doc(requestId);
+      const peekSnap = await peekRef.get();
+      if (!peekSnap.exists) {
+        logger.warn(`onReactionCreated: peek ${requestId} not found`);
+        return null;
+      }
+
+      const peek = peekSnap.data() || {};
+
+      // Identify both sides of this peek
+      const originalRequesterUid =
+        peek.senderUid || peek.originalSenderId || peek.requesterUid;
+      const imageSenderUid =
+        peek.senderId || peek.responderUid || peek.photoSenderUid;
+      if (!originalRequesterUid || !imageSenderUid) {
+        logger.warn(
+            `onReactionCreated: missing participant UIDs on peek ${requestId}`);
+        return null;
+      }
+      // Write the animation event to the OTHER participant
+      const targetUid = (reactorUid === imageSenderUid) ?
+        originalRequesterUid :
+        imageSenderUid;
+
+      const isLike = reaction ===
+        "like" ||
+        reaction === "liked" ||
+        reaction === "❤️";
+
+      const counterField = isLike ?
+        "likesReceivedCount" : "dislikesReceivedCount";
+
+      await db.runTransaction(async (tx) => {
+        // 1) Increment stats for the PHOTO SENDER (the person being reacted to)
+        const statsRef = db.collection("users").doc(imageSenderUid);
+        tx.set(
+            statsRef,
+            {
+              [counterField]: admin.firestore.FieldValue.increment(1),
+              "lastReactionAt": admin.firestore.FieldValue.serverTimestamp(),
+            },
+            {merge: true},
+        );
+
+        // 2) Create a reaction event for the OTHER participant
+        const eventRef = db
+            .collection("users").doc(targetUid)
+            .collection("received_reactions").doc(requestId);
+
+        tx.set(
+            eventRef,
+            {
+              reactionType: reaction, // aligns with client naming
+              peekRequestId: requestId,
+              fromUid: reactorUid,
+              timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            },
+            {merge: true},
+        );
+
+        // 3) Mirror reaction on the peek_request
+        tx.set(
+            peekRef,
+            {
+              reaction,
+              reactionBy: reactorUid,
+              reactionAt: admin.firestore.FieldValue.serverTimestamp(),
+            },
+            {merge: true},
+        );
+      });
+
+      logger.info(
+          `✅ onReactionCreated: updated sender stats & event for ${requestId}`);
       return null;
     },
 );

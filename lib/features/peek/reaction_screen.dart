@@ -32,6 +32,12 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
   bool _isLoading = true;
   String? _loadError;
 
+  // Use the real bucket where SEND uploads land (new Firebase default).
+  // Keeps this screen working regardless of app-default bucket config.
+  final FirebaseStorage _storage = FirebaseStorage.instanceFor(
+    bucket: 'gs://peekio-db.firebasestorage.app',
+  );
+
   bool _isSubmitting = false;
   bool _isProcessingAction = false;
   bool _reactionSubmitted = false;
@@ -44,6 +50,25 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
 
   // NEW: Method to fetch peek data and generate a fresh URL
   Future<void> _fetchPeekData() async {
+    // DEBUG
+    // DEBUG
+    // DEBUG
+    // DEV MODE: If a test ID is used, load dummy data and skip Firestore.
+
+    if (widget.requestId == 'test-request-id') {
+      if (mounted) {
+        setState(() {
+          // Use a placeholder image from the web for testing
+          _selfFetchedImageUrl = 'https://picsum.photos/seed/peekio/400/800';
+          _isLoading = false;
+        });
+      }
+      return; // Exit here to prevent the real database call
+    }
+
+    // END DEBUG
+    // END DEBUG
+    // END DEBUG
     try {
       final peekDoc = await FirebaseFirestore.instance
           .collection('peek_requests')
@@ -55,15 +80,20 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
       }
 
       final data = peekDoc.data();
-      final storagePath = data?['storagePath'] as String?;
 
-      if (storagePath == null || storagePath.isEmpty) {
-        throw Exception("Storage path is missing from the peek document.");
+      // Prefer persisted URL if present; otherwise resolve from Storage.
+      final String? persistedUrl = (data?['imageUrl'] as String?)?.trim();
+      String freshImageUrl;
+      if (persistedUrl != null && persistedUrl.isNotEmpty) {
+        freshImageUrl = persistedUrl;
+      } else {
+        final String? storagePath = (data?['storagePath'] as String?)?.trim();
+        if (storagePath == null || storagePath.isEmpty) {
+          throw Exception("Storage path is missing from the peek document.");
+        }
+        // Resolve from the correct bucket (firebasestorage.app)
+        freshImageUrl = await _storage.ref(storagePath).getDownloadURL();
       }
-
-      // Generate a fresh, guaranteed-valid download URL
-      final freshImageUrl =
-          await FirebaseStorage.instance.ref(storagePath).getDownloadURL();
 
       if (mounted) {
         setState(() {
@@ -230,23 +260,6 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
     try {
       await firestoreService.addReactionToPeek(widget.requestId, reactionType);
 
-      if (reactionType == 'like' || reactionType == 'dislike') {
-        // We now call BOTH the analytics incrementer and the new real-time event trigger
-        if (reactionType == 'like') {
-          await firestoreService
-              .incrementLikesReceived(widget.originalSenderUid);
-        } else {
-          await firestoreService
-              .incrementDislikesReceived(widget.originalSenderUid);
-        }
-
-        // This is the new, crucial call for the real-time animation
-        await firestoreService.triggerReactionEvent(
-          targetUserId: widget.originalSenderUid,
-          reactionType: reactionType,
-          peekRequestId: widget.requestId,
-        );
-      }
       // "skip" requires no database action
 
       // STEP 2: LOG SUCCESS AND UPDATE UI
@@ -255,7 +268,7 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
       if (mounted) {
         setState(() {
           _reactionSubmitted = true;
-          _isSubmitting = false; // Turn off the loader, turn on the checkmark
+          _isSubmitting = false;
         });
 
         // STEP 3: LOG THE DELAY
@@ -382,6 +395,7 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
                             _blockThisSender();
                           }
                         },
+                        // Navigate home immediately
                         itemBuilder: (BuildContext context) =>
                             <PopupMenuEntry<String>>[
                           const PopupMenuItem<String>(
@@ -417,7 +431,7 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
                             size: 24, color: Colors.white),
                         onPressed: (_isSubmitting || _isProcessingAction)
                             ? null
-                            : () => _handleReaction('skip'),
+                            : () => context.go('/'),
                       ),
                     ),
                   ],
@@ -451,24 +465,34 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        "How was this Peek?",
+                        "Peekio Love?",
                         textAlign: TextAlign.center,
                         style: Theme.of(context)
                             .textTheme
                             .headlineSmall
                             ?.copyWith(
-                                color: Colors.white,
+                                color: peekWhiteColor,
                                 fontWeight: FontWeight.w600,
-                                fontSize:
-                                    28, // Slightly adjusted for better fit
+                                fontSize: 42,
                                 shadows: [
                               const Shadow(
-                                  blurRadius: 2.0,
-                                  color: Colors.black54,
+                                  blurRadius: 4.0,
+                                  color: peekSurfaceColor,
                                   offset: Offset(1, 1))
                             ]),
                       ),
-                      const SizedBox(height: 30), // Reduced spacing
+                      const SizedBox(height: 8),
+                      Text(
+                        "Your feedback is anonymous.",
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.90),
+                          fontSize: 16,
+                        ),
+                      ),
+                      // SPACE
+                      const SizedBox(height: 30),
+                      // SPACE
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
@@ -478,15 +502,24 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
                                 ? null
                                 : () => _handleReaction('dislike'),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor:
-                                  Colors.blueGrey.shade600, // Adjusted color
-                              shape: const CircleBorder(),
-                              padding:
-                                  const EdgeInsets.all(22), // Adjusted padding
-                              elevation: 5,
+                              backgroundColor: peekErrorColor,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(30),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 34,
+                                vertical: 16,
+                              ),
+                              elevation: 8,
+                              shadowColor: Colors.black.withOpacity(0.2),
                             ),
-                            child: Icon(Icons.thumb_down_alt_rounded,
-                                size: 30, color: Colors.white70),
+                            child: const Icon(
+                              // Icons.heart_broken,
+                              Icons.thumb_down,
+                              size: 24,
+                              color: peekWhiteColor,
+                              // color: peekBackgroundColor,
+                            ),
                           ),
 
                           // Like Button
@@ -496,13 +529,19 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
                                 : () => _handleReaction('like'),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: peekPrimaryColor,
-                              shape: const CircleBorder(),
-                              padding:
-                                  const EdgeInsets.all(22), // Adjusted padding
-                              elevation: 5,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 34, vertical: 16),
+                              elevation: 8,
+                              shadowColor: Colors.black.withOpacity(0.2),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(30),
+                              ),
                             ),
-                            child: Icon(Icons.favorite_rounded,
-                                size: 30, color: peekBackgroundColor),
+                            child: const Icon(
+                              Icons.favorite_rounded,
+                              size: 24,
+                              color: peekBackgroundColor,
+                            ),
                           ),
                         ],
                       ),

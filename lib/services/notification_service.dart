@@ -3,34 +3,104 @@ import 'dart:async';
 import 'dart:io'; // Required for Platform check
 import 'package:flutter/material.dart';
 
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/foundation.dart'; // For kIsWeb and debugPrint
+import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-import '../firebase_options.dart'; // Ensure correct path
+import '../firebase_options.dart';
+
+// Define the high-priority channel.
+//The ID MUST match the one in your Cloud Function.
+const AndroidNotificationChannel peekRequestChannel =
+    AndroidNotificationChannel(
+  // id
+  'peek_requests_channel',
+  // title
+  'Peek Requests',
+  description: 'Channel for new Peek request notifications.',
+  // This is what enables heads-up display
+  importance: Importance.max,
+  playSound: true,
+);
 
 // Top-level function required by Firebase for background handler
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  // only initialize if this isolate hasn’t yet:
+  // Ensure Firebase is initialized for background processing.
   if (Firebase.apps.isEmpty) {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
-    debugPrint("✅ Firebase initialized in BG Handler (was empty).");
-  } else {
-    debugPrint("ℹ️ Firebase already initialized in BG Handler.");
   }
+
   debugPrint(
-    "📨 [NotificationService BG Handler] Message data: ${message.data}",
+    "📨 [NotificationService BG Handler] A background message was received: ${message.messageId}",
   );
+  // The OS now handles displaying the notification, so no further action is needed here.
+
+  // 1. Check if the app is already in the foreground.
+  final prefs = await SharedPreferences.getInstance();
+  // No need to reload, the main app isolate is responsible for setting it.
+  if (prefs.getBool('isAppInForeground') ?? false) {
+    debugPrint(
+        "[NotificationService BG Handler] App is in foreground. EXITING. The live listener will handle it.");
+    return; // Exit immediately.
+  }
+
+  // 2. If in background, create and show a LOCAL notification.
+  final title = message.data['title'] as String?;
+  final body = message.data['body'] as String?;
+
+  if (title != null && body != null) {
+    final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+
+    // Define platform-specific details
+    const androidDetails = AndroidNotificationDetails(
+      'peek_requests_channel', // MUST match the channel ID from the class
+      'Peek Requests',
+      channelDescription: 'Channel for new Peek request notifications.',
+      importance: Importance.max,
+      priority: Priority.high,
+      icon: '@mipmap/ic_launcher',
+    );
+    const iosDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+    );
+    const notificationDetails = NotificationDetails(
+      android: androidDetails,
+      iOS: iosDetails,
+    );
+
+    // Initialize the plugin (safe to call multiple times)
+    await flutterLocalNotificationsPlugin.initialize(
+        const InitializationSettings(
+            android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+            iOS: DarwinInitializationSettings()));
+
+    // Show the notification
+    await flutterLocalNotificationsPlugin.show(
+      message.hashCode,
+      title,
+      body,
+      notificationDetails,
+    );
+    debugPrint(
+        "[NotificationService BG Handler] App in background, local notification shown.");
+  }
 }
 
 class NotificationService {
   final FirebaseMessaging _firebaseMessaging = FirebaseMessaging.instance;
+  final FlutterLocalNotificationsPlugin _localNotifications =
+      FlutterLocalNotificationsPlugin();
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
@@ -45,6 +115,31 @@ class NotificationService {
   /// MUST be called after GoRouter is initialized.
   Future<void> initialize(GoRouter router) async {
     _router = router;
+
+    // NEW: Initialize the local notifications plugin and create the channel
+    if (!kIsWeb && Platform.isAndroid) {
+      // Create the channel
+      await _localNotifications
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>()
+          ?.createNotificationChannel(peekRequestChannel);
+
+      // Initialize the plugin
+      await _localNotifications.initialize(
+        const InitializationSettings(
+          android: AndroidInitializationSettings(
+              '@mipmap/ic_launcher'), // Use your app icon
+          iOS: DarwinInitializationSettings(),
+        ),
+        // This handles taps when the app is in foreground/background but not terminated
+        onDidReceiveNotificationResponse: (details) {
+          debugPrint(
+              "[LocalNotifications] onDidReceiveNotificationResponse payload: ${details.payload}");
+          // Here you could add navigation logic if needed, but FCM onMessageOpenedApp already handles it.
+        },
+      );
+    }
+
     await _requestPermissions();
     _setupListeners();
 
@@ -120,28 +215,41 @@ class NotificationService {
     debugPrint(
       '[NotificationService] User granted permission: ${settings.authorizationStatus}',
     );
+
+    // Explicitly set foreground presentation options for iOS
+    // if (!kIsWeb && Platform.isIOS) {
+    //   await _firebaseMessaging.setForegroundNotificationPresentationOptions(
+    //     // Required to display a heads up notification
+    //     alert: false,
+    //     badge: true,
+    //     sound: true,
+    //   );
+    // }
+
+    // Apply suppression to **both** iOS and Android
+    await _firebaseMessaging.setForegroundNotificationPresentationOptions(
+      alert: false,
+      badge: true,
+      sound: true,
+    );
   }
 
   void _setupListeners() {
-    // --- Keep your existing _setupListeners method code ---
+    // SPACE
+
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      debugPrint('📨 [NotificationService FG] Message data: ${message.data}');
       debugPrint(
-        '📨 [NotificationService FG] Notification: ${message.notification?.title}/${message.notification?.body}',
-      );
+          '📨 [NotificationService FG] Message received: ${message.data}');
 
-      // Handle foreground peek requests immediately
-      final String? type =
-          message.data['type'] as String?; // Ensure you get type
+      final String? type = message.data['type'] as String?;
+
+      // If it's a new peek request, show an in-app dialog directly.
       if (type == 'peek_request_received') {
-        // final requestId = message.data['requestId']; // requestId is available if needed for other logic
-
-        // REMOVE OR COMMENT OUT THE DIRECT DIALOG CALL FROM HERE:
-        // _handleIncomingPeekRequest(requestId);
-
-        // Instead, just log and let the Riverpod provider drive the UI update via main.dart
-        debugPrint(
-            '🔍 [NotificationService FG] Peek request received (type: $type). Providers in main.dart should handle UI based on Firestore update.');
+        final String? requestId = message.data['requestId'];
+        if (requestId != null) {
+          // This existing method shows your custom dialog
+          _handleIncomingPeekRequest(requestId);
+        }
       }
     });
 

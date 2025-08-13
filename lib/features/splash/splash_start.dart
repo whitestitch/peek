@@ -25,6 +25,7 @@ class _SplashStartPageState extends State<SplashStartPage>
   @override
   void initState() {
     super.initState();
+
     _rotationController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 10),

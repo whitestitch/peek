@@ -37,52 +37,41 @@ class HomeStateNotifier extends AutoDisposeAsyncNotifier<HomeState> {
 
   @override
   Future<HomeState> build() async {
-    // ref.onDispose(() => _cooldownTimer?.cancel());
+    // Watch the real-time stream of the user's profile document. This will
+    // automatically re-run the build method whenever the document is created
+    // or changes.
+    final userProfileAsyncValue = ref.watch(userDocumentProvider);
 
-    // SPACE
-    //
-    //SPACE
-
-    final userDoc = await ref.watch(userDataProvider.future);
-
-    if (userDoc == null || !userDoc.exists) {
-      // Create user document if it doesn't exist
-      final currentUser = FirebaseAuth.instance.currentUser;
-      if (currentUser != null && kDebugMode) {
-        debugPrint(
-            '[HomeState] Creating missing user document for ${currentUser.uid}');
-        try {
-          await FirebaseFirestore.instance
-              .collection('users')
-              .doc(currentUser.uid)
-              .set({
-            'displayName': 'Test User ${currentUser.uid.substring(0, 6)}',
-            'createdAt': FieldValue.serverTimestamp(),
-            'isPremium': false,
-            'dailyPeekCount': 0,
-          }, SetOptions(merge: true));
-          // Re-fetch the document
-          final newDoc = await FirebaseFirestore.instance
-              .collection('users')
-              .doc(currentUser.uid)
-              .get();
-          if (newDoc.exists) {
-            return _buildStateFromData(newDoc.data()!);
-          }
-        } catch (e) {
-          debugPrint('[HomeState] Error creating user document: $e');
+    // Use .when() to gracefully handle the different states of the stream.
+    return userProfileAsyncValue.when(
+      loading: () {
+        // While the stream is initializing, keep the provider in a loading state.
+        // We do this by returning a Future that never completes. The UI will show a spinner.
+        debugPrint("[HomeState] Waiting for user profile stream to connect...");
+        return Completer<HomeState>().future;
+      },
+      error: (err, stack) {
+        // If the stream itself has an error, propagate it.
+        debugPrint("[HomeState] Error from user profile stream: $err");
+        throw err;
+      },
+      data: (userDoc) {
+        // The stream has emitted data. Now we check if the document exists.
+        if (userDoc == null || !userDoc.exists) {
+          // This is the key part of the fix. If the document doesn't exist
+          // yet, we don't throw an error. We wait patiently by keeping the
+          // provider in a loading state. The stream will emit a new value
+          // once the document is created, and this code will run again.
+          debugPrint(
+              "[HomeState] User document not yet available in stream. Waiting for creation...");
+          return Completer<HomeState>().future;
         }
-      }
 
-      return const HomeState(
-        isPremium: false,
-        isButtonEnabled: false,
-        buttonText: 'Initializing...',
-        subtitleText: 'Waiting for user data...',
-      );
-    }
-
-    return _buildStateFromData(userDoc.data()!);
+        // Success! The document exists. We can now build the real state.
+        debugPrint("[HomeState] User document found. Building state.");
+        return _buildStateFromData(userDoc.data()!);
+      },
+    );
   }
 
   HomeState _buildStateFromData(Map<String, dynamic> data) {
@@ -144,7 +133,32 @@ class HomeStateNotifier extends AutoDisposeAsyncNotifier<HomeState> {
   }
 
   Future<void> attemptStartPeeking(material.BuildContext context) async {
-    final userDoc = await ref.read(userDataProvider.future);
+    // DEBUG
+    // DEBUG
+    // DEBUG
+    // THE FOLLOWING BLOCK IS BEING DELETED TO ALLOW ANONYMOUS USERS TO PROCEED.
+    /*
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser != null && currentUser.isAnonymous) {
+      debugPrint(
+          "[HomeState] Anonymous user attempted to peek. Showing upgrade prompt.");
+      await material.showDialog(
+        context: context,
+        builder: (_) => const UpgradePromptDialog(
+          // Using a specific reason for anonymous users.
+          reason: UpgradeReason.anonymous,
+        ),
+      );
+      return; // Stop execution here for anonymous users.
+    }
+    */
+
+    // END DEBUG
+    // END DEBUG
+    // END DEBUG
+
+    final userDoc = ref.read(userDocumentProvider).value;
+
     if (userDoc == null) {
       _showErrorSnackbar(context, 'User data not ready.');
       return;
@@ -204,7 +218,7 @@ class HomeStateNotifier extends AutoDisposeAsyncNotifier<HomeState> {
 
   Future<void> debugResetLimits() async {
     await ref.read(peekControllerProvider.notifier).debugResetUserLimits();
-    ref.invalidate(userDataProvider);
+    ref.invalidate(userDocumentProvider);
   }
 }
 
