@@ -14,11 +14,13 @@ import 'package:peek/theme/colors.dart'; // Assuming your color theme
 class PeekImageView extends ConsumerStatefulWidget {
   final String requestId;
   final String imageUrl;
+  final String? senderLocation;
 
   const PeekImageView({
     super.key,
     required this.requestId,
     required this.imageUrl,
+    this.senderLocation,
   });
 
   @override
@@ -27,13 +29,8 @@ class PeekImageView extends ConsumerStatefulWidget {
 
 class _PeekImageViewState extends ConsumerState<PeekImageView>
     with SingleTickerProviderStateMixin {
-  static const String _feedbackTimestampKey = 'feedbackLastPromptTimestamp';
-  static const Duration _feedbackPromptInterval = Duration(days: 7);
-
   // Receiver's settings
   bool _isReceiverPremium = false;
-  bool _receiverWantsLocationReveal = false;
-  // bool _receiverWantsSenderInfo = false;
 
   // Image state
   // Controls if the image UI (or loader/error) is shown
@@ -70,13 +67,14 @@ class _PeekImageViewState extends ConsumerState<PeekImageView>
   void initState() {
     super.initState();
     _imageUrl = widget.imageUrl;
+    _senderLocation = widget.senderLocation;
     _loadAllNecessaryData();
   }
 
   Future<void> _loadAllNecessaryData() async {
+    // receiver's settings
+    // the sender's ID (for reporting).
     await _loadReceiverSettings();
-    // Fetch peek data regardless to get senderId for reporting/blocking
-    // The display of sensitive info like location/name/avatar is still gated by premium status later.
     await _fetchPeekData();
     if (mounted) {
       _initiateImageDisplay();
@@ -91,7 +89,7 @@ class _PeekImageViewState extends ConsumerState<PeekImageView>
       if (mounted) {
         setState(() {
           _isReceiverPremium = false;
-          _receiverWantsLocationReveal = false;
+
           _viewDuration = 5;
           _receiverSettingsLoaded = true;
         });
@@ -105,22 +103,19 @@ class _PeekImageViewState extends ConsumerState<PeekImageView>
       final userDoc = await firestoreService.getCurrentUserDocument();
 
       bool isPremium = false;
-      bool wantsReveal = false;
+
       if (userDoc != null && userDoc.exists) {
         final data = userDoc.data();
         isPremium = data?['isPremium'] as bool? ?? false;
-        wantsReveal = data?['seeOthersLocationPreference'] as bool? ?? false;
       }
 
       if (!mounted) return;
       setState(() {
         _isReceiverPremium = isPremium;
-        _receiverWantsLocationReveal = wantsReveal;
+
         _viewDuration =
             _isReceiverPremium ? 99999 : 5; // Effectively infinite for premium
         _receiverSettingsLoaded = true;
-        debugPrint(
-            "[PeekImageView] Receiver Premium: $_isReceiverPremium, Wants Location Reveal: $_receiverWantsLocationReveal");
       });
     } catch (e) {
       debugPrint('⚠️ [PeekImageView] Failed to load receiver settings: $e');
@@ -134,7 +129,7 @@ class _PeekImageViewState extends ConsumerState<PeekImageView>
         );
         setState(() {
           _isReceiverPremium = false;
-          _receiverWantsLocationReveal = false;
+
           _viewDuration = 5;
           _receiverSettingsLoaded =
               true; // Mark as loaded even on error to proceed
@@ -144,12 +139,6 @@ class _PeekImageViewState extends ConsumerState<PeekImageView>
   }
 
   Future<void> _fetchPeekData() async {
-    // This should only be called if _isReceiverPremium is true
-    // if (!_isReceiverPremium) {
-    //   if (mounted)
-    //     setState(() => _peekDataFetched = true);
-    //   return;
-    // }
     debugPrint(
         "[PeekImageView] _fetchPeekData: Attempting to fetch data for requestId: ${widget.requestId}.");
     try {
@@ -158,64 +147,30 @@ class _PeekImageViewState extends ConsumerState<PeekImageView>
           .doc(widget.requestId)
           .get();
 
-      String? location;
       String? displayName;
       String? avatarUrl;
       String? fetchedSenderId;
 
       if (peekDoc.exists) {
         final data = peekDoc.data();
-        debugPrint(
-            "[PeekImageView] _fetchPeekData: Peek request document data: $data");
-
         fetchedSenderId = data?['senderId'] as String?;
-
         debugPrint(
-            "[PeekImageView] _fetchPeekData: Fetched originalSenderId: $fetchedSenderId");
+            "[PeekImageView] Fetched originalSenderId for reactions/reporting: $fetchedSenderId");
 
-        // Fetch location if receiver wants it
+        // Only fetch display name and avatar if the user is premium
         if (_isReceiverPremium) {
-          if (_receiverWantsLocationReveal) {
-            location = data?['senderLocation'] as String?;
-            debugPrint(
-                "[PeekImageView] _fetchPeekData: Fetched senderLocation (premium user): $location");
-          } else {
-            debugPrint(
-                "[PeekImageView] _fetchPeekData: Receiver is premium but doesn't want location reveal for display.");
-          }
           displayName = data?['senderDisplayName'] as String?;
           avatarUrl = data?['senderAvatarUrl'] as String?;
-          debugPrint(
-              "[PeekImageView] _fetchPeekData: Fetched senderDisplayName (premium user): $displayName, senderAvatarUrl (premium user): ${avatarUrl != null ? 'Present' : 'null'}");
-        } else {
-          debugPrint(
-              "[PeekImageView] _fetchPeekData: Non-premium user. Specific sender details (location, name, avatar) for display on PeekImageView will not be used.");
         }
-      } else {
-        debugPrint(
-            "[PeekImageView] _fetchPeekData: Peek request document ${widget.requestId} not found.");
       }
 
       if (mounted) {
         setState(() {
-          // _originalSenderId is crucial for reactions and is set for ALL users.
           _originalSenderId = fetchedSenderId;
-
-          // These are for display ON PeekImageView and are gated by premium status.
-          if (_isReceiverPremium) {
-            _senderLocation = location;
-            _senderDisplayName = displayName;
-            _senderAvatarUrl = avatarUrl;
-          } else {
-            // Explicitly ensure these are null for non-premium users for PeekImageView display
-            _senderLocation = null;
-            _senderDisplayName = null;
-            _senderAvatarUrl = null;
-          }
-          _peekDataFetched =
-              true; // Mark peek data fetching as attempted for all
-          debugPrint(
-              "[PeekImageView] _fetchPeekData: State updated. _originalSenderId: $_originalSenderId, _senderLocation (for display): $_senderLocation, _senderDisplayName (for display): $_senderDisplayName, _peekDataFetched: $_peekDataFetched");
+          _senderDisplayName = displayName;
+          _senderAvatarUrl = avatarUrl;
+          // IMPORTANT: We no longer set _senderLocation here, preserving the value from the widget.
+          _peekDataFetched = true;
         });
       }
     } catch (e) {
@@ -493,7 +448,7 @@ class _PeekImageViewState extends ConsumerState<PeekImageView>
         (_isReceiverPremium ? _peekDataFetched : true);
 
     debugPrint(
-        "[PeekImageView] build(): canShowContent: $canShowContent (_receiverSettingsLoaded: $_receiverSettingsLoaded, _isReceiverPremium: $_isReceiverPremium, _receiverWantsLocationReveal: $_receiverWantsLocationReveal, _peekDataFetched: $_peekDataFetched)");
+        "[PeekImageView] build(): canShowContent: $canShowContent (_receiverSettingsLoaded: $_receiverSettingsLoaded, _isReceiverPremium: $_isReceiverPremium, _peekDataFetched: $_peekDataFetched)");
     debugPrint(
         "[PeekImageView] build(): _imageLoadFailed: $_imageLoadFailed, _showImage: $_showImage");
 
@@ -529,7 +484,6 @@ class _PeekImageViewState extends ConsumerState<PeekImageView>
       );
     } else if (_showImage) {
       bool shouldDisplayLocation = _isReceiverPremium &&
-          _receiverWantsLocationReveal &&
           _senderLocation != null &&
           _senderLocation!.isNotEmpty &&
           _imageActuallyLoaded;
@@ -544,7 +498,7 @@ class _PeekImageViewState extends ConsumerState<PeekImageView>
           _senderAvatarUrl != null && _senderAvatarUrl!.isNotEmpty;
 
       debugPrint(
-          "[PeekImageView] build() location display conditions: _isReceiverPremium: $_isReceiverPremium, _receiverWantsLocationReveal: $_receiverWantsLocationReveal, _senderLocation: $_senderLocation, _imageActuallyLoaded: $_imageActuallyLoaded. RESULT: shouldDisplayLocation: $shouldDisplayLocation");
+          "[PeekImageView] build() location display conditions: _isReceiverPremium: $_isReceiverPremium, _senderLocation: $_senderLocation, _imageActuallyLoaded: $_imageActuallyLoaded. RESULT: shouldDisplayLocation: $shouldDisplayLocation");
       debugPrint(
           "[PeekImageView] build() sender info display conditions: _isReceiverPremium: $_isReceiverPremium, _senderDisplayName: $_senderDisplayName, _imageActuallyLoaded: $_imageActuallyLoaded. RESULT: showSenderInfoContainer: $showSenderInfoContainer");
 
@@ -692,7 +646,6 @@ class _PeekImageViewState extends ConsumerState<PeekImageView>
           // Display Sender Location (conditionally)
           // Display Sender Location (conditionally)
           if (_isReceiverPremium &&
-                  _receiverWantsLocationReveal &&
                   _senderLocation != null &&
                   _senderLocation!.isNotEmpty &&
                   _imageActuallyLoaded // Crucial: Only show when image is actually visible

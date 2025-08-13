@@ -45,44 +45,6 @@ class _TermsAcceptanceScreenState extends ConsumerState<TermsAcceptanceScreen> {
     try {
       debugPrint('[TermsScreen] Starting terms acceptance process...');
 
-      // Step 1: Ensure user is authenticated
-      User? currentUser = FirebaseAuth.instance.currentUser;
-
-      if (currentUser == null) {
-        debugPrint(
-            '[TermsScreen] No authenticated user, signing in anonymously...');
-        try {
-          final userCredential =
-              await FirebaseAuth.instance.signInAnonymously();
-          currentUser = userCredential.user;
-          debugPrint(
-              '[TermsScreen] ✅ Anonymous sign-in successful: ${currentUser?.uid}');
-
-          // await Future.delayed(const Duration(milliseconds: 500));
-
-          // Space
-          // Space
-        } catch (authError) {
-          debugPrint(
-              '[TermsScreen] ❌ Failed to sign in anonymously: $authError');
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Authentication failed. Please try again.'),
-                backgroundColor: Colors.red,
-              ),
-            );
-            setState(() {
-              _isProcessing = false;
-            });
-          }
-          return;
-        }
-      } else {
-        debugPrint(
-            '[TermsScreen] User already authenticated: ${currentUser.uid}');
-      }
-
       // Step 2: Accept the terms
       await TermsService.acceptTerms();
       debugPrint('[TermsScreen] ✅ Terms accepted and saved');
@@ -216,8 +178,8 @@ class _TermsAcceptanceScreenState extends ConsumerState<TermsAcceptanceScreen> {
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          'By using Peek, you agree to our Terms of Service and Privacy Policy. '
-                          'We take your privacy seriously and are committed to protecting your data.',
+                          'Peekio has a zero-tolerance policy for objectionable content or abusive users. '
+                          'By continuing, you agree to our Terms of Service and Privacy Policy.',
                           style:
                               Theme.of(context).textTheme.bodyMedium?.copyWith(
                                     color: peekOnSurfaceColor.withOpacity(0.9),
@@ -363,10 +325,7 @@ class _TermsAcceptanceScreenState extends ConsumerState<TermsAcceptanceScreen> {
                               setState(() => _isProcessing = true);
                               try {
                                 //SPACE
-                                if (FirebaseAuth.instance.currentUser == null) {
-                                  await FirebaseAuth.instance
-                                      .signInAnonymously();
-                                }
+
                                 //SPACE
                                 await TermsService.acceptTerms();
                                 if (mounted) {

@@ -1,6 +1,17 @@
 import Flutter
 import UIKit
 import FirebaseCore
+
+import FirebaseAppCheck
+// A new class that provides the debug provider in debug builds
+class MyAppCheckProviderFactory: NSObject, AppCheckProviderFactory {
+  func createProvider(with app: FirebaseApp) -> AppCheckProvider? {
+
+      // Use the debug provider for debug builds.
+      return AppCheckDebugProvider(app: app)
+  }
+}
+
 import firebase_messaging
 
 @main
@@ -10,7 +21,14 @@ import firebase_messaging
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+
+     // CRITICAL: FirebaseApp.configure() MUST be called before any other
+    // Firebase service is configured.
     FirebaseApp.configure()
+
+    let providerFactory = MyAppCheckProviderFactory()
+    AppCheck.setAppCheckProviderFactory(providerFactory)
+
     GeneratedPluginRegistrant.register(with: self)
 
     // Set self as the delegate for UNUserNotificationCenter
@@ -24,9 +42,8 @@ import firebase_messaging
     willPresent notification: UNNotification,
     withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
   ) {
-    // By calling the completion handler with an empty array, we tell iOS to
-    // suppress the system notification, allowing our Flutter UI to handle it.
-    completionHandler([])
+    // iOS to show the notification using the standard system UI
+    completionHandler([.alert, .badge, .sound])
   }
 
   override func application(_ application: UIApplication,

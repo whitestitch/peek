@@ -1,29 +1,106 @@
-// rules_version = '2';
-
-// service cloud.firestore {
-//   match /databases/{database}/documents {
-//     // Allow each authenticated user to read/write their own profile document
-//     match /users/{userId} {
-//       allow read, write: if request.auth != null
-//                       && request.auth.uid == userId;
-//     }
-
-//     // TODO: Add rules for other collections as needed
-
-//     // Fallback: authenticated users can read/write everything else during development
-//     // Remove or tighten this before deploying to production
-//     match /{document=**} {
-//       allow read, write: if request.auth != null;
-//     }
-//   }
-// }
-
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // Rule for all collections - allows reads if a user is signed in.
+    // This is a base rule; more specific rules below will still apply.
     match /{document=**} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
+
+    // Users Collection
+    match /users/{userId} {
+      // Users can only create, get, and update their own document.
+      allow get, update: if request.auth != null && request.auth.uid == userId;
+      allow create: if request.auth != null;
+
+      // Deny deleting or listing all users.
+      allow delete, list: if false;
+
+      // Subcollection for reactions
+      match /received_reactions/{reactionId} {
+        // Users can only read their own reactions.
+        allow read: if request.auth != null && request.auth.uid == userId;
+        // Writes are handled by the backend.
+        allow write: if false;
+      }
+    }
+
+    // This is a separate rule for Collection Group queries on 'peek_requests'
+    match /{path=**}/peek_requests/{requestId} {
+       // A user can read a peek if they are the sender or receiver.
+       // This rule allows the initial listeners to work correctly.
+       allow read: if request.auth != null && (request.auth.uid == resource.data.senderUid || request.auth.uid == resource.data.receiverUid);
+    }
+
+    // Peek Requests Collection (for writes)
+    match /peek_requests/{requestId} {
+      // Any authenticated user can create a request.
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.senderUid && request.resource.data.receiverUid is string && request.resource.data.status == 'pending_acceptance';
+
+      // Sender can cancel while pending; receiver can accept/decline while pending,
+      // and perform capture-phase updates once accepted (e.g., set deadlines, upload result,
+      // and transition through capturing/completed/expired).
+      allow update: if request.auth != null && (
+        // Sender -> cancel (while pending)
+        (request.auth.uid == resource.data.senderUid &&
+         resource.data.status == 'pending_acceptance' &&
+         request.resource.data.status == 'cancelled')
+        ||
+        // Receiver -> accept/decline (while pending)
+        (request.auth.uid == resource.data.receiverUid &&
+         resource.data.status == 'pending_acceptance' &&
+         request.resource.data.status in ['accepted', 'declined'])
+        ||
+        // Receiver -> capture phase updates (after accepted)
+        (request.auth.uid == resource.data.receiverUid &&
+         // Keep sender/receiver immutable
+         request.resource.data.senderUid == resource.data.senderUid &&
+         request.resource.data.receiverUid == resource.data.receiverUid &&
+         // Allow updates during/after acceptance to progress capture
+         resource.data.status in ['accepted', 'capturing'] &&
+         (
+          (request.resource.data.status in ['capturing', 'responded_with_image', 'completed', 'expired', 'expired_capture'])
+           // ...or writing typical capture fields
+           || (request.resource.data.captureExpiresAt is timestamp)
+           || (request.resource.data.respondedAt is timestamp)
+           || (request.resource.data.storagePath is string)
+           || (request.resource.data.imageUrl is string)
+         )
+        )
+      );
+
+      // Nobody can delete from the client.
+      allow delete: if false;
+
+      // Read rules are handled by the collection group rule above.
+      allow read: if false;
+
+      match /reactions/{uid} {
+
+      allow create: if request.auth != null
+        && request.auth.uid == uid
+        && (
+              get(/databases/$(database)/documents/peek_requests/$(requestId)).data.receiverUid == request.auth.uid
+          || get(/databases/$(database)/documents/peek_requests/$(requestId)).data.requesterUid == request.auth.uid
+          || get(/databases/$(database)/documents/peek_requests/$(requestId)).data.senderUid == request.auth.uid
+          || get(/databases/$(database)/documents/peek_requests/$(requestId)).data.originalSenderUid == request.auth.uid
+          || get(/databases/$(database)/documents/peek_requests/$(requestId)).data.originalSenderId == request.auth.uid
+          || get(/databases/$(database)/documents/peek_requests/$(requestId)).data.senderId == request.auth.uid
+        );
+        // No other client access to reaction docs.
+        allow read, update, delete: if false;
+      }
+    }
+
+    // Reports Collection
+    match /reports/{reportId} {
+      // Any authenticated user can create a report.
+      allow create: if request.auth != null;
+      // No one can read/update/delete from the client.
+      allow read, update, delete: if false;
+    }
+
   }
 }

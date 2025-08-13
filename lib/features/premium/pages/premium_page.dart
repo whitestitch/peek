@@ -140,7 +140,7 @@ class PeekPremiumPage extends ConsumerWidget {
                       color: Colors.white,
                       fontWeight: FontWeight.w600,
                     ),
-                textAlign: TextAlign.center,
+                textAlign: TextAlign.left,
               ),
             ),
             const SizedBox(height: 12),

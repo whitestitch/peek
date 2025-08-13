@@ -2,7 +2,7 @@ name: peek
 description: "Peek - Anonymous photo request app"
 publish_to: 'none' # private project
 
-version: 1.0.0+12 # Consider updating build number if needed
+version: 1.0.0+17 # Consider updating build number if needed
 
 environment:
   sdk: '>=3.3.0 <4.0.0' # Keep modern range
@@ -47,6 +47,8 @@ dependencies:
 
   device_info_plus: ^11.4.0
 
+  flutter_local_notifications: ^19.3.0
+
   # UI enhancements
   # google_fonts: ^6.2.1 # Keep removed
   flutter_spinkit: ^5.2.1 # Keep previous update
@@ -64,6 +66,7 @@ dependencies:
   fl_chart: ^0.68.0
 
   flutter_svg: ^2.1.0
+  firebase_app_check: ^0.3.2+10
 
 dev_dependencies:
   flutter_test:

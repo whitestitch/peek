@@ -1,5 +1,8 @@
 {
   "projects": {
-    "default": "peek-fire"
-  }
+    "default": "peekio-db",
+    "defalt/": "peekio-db"
+  },
+  "targets": {},
+  "etags": {}
 }

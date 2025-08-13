@@ -27,7 +27,9 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:peek/features/onboarding/providers/onboarding_provider.dart';
 import 'package:peek/theme/colors.dart';
-import 'firebase_options.dart'; // Make sure this file is up-to-date
+import 'firebase_options.dart';
+
+import 'package:firebase_app_check/firebase_app_check.dart';
 
 import 'services/notification_service.dart';
 import 'package:http/http.dart' as http;
@@ -43,6 +45,27 @@ import 'package:peek/features/peek/providers/peek_providers.dart';
 import 'core/router.dart';
 
 import 'services/notification_service.dart';
+
+// DEBUG PREMIUM USER
+// DEBUG PREMIUM USER
+// DEBUG PREMIUM USER
+// You can place this near the top of main.dart, after the imports.
+final isSimulatorProvider = FutureProvider<bool>((ref) async {
+  if (!kDebugMode) return false; // Only check in debug mode
+  final deviceInfo = DeviceInfoPlugin();
+  if (Platform.isIOS) {
+    final iosInfo = await deviceInfo.iosInfo;
+    return !iosInfo.isPhysicalDevice;
+  }
+  if (Platform.isAndroid) {
+    final androidInfo = await deviceInfo.androidInfo;
+    return !androidInfo.isPhysicalDevice;
+  }
+  return false; // Default for other platforms
+});
+// END DEBUG
+// END DEBUG
+// END DEBUG
 
 void testEmulatorConnection() async {
   // Use the Firestore port or Emulator UI port that worked in your browser
@@ -181,6 +204,25 @@ Future<void> main() async {
     // firebaseCoreInitialized remains false
   }
 
+  if (firebaseCoreInitialized) {
+    // Activate Firebase App Check
+    await FirebaseAppCheck.instance.activate(
+      // You can get a reCAPTCHA v3 site key from the Firebase console.
+      webProvider: ReCaptchaV3Provider('recaptcha-v3-site-key'),
+
+      // iOS Simulator needs AppleProvider.debug, otherwise Firestore writes read as "permission-denied".
+      appleProvider:
+          kDebugMode ? AppleProvider.debug : AppleProvider.deviceCheck,
+      // Android: debug on dev, Play Integrity on release.
+      androidProvider:
+          kDebugMode ? AndroidProvider.debug : AndroidProvider.playIntegrity,
+    );
+    debugPrint("✅ Firebase App Check activated.");
+
+    // Sanity-check which Storage bucket this build is pointing to
+    debugPrint("[Env] storageBucket=${Firebase.app().options.storageBucket}");
+  }
+
   if (!firebaseCoreInitialized && Firebase.apps.isNotEmpty) {
     // Fallback: If initializeApp failed but an app somehow exists (e.g., from a plugin)
     debugPrint(
@@ -195,203 +237,98 @@ Future<void> main() async {
     }
   }
 
-  if (kDebugMode && firebaseCoreInitialized && defaultApp != null) {
-    // Call the function to test basic HTTP
-    testEmulatorConnection();
+  // DEBUG
+  // DEBUG
+  // DEBUG
+  // if (kDebugMode && firebaseCoreInitialized && defaultApp != null) {
+  //   // Call the function to test basic HTTP
+  //   testEmulatorConnection();
 
-    Future<String> getEmulatorHost() async {
-      if (Platform.isIOS) {
-        try {
-          final deviceInfo = await DeviceInfoPlugin().iosInfo;
+  //   Future<String> getEmulatorHost() async {
+  //     if (Platform.isIOS) {
+  //       try {
+  //         final deviceInfo = await DeviceInfoPlugin().iosInfo;
 
-          debugPrint(
-              "🔍 iOS Device Detection - isPhysicalDevice: ${deviceInfo.isPhysicalDevice}");
-          debugPrint("🔍 Device model: ${deviceInfo.model}");
-          debugPrint("🔍 Device name: ${deviceInfo.name}");
+  //         debugPrint(
+  //             "🔍 iOS Device Detection - isPhysicalDevice: ${deviceInfo.isPhysicalDevice}");
+  //         debugPrint("🔍 Device model: ${deviceInfo.model}");
+  //         debugPrint("🔍 Device name: ${deviceInfo.name}");
 
-          if (deviceInfo.isPhysicalDevice) {
-            // For physical devices, first try to validate the connection
-            debugPrint(
-                "📱 Detected PHYSICAL device - validating network connection...");
+  //         if (deviceInfo.isPhysicalDevice) {
+  //           // For physical devices, first try to validate the connection
+  //           debugPrint(
+  //               "📱 Detected PHYSICAL device - validating network connection...");
 
-            // Try multiple common local IPs
-            final myMachineIP =
-                '192.168.1.4'; // <-- UPDATE THIS with your actual IP
+  //           // Try multiple common local IPs
+  //           const myMachineIP = '192.168.1.2';
 
-            // Try multiple possible IPs including your machine's actual IP
-            final possibleHosts = [
-              myMachineIP, // Your machine's actual IP
-              '192.168.1.2', // Common router gateway
-              '192.168.1.4', // Alternative
-              '192.168.0.2', // Different subnet
-              '192.168.0.3',
-              '192.168.0.4',
-              '10.0.0.2', // Alternative network range
-              '172.20.10.2', // iPhone hotspot range
-            ];
+  //           // Try multiple possible IPs including your machine's actual IP
+  //           final possibleHosts = [
+  //             myMachineIP, // Your machine's actual IP
+  //             '192.168.1.2', // Common router gateway
+  //             '192.168.1.3', // Alternative
+  //             '192.168.0.2', // Different subnet
+  //             '192.168.0.3',
+  //             '192.168.0.4',
+  //             '10.0.0.2', // Alternative network range
+  //             '172.20.10.2', // iPhone hotspot range
+  //           ];
 
-            debugPrint("🔍 Trying to find emulator host from: $possibleHosts");
+  //           debugPrint("🔍 Trying to find emulator host from: $possibleHosts");
 
-            for (final host in possibleHosts) {
-              try {
-                debugPrint("🔄 Testing connection to $host:8080...");
-                final testUrl = Uri.parse('http://$host:8080');
-                final response = await http.get(testUrl).timeout(
-                      const Duration(seconds: 2),
-                      onTimeout: () => throw TimeoutException(
-                          'Connection timeout for $host'),
-                    );
-                // Check for Firestore emulator response
-                if (response.statusCode == 200 ||
-                    response.statusCode == 404 ||
-                    response.body.contains('Firestore')) {
-                  debugPrint("✅ Successfully connected to emulator at $host!");
-                  return host;
-                }
-              } catch (e) {
-                debugPrint(
-                    "❌ Failed to connect to $host: ${e.toString().split('\n').first}");
-              }
-            }
+  //           for (final host in possibleHosts) {
+  //             try {
+  //               debugPrint("🔄 Testing connection to $host:8080...");
+  //               final testUrl = Uri.parse('http://$host:8080');
+  //               final response = await http.get(testUrl).timeout(
+  //                     const Duration(seconds: 2),
+  //                     onTimeout: () => throw TimeoutException(
+  //                         'Connection timeout for $host'),
+  //                   );
+  //               // Check for Firestore emulator response
+  //               if (response.statusCode == 200 ||
+  //                   response.statusCode == 404 ||
+  //                   response.body.contains('Firestore')) {
+  //                 debugPrint("✅ Successfully connected to emulator at $host!");
+  //                 return host;
+  //               }
+  //             } catch (e) {
+  //               debugPrint(
+  //                   "❌ Failed to connect to $host: ${e.toString().split('\n').first}");
+  //             }
+  //           }
 
-            // If all fail, show detailed instructions
-            debugPrint("⚠️ ERROR: Could not connect to any emulator host!");
-            debugPrint("📱 PHYSICAL DEVICE SETUP INSTRUCTIONS:");
-            debugPrint(
-                "   1. On your Mac, run: ifconfig | grep 'inet ' | grep -v 127.0.0.1");
-            debugPrint("   2. Find your IP (usually starts with 192.168.x.x)");
-            debugPrint(
-                "   3. Update the 'myMachineIP' variable in main.dart with this IP");
-            debugPrint(
-                "   4. Ensure both devices are on the same WiFi network");
-            debugPrint(
-                "   5. Restart the Firebase emulators with: firebase emulators:start --host 0.0.0.0");
-            debugPrint(
-                "   6. On Mac, check Firewall settings in System Preferences > Security & Privacy");
+  //           // If all fail, show detailed instructions
+  //           debugPrint("⚠️ ERROR: Could not connect to any emulator host!");
+  //           debugPrint("📱 PHYSICAL DEVICE SETUP INSTRUCTIONS:");
+  //           debugPrint(
+  //               "   1. On your Mac, run: ifconfig | grep 'inet ' | grep -v 127.0.0.1");
+  //           debugPrint("   2. Find your IP (usually starts with 192.168.x.x)");
+  //           debugPrint(
+  //               "   3. Update the 'myMachineIP' variable in main.dart with this IP");
+  //           debugPrint(
+  //               "   4. Ensure both devices are on the same WiFi network");
+  //           debugPrint(
+  //               "   5. Restart the Firebase emulators with: firebase emulators:start --host 0.0.0.0");
+  //           debugPrint(
+  //               "   6. On Mac, check Firewall settings in System Preferences > Security & Privacy");
 
-            // Still return a default but we know it won't work
-            return myMachineIP;
-          } else {
-            debugPrint("💻 Detected SIMULATOR - using localhost");
-            return 'localhost';
-          }
-        } catch (e) {
-          debugPrint("❌ Error detecting device type: $e");
-          // Fallback: if we can't detect, assume physical device for safety
-          debugPrint("⚠️ Falling back to IP address for physical device");
-          return '192.168.1.4';
-        }
-      }
-      // For Android and other platforms
-      return 'localhost';
-    }
-
-    try {
-      debugPrint(
-          "🔧 Configuring Firebase Emulators IMMEDIATELY after Firebase init, BEFORE any authentication");
-
-      final host = await getEmulatorHost();
-      const androidHost = '10.0.2.2';
-
-      final finalHost = Platform.isAndroid ? androidHost : host;
-
-      debugPrint("🔧 Using host: $host for emulator connections");
-
-      bool emulatorsAccessible = false;
-
-      try {
-        final testUrl = Uri.parse('http://$host:8080');
-        final testResponse = await http.get(testUrl).timeout(
-              const Duration(seconds: 3),
-              onTimeout: () =>
-                  throw TimeoutException('Emulator connection test timeout'),
-            );
-        emulatorsAccessible = true;
-        debugPrint("✅ Emulators are accessible at $host");
-      } catch (e) {
-        debugPrint("❌ WARNING: Cannot reach emulators at $host: $e");
-        debugPrint(
-            "❌ The app will continue but Firestore operations will fail!");
-
-        // Show a warning dialog on physical device
-        if (Platform.isIOS &&
-            await DeviceInfoPlugin()
-                .iosInfo
-                .then((info) => info.isPhysicalDevice)) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (rootNavigatorKey.currentContext != null) {
-              showDialog(
-                context: rootNavigatorKey.currentContext!,
-                builder: (context) => AlertDialog(
-                  title: const Text('Emulator Connection Failed'),
-                  content: const Text(
-                    'Cannot connect to Firebase Emulators.\n\n'
-                    'Please ensure:\n'
-                    '1. Local Network permission is granted\n'
-                    '2. Emulators are running on your machine\n'
-                    '3. Both devices are on the same network',
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      child: const Text('OK'),
-                    ),
-                  ],
-                ),
-              );
-            }
-          });
-        }
-      }
-
-      // Configure Auth Emulator FIRST
-      await FirebaseAuth.instance.useAuthEmulator(host, 9099);
-      debugPrint("✅ Auth Emulator configured for -> $host:9099");
-
-      // Configure Firestore Emulator using Settings (more reliable for iOS)
-      FirebaseFirestore.instance.settings = Settings(
-        host: '$host:8080',
-        sslEnabled: false,
-        persistenceEnabled: false,
-      );
-      debugPrint(
-          "✅ Firestore Emulator configured using Settings for -> $host:8080");
-
-      // Configure Functions Emulator
-      FirebaseFunctions.instanceFor(region: "us-central1")
-          .useFunctionsEmulator(host, 5001);
-      debugPrint("✅ Functions Emulator configured for -> $host:5001");
-
-      // Configure Storage Emulator
-      await FirebaseStorage.instance.useStorageEmulator(host, 9199);
-      debugPrint("✅ Storage Emulator configured for -> $host:9199");
-
-      debugPrint("✅ All Firebase Emulators configured successfully");
-
-      // await Future.delayed(const Duration(seconds: 1));
-      // await createTestUsersInEmulator();
-    } catch (e) {
-      debugPrint("❌ Critical error configuring Firebase Emulators: $e");
-    }
-  } else if (kDebugMode) {
-    debugPrint(
-        "⚠️ Emulator configuration skipped - Debug: $kDebugMode, Initialized: $firebaseCoreInitialized");
-  }
-
-  // This is now done here to ensure all services are configured first.
-  if (FirebaseAuth.instance.currentUser == null) {
-    debugPrint("[main] No user found. Attempting anonymous sign-in...");
-    try {
-      await FirebaseAuth.instance.signInAnonymously();
-      debugPrint("[main] ✅ Anonymous sign-in successful.");
-    } catch (e) {
-      debugPrint("[main] ❌ Anonymous sign-in failed: $e");
-      // You could show a fatal error dialog here if needed, as the app cannot proceed.
-    }
-  } else {
-    debugPrint(
-        "[main] ✅ User ${FirebaseAuth.instance.currentUser!.uid} already signed in.");
-  }
+  //           // Still return a default but we know it won't work
+  //           return myMachineIP;
+  //         } else {
+  //           debugPrint("💻 Detected SIMULATOR - using localhost");
+  //           return 'localhost';
+  //         }
+  //       } catch (e) {
+  //         debugPrint("❌ Error detecting device type: $e");
+  //         // Fallback: if we can't detect, assume physical device for safety
+  //         debugPrint("⚠️ Falling back to IP address for physical device");
+  //         return '192.168.1.2';
+  //       }
+  //     }
+  //     // For Android and other platforms
+  //     return 'localhost';
+  //   }
 
   runApp(
     ProviderScope(
@@ -444,21 +381,44 @@ class _PeekAppState extends ConsumerState<PeekApp> with WidgetsBindingObserver {
   }
 
   @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
+  Future<void> didChangeAppLifecycleState(AppLifecycleState state) async {
     super.didChangeAppLifecycleState(state);
+    final prefs = await SharedPreferences.getInstance();
     if (state == AppLifecycleState.resumed) {
-      debugPrint("[PeekApp] App resumed - refreshing peek requests");
-      // Just invalidate - the listener in build will handle the rest
-      ref.invalidate(pendingPeekRequestsProvider);
+      debugPrint("[PeekApp] App resumed - SETTING foreground flag to TRUE");
+      await prefs.setBool('isAppInForeground', true);
+      // Also refresh peek requests when coming to foreground
+      final pendingRequestId = prefs.getString('pending_peek_request_id');
+      if (pendingRequestId != null) {
+        debugPrint(
+            "[PeekApp] Found pending request $pendingRequestId from background. Processing...");
+        // Clear the stored ID so it's not processed again.
+        await prefs.remove('pending_peek_request_id');
+        // Invalidate the provider to force a re-fetch, which will
+        // find the new request and trigger the in-app dialog.
+        ref.invalidate(pendingPeekRequestsProvider);
+      } else {
+        // Also refresh peek requests when coming to foreground normally.
+        ref.invalidate(pendingPeekRequestsProvider);
+      }
+    } else {
+      debugPrint(
+          "[PeekApp] App NOT resumed (State: $state) - SETTING foreground flag to FALSE");
+      await prefs.setBool('isAppInForeground', false);
     }
   }
 
   void _initializeApp() async {
     _initializeIAPListener();
 
-    // In debug mode, AWAIT sign-out to ensure a clean slate before attaching listeners.
-    // This is the key fix to prevent the race condition.
-    if (kDebugMode) {
+    // Opt-in switch: only force a debug sign-out when explicitly enabled
+    const bool kForceDebugSignOutOnLaunch = false;
+
+    // auto-sign-out on launch during testing
+    // TEMP for testing new UIDs
+    // const bool kForceDebugSignOutOnLaunch = true;`
+
+    if (kDebugMode && kForceDebugSignOutOnLaunch) {
       debugPrint("[PeekApp] Debug mode: Signing out for a fresh start...");
       await FirebaseAuth.instance.signOut();
       debugPrint("[PeekApp] ✅ Sign-out complete.");
@@ -466,10 +426,8 @@ class _PeekAppState extends ConsumerState<PeekApp> with WidgetsBindingObserver {
 
     // Attach the listener AFTER the initial state has been settled.
     FirebaseAuth.instance.authStateChanges().listen((User? user) {
-      if (mounted && user != null) {
-        debugPrint("[PeekApp] Auth state changed - user: ${user.uid}");
-        _initializeUser(user);
-      } else if (user == null) {
+      if (mounted && user == null) {
+        // We only need to handle the sign-out case now, to clear local state.
         debugPrint("[PeekApp] Auth state changed - user signed out");
         _processedRequestIds.clear();
         _isShowingDialog = false;
@@ -477,23 +435,7 @@ class _PeekAppState extends ConsumerState<PeekApp> with WidgetsBindingObserver {
     });
   }
 
-  Future<void> _initializeUser(User user) async {
-    debugPrint("[PeekApp] Initializing user setup for ${user.uid}");
-
-    final firestoreService = ref.read(firestoreServiceProvider);
-    await firestoreService.ensureDisplayNameExists();
-
-    await _initializeFCMToken();
-    await _initializeNotificationService();
-
-    _processedRequestIds.clear();
-    _isShowingDialog = false;
-
-    // Re-setup peek request listener for new user
-    // WidgetsBinding.instance.addPostFrameCallback((_) {
-    //   _setupPeekRequestListener();
-    // });
-  }
+  Future<void> _initializeUser(User user) async {}
 
   @override
   void dispose() {
@@ -518,10 +460,34 @@ class _PeekAppState extends ConsumerState<PeekApp> with WidgetsBindingObserver {
       context: rootNavigatorKey.currentContext!,
       barrierDismissible: false,
       builder: (BuildContext dialogContext) => AlertDialog(
-        title: const Text('New Peek Request!'),
-        content: const Text('Someone wants to share a peek with you. Accept?'),
-        actions: [
+        title: const Text(
+          'New Peek Request!',
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            color: peekWhiteColor,
+            letterSpacing: 0.5,
+            fontSize: 26,
+          ),
+        ),
+        content: Text(
+          'Someone wants to share a peek with you. Accept?',
+          style: TextStyle(
+            color: peekWhiteColor.withOpacity(1),
+            height: 1.55,
+            fontSize: 17,
+            fontWeight: FontWeight.w400,
+          ),
+        ),
+        actionsAlignment: MainAxisAlignment.spaceBetween,
+        actions: <Widget>[
           TextButton(
+            style: TextButton.styleFrom(
+              foregroundColor: peekOnBackgroundColor.withOpacity(0.7),
+              textStyle: const TextStyle(
+                // fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
             onPressed: () {
               Navigator.of(dialogContext).pop();
               _declinePeekRequest(requestId);
@@ -529,6 +495,12 @@ class _PeekAppState extends ConsumerState<PeekApp> with WidgetsBindingObserver {
             child: const Text('Decline'),
           ),
           ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(30),
+              ),
+            ),
             onPressed: () {
               Navigator.of(dialogContext).pop();
               _acceptPeekRequest(requestId);

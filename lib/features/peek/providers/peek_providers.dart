@@ -6,7 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../data/peek_repository.dart';
 import '../../../core/overlay_animation_service.dart';
 
-final authStateProvider = StreamProvider<String?>((ref) {
+final peekAuthUidProvider = StreamProvider<String?>((ref) {
   return FirebaseAuth.instance.authStateChanges().map((user) => user?.uid);
 });
 
@@ -26,12 +26,15 @@ final navigatorKeyProvider = Provider<GlobalKey<NavigatorState>>((ref) {
 // 2. Provider for the current authenticated user's document stream (real-time updates)
 final userProfileStreamProvider =
     StreamProvider<DocumentSnapshot<Map<String, dynamic>>?>((ref) {
-  final userId = FirebaseAuth.instance.currentUser?.uid;
+  final authState = ref.watch(peekAuthUidProvider);
+  final userId = authState.value;
+
   if (userId == null) {
     debugPrint(
         "[UserProfileStreamProvider] No authenticated user. Returning null stream.");
     return Stream.value(null);
   }
+
   debugPrint(
       "[UserProfileStreamProvider] Listening to user document: users/$userId");
   return FirebaseFirestore.instance.collection('users').doc(userId).snapshots();
@@ -49,16 +52,16 @@ final overlayAnimationServiceProvider =
   return OverlayAnimationService(ref);
 });
 
-// 5. Provider that streams pending peek requests for the current user - CORRECTLY FIXED
+// 5. Provider that streams pending peek requests for the current user
 final pendingPeekRequestsProvider = StreamProvider.autoDispose<
     List<QueryDocumentSnapshot<Map<String, dynamic>>>>((ref) {
   // Watch the auth state to automatically refresh when user changes
-  final authState = ref.watch(authStateProvider);
+  final authState = ref.watch(peekAuthUidProvider);
   final uid = authState.value;
 
   if (uid == null) {
     debugPrint(
-        "[pendingPeekRequestsProvider] No authenticated user. Returning empty stream.");
+        "[peekRequestHistoryProvider] No authenticated user. Returning empty stream.");
     return Stream.value([]);
   }
 
@@ -71,7 +74,10 @@ final pendingPeekRequestsProvider = StreamProvider.autoDispose<
       .where('status', isEqualTo: 'pending_acceptance')
       .orderBy('createdAt', descending: true)
       .snapshots()
-      .map((snapshot) {
+      // Prevent unhandled stream errors (e.g., missing index) from crashing the app.
+      .handleError((error, stackTrace) {
+    debugPrint("[pendingPeekRequestsProvider] Firestore stream error: $error");
+  }).map((snapshot) {
     debugPrint(
         "[pendingPeekRequestsProvider] Snapshot received. Found ${snapshot.docs.length} pending requests for UID: $uid. Request IDs: ${snapshot.docs.map((d) => d.id).toList()}");
     return snapshot.docs;
@@ -152,7 +158,9 @@ final peekRequestHistoryProvider = StreamProvider.autoDispose<
       .orderBy('createdAt', descending: true)
       .limit(20)
       .snapshots()
-      .map((snapshot) {
+      .handleError((error, stackTrace) {
+    debugPrint("[peekRequestHistoryProvider] Firestore stream error: $error");
+  }).map((snapshot) {
     debugPrint(
         "[peekRequestHistoryProvider] Found ${snapshot.docs.length} total requests");
     return snapshot.docs;
@@ -162,10 +170,14 @@ final peekRequestHistoryProvider = StreamProvider.autoDispose<
 /// users/<me>/received_reactions
 final newReactionStreamProvider = StreamProvider.autoDispose<
     List<QueryDocumentSnapshot<Map<String, dynamic>>>>((ref) {
-  final uid = FirebaseAuth.instance.currentUser?.uid;
+  // Watch the auth state to be reactive.
+  final authState = ref.watch(peekAuthUidProvider);
+  final uid = authState.value;
+
   if (uid == null) {
     return Stream.value([]);
   }
+
   return FirebaseFirestore.instance
       .collection('users')
       .doc(uid)
@@ -179,6 +191,43 @@ final pendingAnimationProvider = StateProvider<List<String>>((ref) => []);
 
 // Provider to keep track of reaction animations that have already been shown in this session.
 final processedReactionIdsProvider = StateProvider<Set<String>>((ref) => {});
+
+/// Listens to users/<me>/received_reactions and triggers overlay animations on NEW events.
+/// Activate by reading this provider once (e.g., in a wait page or app root).
+final reactionOverlayListenerProvider = Provider.autoDispose<void>((ref) {
+  final overlay = ref.read(overlayAnimationServiceProvider);
+
+  ref.listen(
+    newReactionStreamProvider,
+    (previous, next) {
+      if (!next.hasValue) return;
+      final docs = next.value!;
+
+      // Deduplicate events per session to avoid replays.
+      final processedCtl = ref.read(processedReactionIdsProvider.notifier);
+      final already = {...processedCtl.state};
+
+      for (final doc in docs) {
+        final id = doc.id;
+        if (already.contains(id)) continue;
+
+        final data = doc.data();
+        final type = (data['reactionType'] ?? '').toString().toLowerCase();
+
+        if (type == 'like') {
+          overlay.showLikeAnimation();
+        } else if (type == 'dislike') {
+          overlay.showDislikeAnimation();
+        }
+
+        // Mark as processed so we don't replay this doc again.
+        already.add(id);
+      }
+
+      processedCtl.state = already;
+    },
+  );
+});
 
 // This allows us to programmatically dismiss it if the request is cancelled.
 final activePeekRequestDialogProvider = StateProvider<String?>((ref) => null);

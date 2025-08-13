@@ -1,104 +1,91 @@
 // lib/features/peek/splash_page.dart
 
 import 'dart:async';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 // import 'package:firebase_core/firebase_core.dart'; // Not needed if only using default instance
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:go_router/go_router.dart';
+import 'package:peek/core/firestore_service.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// SplashPage:
 ///   - Fetches/validates image URL if not provided.
 ///   - Runs a 3-second countdown.
 ///   - Navigates to PeekImageView with necessary data.
-class SplashPage extends StatefulWidget {
+class SplashPage extends ConsumerStatefulWidget {
   final String requestId;
   final String? initialImageUrl; // URL can be passed directly
 
   const SplashPage({super.key, required this.requestId, this.initialImageUrl});
 
   @override
-  State<SplashPage> createState() => _SplashPageState();
+  ConsumerState<SplashPage> createState() => _SplashPageState();
 }
 
-class _SplashPageState extends State<SplashPage> {
-  int _count = 3; // Countdown duration
-  Timer? _timer; // Timer for the countdown
-  String? _imageUrl; // Holds the final image URL
-  bool _isLoading = true; // Tracks loading state (URL fetching)
-  String? _errorMessage; // Holds any error message
+class _SplashPageState extends ConsumerState<SplashPage> {
+  // Countdown duration
+  int _count = 3;
+  // Timer for the countdown
+  Timer? _timer;
+  // Holds the final image URL
+  String? _imageUrl;
+  // Flag to determine if location should be shown
+  String? _senderLocation;
+  bool _canShowLocation = false;
+  // Tracks loading state (URL fetching)
+  bool _isLoading = true;
+  // Holds any error message
+  String? _errorMessage;
+
+  bool _isInitialized = false;
 
   @override
   void initState() {
     super.initState();
-    // Start the preparation process immediately
-    _prepareAndStart();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_isInitialized) {
+      _isInitialized = true;
+      _prepareAndStart();
+    }
   }
 
   /// Fetches URL (if needed) and starts the countdown.
   Future<void> _prepareAndStart() async {
     // Ensure initial state is loading and no error
     // Use mounted check even before async gap for robustness if called elsewhere later
-    if (mounted) {
-      setState(() {
-        _isLoading = true;
-        _errorMessage = null;
-      });
-    }
+    if (mounted) setState(() => _isLoading = true);
 
     try {
-      // 1. Determine the image URL
-      if (widget.initialImageUrl != null &&
-          widget.initialImageUrl!.isNotEmpty) {
-        _imageUrl = widget.initialImageUrl!;
-        debugPrint("[SplashPage] Using provided initialImageUrl.");
-      } else {
-        debugPrint(
-          "[SplashPage] No initialImageUrl, fetching from Firestore...",
-        );
-        // Fetch from Firestore if URL not provided
-        final snap = await FirebaseFirestore.instance
-            .collection('peek_requests')
-            .doc(widget.requestId)
-            .get();
+      // 1. Get the sender's location directly from the router's query parameters.
+      final String? locationFromNav =
+          GoRouterState.of(context).uri.queryParameters['senderLocation'];
+      debugPrint(
+          "[SplashPage] Received senderLocation from navigation: $locationFromNav");
 
-        // Check mounted status after await
-        if (!mounted) return;
+      // 2. Fetch ONLY the current user's data to check premium status.
+      final userDoc =
+          await ref.read(firestoreServiceProvider).getCurrentUserDocument();
+      final isReceiverPremium = userDoc?.data()?['isPremium'] as bool? ?? false;
+      debugPrint("[SplashPage] Receiver premium status: $isReceiverPremium");
 
-        final data = snap.data();
-        final storagePath = data?['storagePath'] as String?;
-        final directUrl = data?['imageUrl'] as String?;
-
-        if (directUrl != null && directUrl.isNotEmpty) {
-          _imageUrl = directUrl;
-          debugPrint("[SplashPage] Found direct imageUrl in Firestore.");
-        } else if (storagePath != null && storagePath.isNotEmpty) {
-          debugPrint(
-            "[SplashPage] Found storagePath: $storagePath, getting download URL...",
-          );
-          // Get URL from storage path
-          _imageUrl =
-              await FirebaseStorage.instance.ref(storagePath).getDownloadURL();
-        } else {
-          // Handle case where neither URL nor path is found
-          throw Exception(
-            'Image URL or storage path not found in Firestore document.',
-          );
-        }
+      // 3. Set the image URL from the widget property.
+      if (widget.initialImageUrl == null || widget.initialImageUrl!.isEmpty) {
+        throw Exception("Initial image URL was not provided to SplashPage.");
       }
+      _imageUrl = widget.initialImageUrl!;
 
-      // Check mounted status again after potential async URL fetch
-      if (!mounted) return;
-
-      // --- REMOVED PRECACHE ---
-      // 2. Precache the image (REMOVED - Caused context error)
-      // debugPrint("[SplashPage] Pre-caching image: $_imageUrl");
-      // await precacheImage(NetworkImage(_imageUrl!), context); // <-- REMOVED THIS LINE
-      // debugPrint("[SplashPage] Image pre-cached successfully.");
-      // --- END REMOVAL ---
-
-      // Check mounted status before final state update and timer start
-      if (!mounted) return;
+      // 4. Determine if location should be shown based on the new, simple logic.
+      if (locationFromNav != null && isReceiverPremium) {
+        debugPrint("[SplashPage] Conditions met. Location will be shown.");
+        _senderLocation = locationFromNav;
+        _canShowLocation = true;
+      }
 
       // 3. Mark loading complete and start the countdown
       setState(() {
@@ -110,8 +97,7 @@ class _SplashPageState extends State<SplashPage> {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _errorMessage =
-              'Failed to load Peek.\nPlease go home.'; // Updated error message
+          _errorMessage = 'Failed to load Peek.'; // Updated error message
         });
         // Removed auto-navigate home on error, let user decide via button
         // Future.delayed(const Duration(seconds: 4), _goHome);
@@ -146,8 +132,9 @@ class _SplashPageState extends State<SplashPage> {
             '/peek-image',
             extra: {
               'requestId': widget.requestId,
-              'imageUrl':
-                  _imageUrl!, // URL should be non-null here if no error occurred
+              'imageUrl': _imageUrl!,
+              // Conditionally pass the location data
+              if (_canShowLocation) 'senderLocation': _senderLocation,
             },
           );
         }

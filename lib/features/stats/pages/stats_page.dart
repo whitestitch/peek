@@ -1,5 +1,6 @@
 // lib/features/stats/pages/stats_page.dart
 import 'dart:math';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/material.dart' as material;
 import 'package:flutter_svg/svg.dart';
@@ -35,303 +36,170 @@ class StatsPage extends ConsumerStatefulWidget {
 class _StatsPageState extends ConsumerState<StatsPage> {
   // New State class
   List<MonthlyStat> _monthlyStatsData = [];
-  // To show a loader for dummy data generation
-  bool _isLoadingMonthlyData = true;
-  // int _touchedIndex = -1;
 
-  // Define gradient colors (can be themed later)
-  final List<Color> likeGradientColors = [
-    Colors.greenAccent.shade700,
-    Colors.greenAccent.shade200,
-  ];
-  final List<Color> dislikeGradientColors = [
-    Colors.redAccent.shade700,
-    Colors.redAccent.shade200,
-  ];
+  // bool _isLoadingMonthlyData = true;
+  // bool _hasFetchedRealData = false;
+
+  // final List<Color> likeGradientColors = [
+  //   peekPrimaryColor,
+  //   peekErrorColor,
+  // ];
+  // final List<Color> dislikeGradientColors = [
+  //   Colors.redAccent.shade700,
+  //   Colors.redAccent.shade200,
+  // ];
+
+  // Define colors for the new chart sections
+  final Color likeColor = peekPrimaryColor;
+  final Color dislikeColor = peekErrorColor;
 
   @override
   void initState() {
     super.initState();
-    _generateDummyMonthlyData();
+    // The old data fetch is no longer needed.
   }
 
-  void _generateDummyMonthlyData() {
-    final random = Random();
-    final List<MonthlyStat> dummyData = [];
-    final now = DateTime.now();
+  /// Fetches reactions for the current user from the last 6 months and processes them for the chart.
 
-    // Generate for the last 6 months, including the current month
-    for (int i = 5; i >= 0; i--) {
-      final monthDate = DateTime(now.year, now.month - i, 1);
-      dummyData.add(MonthlyStat(
-        monthValue: 5 - i, // X-axis value: 0 for earliest, 5 for current
-        likes: random.nextInt(25) + 5.toDouble(), // Likes between 5-29
-        dislikes: random.nextInt(10) + 2.toDouble(), // Dislikes between 2-11
-        monthLabel: DateFormat('MMM').format(monthDate), // e.g., "May"
-      ));
-    }
-    if (mounted) {
-      setState(() {
-        _monthlyStatsData = dummyData;
-        _isLoadingMonthlyData = false;
-      });
-    }
-  }
+  Widget _buildEmptyState(BuildContext context) {
+    // This layout uses an Expanded widget to push the text to the bottom,
+    // exactly like the onboarding page.
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 35.0),
+      child: Column(
+        children: [
+          // 1. Image Area: Expanded to take up all available vertical space
+          //    and push the text content down.
+          Expanded(
+            child: Center(
+              child: SvgPicture.asset(
+                'assets/images/no-stats.svg',
+                height: 220,
+                // colorFilter: ColorFilter.mode(
+                //   peekSecondaryColor.withAlpha(200),
+                //   BlendMode.srcIn,
+                // ),
+                colorFilter: ColorFilter.mode(
+                  peekSecondaryColor.withOpacity(0.8),
+                  BlendMode.srcIn,
+                ),
+              ),
+            ),
+          ),
 
-  Widget _buildMonthlyLineChart(
-      BuildContext context, int totalLifetimeLikes, int totalLifetimeDislikes) {
-    if (_isLoadingMonthlyData) {
-      return const Center(
-          child: CircularProgressIndicator(color: peekPrimaryColor));
-    }
-
-    if (totalLifetimeLikes == 0 && totalLifetimeDislikes == 0) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+          // 2. Text Content Area: This column now sits at the bottom.
+          Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.auto_awesome,
-                  size: 70, // Slightly smaller icon
-                  color: peekAccentColor.withOpacity(0.8)),
-              const SizedBox(height: 20),
               Text(
-                "You haven't been rated yet!", // More direct message
-                style: Theme.of(context)
-                    .textTheme
-                    .headlineSmall // Adjusted for emphasis
-                    ?.copyWith(
-                        color: Colors.white, fontWeight: FontWeight.w600),
+                "No Feedback Yet",
                 textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: peekWhiteColor,
+                      letterSpacing: 0.5,
+                      fontSize: 34,
+                    ),
               ),
               const SizedBox(height: 12),
               Text(
-                "Start Peeking to get your first Like and see your stats shine here!",
+                "Your stats will appear here.",
                 textAlign: TextAlign.center,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodyLarge
-                    ?.copyWith(color: Colors.grey.shade400, height: 1.5),
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w500,
+                      color: peekOnBackgroundColor.withOpacity(0.85),
+                      fontSize: 22,
+                    ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                "Start Peeking to get reactions from others and see your performance.",
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: peekWhiteColor.withOpacity(1),
+                      height: 1.55,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w400,
+                    ),
+              ),
+            ],
+          ),
+
+          // 3. Bottom Padding: A fixed space between the text and the nav bar.
+          const SizedBox(height: 60),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReactionsDoughnutChart(
+      BuildContext context, int likes, int dislikes) {
+    final totalReactions = likes + dislikes;
+    if (totalReactions == 0) {
+      return const SizedBox.shrink();
+    }
+
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        // This container adds the shadow effect behind the chart
+        Container(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.2),
+                blurRadius: 10,
+                spreadRadius: 45,
               ),
             ],
           ),
         ),
-      );
-    }
-
-    if (_monthlyStatsData.isEmpty) {
-      return Center(
-        child: Column(
+        // The PieChart widget
+        PieChart(
+          PieChartData(
+            sectionsSpace: 4,
+            centerSpaceRadius: 85, // Increased for more space
+            startDegreeOffset: -90,
+            sections: [
+              // Dislikes Section
+              PieChartSectionData(
+                value: dislikes.toDouble(),
+                color: dislikeColor.withOpacity(0.5), // Opacity added
+                radius: 25, // Increased thickness
+                showTitle: false,
+              ),
+              // Likes Section
+              PieChartSectionData(
+                value: likes.toDouble(),
+                color: likeColor.withOpacity(0.9), // Opacity added
+                radius: 25, // Increased thickness
+                showTitle: false,
+              ),
+            ],
+          ),
+        ),
+        // The centered text showing the total count
+        Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.sentiment_dissatisfied_rounded,
-                size: 80, color: Colors.grey),
-            const SizedBox(height: 16),
             Text(
-              "No Reaction Data Yet",
-              style: Theme.of(context)
-                  .textTheme
-                  .titleLarge
-                  ?.copyWith(color: Colors.grey.shade500),
+              totalReactions.toString(),
+              style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: peekWhiteColor,
+                  ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              "Total Reactions",
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Colors.grey.shade400,
+                  ),
             ),
           ],
         ),
-      );
-    }
-
-    double maxYValue = 0;
-    for (var stat in _monthlyStatsData) {
-      if (stat.likes > maxYValue) maxYValue = stat.likes;
-      if (stat.dislikes > maxYValue) maxYValue = stat.dislikes;
-    }
-    maxYValue = (maxYValue == 0) ? 10 : (maxYValue * 1.2 + 10);
-
-    return LineChart(
-      LineChartData(
-        minX: 0,
-        maxX: (_monthlyStatsData.length - 1)
-            .toDouble(), // Based on number of months
-        minY: 0,
-        maxY: maxYValue,
-        gridData: FlGridData(
-          show: true,
-          drawVerticalLine: true, // Show vertical lines like sample
-          horizontalInterval:
-              maxYValue > 20 ? (maxYValue / 4).roundToDouble() : 5,
-          verticalInterval: 1, // Interval for months
-          getDrawingHorizontalLine: (value) {
-            return FlLine(
-              color: peekSurfaceColor.withOpacity(0.7),
-              strokeWidth: 0.8,
-            );
-          },
-          getDrawingVerticalLine: (value) {
-            return FlLine(
-              color: peekSurfaceColor.withOpacity(0.7),
-              strokeWidth: 0.8,
-            );
-          },
-        ),
-        titlesData: FlTitlesData(
-          show: true,
-          rightTitles:
-              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          topTitles:
-              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          bottomTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: 30,
-              interval: 1,
-              getTitlesWidget: (double value, TitleMeta meta) {
-                final index = value.toInt();
-                if (index < 0 || index >= _monthlyStatsData.length) {
-                  return Container();
-                }
-                return SideTitleWidget(
-                  axisSide: meta.axisSide,
-                  space: 8.0,
-                  child: Text(
-                    _monthlyStatsData[index].monthLabel,
-                    style: TextStyle(
-                        color: Colors.grey.shade400,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12), // Smaller font for month labels
-                  ),
-                );
-              },
-            ),
-          ),
-          leftTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              interval: maxYValue > 20 ? (maxYValue / 4).roundToDouble() : 5,
-              getTitlesWidget: (double value, TitleMeta meta) {
-                if (value == meta.min && meta.max == meta.min && value == 0) {
-                  return Container();
-                }
-                if (value == meta.min && meta.max != meta.min && value == 0) {
-                  // Hide 0 if not the only y-value
-                  return Container();
-                }
-                return SideTitleWidget(
-                  axisSide: meta.axisSide,
-                  space: 4.0,
-                  child: Text(value.toInt().toString(),
-                      style:
-                          TextStyle(color: Colors.grey.shade500, fontSize: 10)),
-                );
-              },
-              reservedSize: 38,
-            ),
-          ),
-        ),
-        borderData: FlBorderData(
-            show: true,
-            border:
-                Border.all(color: peekSurfaceColor.withOpacity(0.8), width: 1)),
-        lineBarsData: [
-          // Likes Line
-          LineChartBarData(
-            spots: _monthlyStatsData
-                .map((stat) => FlSpot(
-                    stat.monthValue.toDouble(), stat.likes)) // Used monthValue
-                .toList(),
-            isCurved: true,
-            gradient: LinearGradient(colors: likeGradientColors),
-            // colors: likeGradientColors,
-            barWidth: 4, // Thinner line like sample
-            isStrokeCapRound: true,
-            dotData: const FlDotData(show: false),
-            belowBarData: BarAreaData(
-              show: true,
-              gradient: LinearGradient(
-                colors: likeGradientColors
-                    .map((color) => color.withOpacity(0.3))
-                    .toList(),
-              ),
-            ),
-          ),
-          // Dislikes Line
-          LineChartBarData(
-            spots: _monthlyStatsData
-                .map((stat) => FlSpot(stat.monthValue.toDouble(),
-                    stat.dislikes)) // Used monthValue
-                .toList(),
-            isCurved: true,
-            gradient: LinearGradient(colors: dislikeGradientColors),
-            barWidth: 4,
-            isStrokeCapRound: true,
-            dotData: const FlDotData(show: false),
-            belowBarData: BarAreaData(
-              show: true,
-              gradient: LinearGradient(
-                colors: dislikeGradientColors
-                    .map((color) => color.withOpacity(0.3))
-                    .toList(),
-              ),
-            ),
-          ),
-        ],
-        lineTouchData: LineTouchData(
-          touchTooltipData: LineTouchTooltipData(
-            tooltipRoundedRadius: 8,
-            getTooltipItems: (List<LineBarSpot> touchedBarSpots) {
-              return touchedBarSpots
-                  .map((barSpot) {
-                    final flSpot = barSpot;
-                    String title = '';
-                    String count = flSpot.y.toInt().toString();
-                    Color spotColor = Colors.transparent;
-
-                    final int spotIndex = flSpot.x.toInt();
-                    if (spotIndex < 0 || spotIndex >= _monthlyStatsData.length)
-                      return null;
-                    final monthLabel = _monthlyStatsData[spotIndex].monthLabel;
-
-                    if (barSpot.barIndex == 0) {
-                      title = 'Likes: ';
-                      spotColor = likeGradientColors.first;
-                    } else if (barSpot.barIndex == 1) {
-                      title = 'Dislikes: ';
-                      spotColor = dislikeGradientColors.first;
-                    } else {
-                      return null; // Should not happen
-                    }
-
-                    return LineTooltipItem(
-                        '$monthLabel\n',
-                        TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13),
-                        children: [
-                          TextSpan(
-                            text: title,
-                            style: TextStyle(
-                                color: spotColor,
-                                fontWeight: FontWeight.w500,
-                                fontSize: 12),
-                          ),
-                          TextSpan(
-                            text: count,
-                            style: TextStyle(
-                                color: spotColor,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 12),
-                          )
-                        ]);
-                  })
-                  .whereType<LineTooltipItem>()
-                  .toList();
-            },
-          ),
-          handleBuiltInTouches: true,
-        ),
-        // swapAnimationDuration: const Duration(milliseconds: 250),
-        // swapAnimationCurve: Curves.easeInOut,
-      ),
+      ],
     );
   }
 
@@ -349,164 +217,175 @@ class _StatsPageState extends ConsumerState<StatsPage> {
     final Color dislikeCardColor = Colors.red.shade400; // For stat cards
 
     // Define the background path, consistent with other pages
-    const String backgroundPath = 'assets/images/stats_bg.jpg';
-
-    // The Stack is now the root widget of the page content
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        // Layer 1: Background Image (This remains)
-        Image.asset(
-          backgroundPath,
-          fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) {
-            return Container(color: peekBackgroundColor);
-          },
-        ),
-
-        // Layer 2: The page content (The Scaffold and AppBar are removed from here)
-        userProfileAsyncValue.when(
-          loading: () => const Center(
-              child: CircularProgressIndicator(color: peekPrimaryColor)),
-          error: (err, stack) {
-            debugPrint("[StatsPage] Error loading user profile: $err");
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(20.0),
-                child: Text(
-                  "Could not load your stats. Please try again later.",
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.red.shade300),
-                ),
+    // to allow the background to depend on the loaded data.
+    return userProfileAsyncValue.when(
+      loading: () => const Scaffold(
+        backgroundColor: peekBackgroundColor,
+        body: Center(child: CircularProgressIndicator(color: peekPrimaryColor)),
+      ),
+      error: (err, stack) {
+        debugPrint("[StatsPage] Error loading user profile: $err");
+        return Scaffold(
+          backgroundColor: peekBackgroundColor,
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(20.0),
+              child: Text(
+                "Could not load your stats. Please try again later.",
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.red.shade300),
               ),
-            );
-          },
-          data: (userDocSnapshot) {
-            if (!isPremium) {
-              return Center(
+            ),
+          ),
+        );
+      },
+      data: (userDocSnapshot) {
+        // --- All rendering logic is now safely inside the data callback ---
+
+        if (!isPremium) {
+          // Non-premium users see the paywall with a specific background.
+          const String backgroundPath =
+              'assets/images/stats_none_premium_bg.jpg';
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              Image.asset(backgroundPath, fit: BoxFit.cover),
+              Center(
                 child: Padding(
-                  padding: const EdgeInsets.all(30.0),
+                  padding: const EdgeInsets.symmetric(horizontal: 35.0),
                   child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
+                      const Spacer(flex: 10),
                       SvgPicture.asset(
                         'assets/images/lock.svg',
-                        height: 180,
+                        height: 260,
                         colorFilter: ColorFilter.mode(
-                            peekSecondaryColor.withOpacity(0.6),
-                            BlendMode.srcIn),
+                          peekSecondaryColor.withOpacity(0.6),
+                          BlendMode.srcIn,
+                        ),
                       ),
-                      const SizedBox(height: 20),
+                      const Spacer(flex: 10),
                       Text(
-                        "Peek Stats are a Premium Feature",
+                        "Peekio Stats are a Premium Feature",
                         textAlign: TextAlign.center,
                         style:
                             Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                  // color: Colors.white,
-                                  fontSize: 32,
+                                  fontSize: 30,
                                   fontWeight: FontWeight.w600,
                                   color: peekWhiteColor,
                                 ),
                       ),
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 12),
                       Text(
-                        "Upgrade to Peek Premium to see how others react to your Peeks!",
+                        "Upgrade to see how others react to your Peeks!",
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                              color: Colors.grey.shade400,
+                              color: peekWhiteColor.withOpacity(1),
                             ),
                       ),
                       const SizedBox(height: 30),
-                      // ElevatedButton.icon(
                       material.OutlinedButton.icon(
                         icon: const Icon(Icons.star_rounded),
                         label: const Text("Upgrade"),
-                        onPressed: () {
-                          context.go('/premium');
-                        },
-                        // style: ElevatedButton.styleFrom(
-                        //   backgroundColor: peekSecondaryColor,
-                        //   padding: const EdgeInsets.symmetric(
-                        //       horizontal: 30, vertical: 15),
-                        // ),
-                      )
+                        onPressed: () => context.go('/premium'),
+                      ),
+                      const Spacer(flex: 5),
                     ],
                   ),
                 ),
-              );
-            }
-
-            if (userDocSnapshot == null || !userDocSnapshot.exists) {
-              return const Center(
-                child: Text("No user data found to display stats.",
-                    style: TextStyle(color: Colors.white70)),
-              );
-            }
-
-            final userData = userDocSnapshot.data();
-            final likesReceived = userData?['likesReceivedCount'] as int? ?? 0;
-            final dislikesReceived =
-                userData?['dislikesReceivedCount'] as int? ?? 0;
-            final totalReactions = likesReceived + dislikesReceived;
-
-            return SingleChildScrollView(
-              padding: const EdgeInsets.all(20.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: <Widget>[
-                  Text(
-                    "Your Peek Performance",
-                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                        ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    "Reactions to Your Peeks",
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          color: Colors.grey.shade400,
-                        ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 30),
-                  SizedBox(
-                    height: 300,
-                    child: _buildMonthlyLineChart(
-                        context, likesReceived, dislikesReceived),
-                  ),
-                  const SizedBox(height: 40),
-                  _buildStatCard(
-                    context: context,
-                    icon: Icons.favorite_rounded,
-                    label: "Total Likes Received",
-                    value: likesReceived.toString(),
-                    iconColor: likeCardColor,
-                  ),
-                  const SizedBox(height: 15),
-                  _buildStatCard(
-                    context: context,
-                    icon: Icons.thumb_down_alt_rounded,
-                    label: "Total Dislikes Received",
-                    value: dislikesReceived.toString(),
-                    iconColor: dislikeCardColor,
-                  ),
-                  const SizedBox(height: 15),
-                  _buildStatCard(
-                    context: context,
-                    icon: Icons.functions_rounded,
-                    label: "Total Reactions",
-                    value: totalReactions.toString(),
-                    iconColor: Colors.blueGrey.shade300,
-                  ),
-                  const SizedBox(height: 30),
-                ],
               ),
-            );
-          },
-        ),
-      ],
+            ],
+          );
+        }
+
+        // --- Logic for Premium Users ---
+
+        if (userDocSnapshot == null || !userDocSnapshot.exists) {
+          return const Center(
+              child: Text("No user data found to display stats.",
+                  style: TextStyle(color: Colors.white70)));
+        }
+
+        final userData = userDocSnapshot.data();
+        final likesReceived = userData?['likesReceivedCount'] as int? ?? 0;
+        final dislikesReceived =
+            userData?['dislikesReceivedCount'] as int? ?? 0;
+        final totalReactions = likesReceived + dislikesReceived;
+        final bool hasStats = totalReactions > 0;
+
+        // **This is the core of the new logic:**
+        // The background is premium ONLY if the user is premium AND has stats.
+        final String backgroundPath = (isPremium && hasStats)
+            ? 'assets/images/stats_premium_bg.jpg'
+            : 'assets/images/stats_none_premium_bg.jpg';
+
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            Image.asset(
+              backgroundPath,
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) {
+                return Container(color: peekBackgroundColor);
+              },
+            ),
+            if (hasStats)
+              // If stats exist, return the scrollable column.
+              SingleChildScrollView(
+                padding: const EdgeInsets.all(20.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: <Widget>[
+                    Text("Your Peek Performance",
+                        style: Theme.of(context)
+                            .textTheme
+                            .headlineMedium
+                            ?.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 10),
+                    Text("Reactions to Your Peeks",
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleMedium
+                            ?.copyWith(color: Colors.grey.shade400)),
+                    const SizedBox(height: 40),
+                    SizedBox(
+                      height: 280,
+                      child: _buildReactionsDoughnutChart(
+                          context, likesReceived, dislikesReceived),
+                    ),
+                    const SizedBox(height: 50),
+                    _buildStatCard(
+                        context: context,
+                        icon: Icons.favorite_rounded,
+                        label: "Total Likes Received",
+                        value: likesReceived.toString(),
+                        iconColor: likeCardColor),
+                    const SizedBox(height: 15),
+                    _buildStatCard(
+                        context: context,
+                        icon: Icons.thumb_down_alt_rounded,
+                        label: "Total Dislikes Received",
+                        value: dislikesReceived.toString(),
+                        iconColor: dislikeCardColor),
+                    const SizedBox(height: 15),
+                    _buildStatCard(
+                        context: context,
+                        icon: Icons.functions_rounded,
+                        label: "Total Reactions",
+                        value: totalReactions.toString(),
+                        iconColor: Colors.blueGrey.shade300),
+                    const SizedBox(height: 30),
+                  ],
+                ),
+              )
+            else
+              // If no stats, return the empty state widget.
+              _buildEmptyState(context),
+          ],
+        );
+      },
     );
   }
 
@@ -519,13 +398,22 @@ class _StatsPageState extends ConsumerState<StatsPage> {
   }) {
     return Card(
       elevation: 2,
-      color: peekSurfaceColor.withOpacity(0.85),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      color: peekSecondaryColor.withAlpha(35),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+        padding: const EdgeInsets.symmetric(
+          horizontal: 20,
+          vertical: 18,
+        ),
         child: Row(
           children: [
-            Icon(icon, color: iconColor, size: 28),
+            Icon(
+              icon,
+              color: iconColor,
+              size: 28,
+            ),
             const SizedBox(width: 18),
             Expanded(
               child: Text(

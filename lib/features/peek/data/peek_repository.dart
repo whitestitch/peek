@@ -23,7 +23,11 @@ class PeekRepository {
       'to': to,
       'createdAt': createdAt,
       'expiresAt': expiresAt,
-      'status': 'pending',
+      // Keep legacy fields AND add query-friendly fields used by listeners
+      'senderUid': from,
+      'receiverUid': to,
+      // Match the provider filter used on the receiving device
+      'status': 'pending_acceptance',
       'storagePath': null,
       'imageUrl': null,
       'respondedAt': null,

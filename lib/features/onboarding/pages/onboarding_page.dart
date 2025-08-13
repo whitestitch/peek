@@ -3,9 +3,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:peek/core/providers.dart';
 import 'package:peek/features/onboarding/providers/onboarding_provider.dart';
 import 'package:peek/features/onboarding/widgets/onboarding_slide.dart';
 import 'package:peek/theme/colors.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:peek/core/firestore_service.dart';
 
 class OnboardingPage extends ConsumerStatefulWidget {
   const OnboardingPage({super.key});
@@ -17,67 +20,59 @@ class OnboardingPage extends ConsumerStatefulWidget {
 class _OnboardingPageState extends ConsumerState<OnboardingPage> {
   final PageController _pageController = PageController();
   int _currentPage = 0;
+  bool _isRequestingPermission = false;
 
-  // --- Define path to your background image ---
-  // static const String _backgroundImagePath = 'assets/images/slide-bg.jpg';
-
-  // Define slide content here
-  final List<Map<String, dynamic>> slides = [
+  final List<Map<String, dynamic>> _allSlides = [
     {
       'logo': 'assets/images/peekio_logo.svg',
       'image': 'assets/images/onboarding_01.png',
       'isHeroFullWidth': true,
       'title': 'View the world as another does.',
       'subtitle': 'Instant, real, anonymous.',
-      'text': null, // No text paragraph on slide 1
+      'text': null,
       'background': 'assets/images/onboarding_bg_01.jpg',
     },
     {
       'logo': 'assets/images/peekio_logo.svg',
-      // 'image': 'assets/images/onboarding_02.png',
       'image': 'assets/animations/onboarding_pulse_eye.riv',
       'isHeroFullWidth': false,
       'title': 'Just tap Peek',
       'subtitle': 'No names. No profiles.',
       'text':
-          'We ping someone, they snap a photo.\nYou see their world for 5 seconds.\nNo profiles. Just pure reality.',
+          'We ping someone, they snap a photo. You see their world for 5 seconds.\nNo profiles. Just pure reality.',
       'background': 'assets/images/onboarding_bg_02.jpg',
     },
     {
       'logo': 'assets/images/peekio_logo.svg',
       'image': 'assets/images/onboarding_03.png',
       'isHeroFullWidth': false,
-      'title': 'Think Fast:\n10 Sec!',
+      'title': 'Think Fast: 10 Sec!',
       'subtitle': 'Ready, Set, Peek',
       'text':
           'You have 10 seconds to capture your moment. Share your world instantly.',
-      // 'Peek is fully anonymous and safe.\nYour camera, your world — shared\nin the moment only.',
       'background': 'assets/images/onboarding_bg_03.jpg',
+    },
+    {
+      'logo': 'assets/images/peekio_logo.svg',
+      'image': 'assets/images/onboarding_05.png',
+      'isHeroFullWidth': false,
+      'title': '100% Private',
+      'subtitle': 'No Data Saved.',
+      'text':
+          'Peek is fully anonymous and safe. RYour camera, your world — shared\nin the moment only.',
+      'background': 'assets/images/onboarding_bg_04.jpg',
     },
     {
       'logo': 'assets/images/peekio_logo.svg',
       'image': 'assets/images/onboarding_04.png',
       'isHeroFullWidth': false,
-      'title': '100% Private',
-      'subtitle': 'No Data Saved.',
-      'text':
-          'Peek is fully anonymous and safe.\nYour camera, your world — shared\nin the moment only.',
-      'background': 'assets/images/onboarding_bg_04.jpg',
+      'title': 'Enable Location',
+      'subtitle': 'See where Peeks come from',
+      'text': "Enable location to see the city of the Peeks you receive.",
+      'background': 'assets/images/onboarding_bg_02.jpg',
+      'isLocationSlide': true,
     },
   ];
-
-  @override
-  void initState() {
-    super.initState();
-    if (_currentPage == 1) {
-      // Check if starting on slide 2
-    }
-  }
-
-  // @override
-  // void initState() {
-  //   super.initState(); /* ... Timer logic if needed later ... */
-  // }
 
   @override
   void dispose() {
@@ -92,10 +87,10 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
   }
 
   void _skipOnboarding() {
-    _completeAndNavigate();
+    _finishOnboarding();
   }
 
-  void _nextPage() {
+  void _nextPage(List<Map<String, dynamic>> slides) {
     if (_currentPage < slides.length - 1) {
       _pageController.nextPage(
         duration: const Duration(milliseconds: 300),
@@ -105,90 +100,138 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
   }
 
   void _finishOnboarding() {
-    _completeAndNavigate();
-  }
-
-  void _completeAndNavigate() {
     ref.read(onboardingNotifierProvider.notifier).completeOnboarding();
     if (mounted) context.go('/');
   }
 
+  Future<void> _handleLocationPermissionRequest() async {
+    if (_isRequestingPermission || !mounted) return;
+    setState(() => _isRequestingPermission = true);
+
+    try {
+      final permission = await Geolocator.requestPermission();
+      bool locationEnabled = permission == LocationPermission.whileInUse ||
+          permission == LocationPermission.always;
+      debugPrint(
+          "[Onboarding] Permission status: $permission. Setting preference to: $locationEnabled");
+      if (mounted) {
+        await ref
+            .read(firestoreServiceProvider)
+            .updateUserLocationPreference(locationEnabled);
+      }
+    } catch (e) {
+      debugPrint("❌ Error handling location permission: $e");
+    } finally {
+      if (mounted) {
+        setState(() => _isRequestingPermission = false);
+        _finishOnboarding();
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    // The Stack remains the root to allow the background to go edge-to-edge.
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        // Layer 1: Animated Background Image (fills the whole screen)
-        AnimatedSwitcher(
-          duration: const Duration(milliseconds: 500),
-          child: Image.asset(
-            key: ValueKey<String>(slides[_currentPage]['background']!),
-            slides[_currentPage]['background']!,
-            fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) {
-              debugPrint(
-                  "❌ Error loading background image: ${slides[_currentPage]['background']}\nError: $error");
-              return Container(color: peekBackgroundColor); // Fallback
-            },
-          ),
-        ),
+    final userDocAsync = ref.watch(userDocumentProvider);
 
-        // Layer 2: A transparent Scaffold to hold the re-ordered UI content.
-        Scaffold(
-          backgroundColor: Colors.transparent, // CRUCIAL
-          body: SafeArea(
-            child: Column(
-              children: [
-                // Section 1: PageView for Logo & Image, taking up available space
-                Expanded(
-                  child: PageView.builder(
-                    controller: _pageController,
-                    itemCount: slides.length,
-                    onPageChanged: _onPageChanged,
-                    itemBuilder: (context, index) {
-                      final slide = slides[index];
-                      final bool isFullWidthLayout =
-                          slide['isHeroFullWidth'] as bool? ?? false;
+    return userDocAsync.when(
+      loading: () => const Scaffold(
+        backgroundColor: peekBackgroundColor,
+        body: Center(child: CircularProgressIndicator()),
+      ),
+      error: (err, stack) => Scaffold(
+        backgroundColor: peekBackgroundColor,
+        body: Center(child: Text('Error: $err')),
+      ),
+      data: (userDoc) {
+        final locationPrefEnabled =
+            userDoc?.data()?['shareLocationPreference'] as bool? ?? false;
 
-                      // This OnboardingSlide now only renders the top part (logo/image)
-                      return OnboardingSlide(
-                        key: ValueKey('slide_image_$index'),
-                        logoAsset: slide['logo']! as String,
-                        imageAsset: slide['image']! as String,
-                        title: '', // Not used, text is rendered below
-                        subtitle: '', // Not used
-                        isHeroImageFullWidth: isFullWidthLayout,
-                        showTextContent: false, // This ensures text is hidden
-                      );
-                    },
-                  ),
-                ),
+        final filteredSlides = _allSlides.where((slide) {
+          if (slide['isLocationSlide'] == true) {
+            return !locationPrefEnabled;
+          }
+          return true;
+        }).toList();
 
-                // Section 3: Textual Content for the current page
-                _buildTextualContent(),
-                const SizedBox(height: 30),
+        if (filteredSlides.isEmpty) {
+          WidgetsBinding.instance
+              .addPostFrameCallback((_) => _finishOnboarding());
+          return const Scaffold(
+              backgroundColor: peekBackgroundColor,
+              body: Center(child: Text("Onboarding complete.")));
+        }
 
-                // Section 2: Navigation Controls
-                _buildNavigationControls(),
-                const SizedBox(height: 0), // Spacing after controls
-              ],
+        if (_currentPage >= filteredSlides.length) {
+          _currentPage = filteredSlides.length - 1;
+        }
+
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 500),
+              child: Image.asset(
+                key: ValueKey<String>(
+                    filteredSlides[_currentPage]['background']!),
+                filteredSlides[_currentPage]['background']!,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) {
+                  return Container(color: peekBackgroundColor);
+                },
+              ),
             ),
-          ),
-        ),
-      ],
+            Scaffold(
+              backgroundColor: Colors.transparent,
+              bottomNavigationBar:
+                  filteredSlides[_currentPage]['isLocationSlide'] == true
+                      ? _buildLocationPermissionControls()
+                      : _buildNavigationControls(filteredSlides),
+              body: SafeArea(
+                bottom: false,
+                child: Column(
+                  children: [
+                    Expanded(
+                      child: PageView.builder(
+                        controller: _pageController,
+                        itemCount: filteredSlides.length,
+                        onPageChanged: _onPageChanged,
+                        itemBuilder: (context, index) {
+                          final slide = filteredSlides[index];
+                          final isFullWidthLayout =
+                              slide['isHeroFullWidth'] as bool? ?? false;
+                          return OnboardingSlide(
+                            key: ValueKey('slide_image_$index'),
+                            logoAsset: slide['logo']! as String,
+                            imageAsset: slide['image']! as String,
+                            title: '',
+                            subtitle: '',
+                            isHeroImageFullWidth: isFullWidthLayout,
+                            showTextContent: false,
+                          );
+                        },
+                      ),
+                    ),
+                    _buildTextualContent(filteredSlides),
+
+                    // Add a SizedBox to create space above the bottom navigation bar.
+                    const SizedBox(height: 10),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
-  // NEW: Builds the text content area that animates with page changes
-  Widget _buildTextualContent() {
+  Widget _buildTextualContent(List<Map<String, dynamic>> slides) {
     final slideData = slides[_currentPage];
     final textTheme = Theme.of(context).textTheme;
 
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 300),
       transitionBuilder: (Widget child, Animation<double> animation) {
-        // Fade and slide transition for a smooth appearance
         return FadeTransition(
           opacity: animation,
           child: SlideTransition(
@@ -202,11 +245,10 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
         );
       },
       child: Padding(
-        // A Key is crucial for AnimatedSwitcher to detect content change
         key: ValueKey<int>(_currentPage),
-        padding: const EdgeInsets.symmetric(horizontal: 35.0),
+        padding: const EdgeInsets.symmetric(horizontal: 35.0, vertical: 20.0),
         child: Column(
-          mainAxisSize: MainAxisSize.min, // Takes up only needed space
+          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Text(
@@ -216,28 +258,28 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                 fontWeight: FontWeight.w600,
                 color: peekWhiteColor,
                 letterSpacing: 0.5,
-                fontSize: 36,
+                fontSize: 34,
               ),
             ),
-            const SizedBox(height: 15),
+            const SizedBox(height: 8),
             Text(
               slideData['subtitle']!,
               textAlign: TextAlign.center,
               style: textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w500,
                 color: peekOnBackgroundColor.withOpacity(0.85),
-                fontSize: 18,
+                fontSize: 22,
               ),
             ),
             if (slideData['text'] != null) ...[
-              const SizedBox(height: 25),
+              const SizedBox(height: 20),
               Text(
                 slideData['text']!,
                 textAlign: TextAlign.center,
                 style: textTheme.bodyMedium?.copyWith(
                   color: peekWhiteColor.withOpacity(1),
                   height: 1.55,
-                  fontSize: 16,
+                  fontSize: 17,
                   fontWeight: FontWeight.w400,
                 ),
               ),
@@ -248,16 +290,55 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
     );
   }
 
-  // Builds the bottom navigation controls (Skip/Next/Done)
-  Widget _buildNavigationControls() {
+  Widget _buildLocationPermissionControls() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 10, 20, 40),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ElevatedButton(
+            onPressed: _isRequestingPermission
+                ? null
+                : _handleLocationPermissionRequest,
+            child: _isRequestingPermission
+                ? const SizedBox(
+                    height: 24,
+                    width: 24,
+                    child: CircularProgressIndicator(
+                      color: peekSurfaceColor,
+                      strokeWidth: 3,
+                    ),
+                  )
+                : const Text('Enable Location'),
+          ),
+          const SizedBox(height: 8),
+          TextButton(
+            onPressed: _isRequestingPermission ? null : _finishOnboarding,
+            // Style
+            style: TextButton.styleFrom(
+              foregroundColor: peekOnBackgroundColor.withOpacity(0.7),
+              textStyle: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            child: const Text('Maybe Later'),
+            // color: peekOnBackgroundColor,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNavigationControls(List<Map<String, dynamic>> slides) {
     bool isLastSlide = _currentPage == slides.length - 1;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10.0),
+      padding: const EdgeInsets.fromLTRB(20, 10, 20, 40),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Skip Button
           Opacity(
             opacity: !isLastSlide ? 1.0 : 0.0,
             child: TextButton(
@@ -272,7 +353,6 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
               child: const Text('Skip'),
             ),
           ),
-          // Indicator Dots
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: List.generate(slides.length, (index) {
@@ -290,18 +370,9 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
               );
             }),
           ),
-          // Next / Done Button
           ElevatedButton(
-            onPressed: isLastSlide ? _finishOnboarding : _nextPage,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: peekPrimaryColor,
-              foregroundColor: peekSurfaceColor,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              textStyle: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
+            onPressed: () =>
+                isLastSlide ? _finishOnboarding() : _nextPage(slides),
             child: Text(isLastSlide ? 'Done' : 'Next'),
           ),
         ],
