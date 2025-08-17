@@ -25,7 +25,7 @@ import 'package:peek/services/terms_service.dart';
 
 // All other pages
 import 'package:peek/features/menu/about_page.dart';
-import '../features/peek/photo_capture_page.dart';
+import '../features/peek/photo_capture_page_new.dart';
 import '../features/peek/splash_page.dart';
 import '../features/peek/peek_receiver_page.dart';
 import '../features/peek/peek_image_view.dart';
@@ -308,8 +308,9 @@ final routerProvider = Provider<GoRouter>((ref) {
         name: 'capture',
         builder: (context, state) {
           final requestId = state.uri.queryParameters['requestId'];
+          final mode = state.uri.queryParameters['mode'] ?? 'response';
           return requestId != null
-              ? PhotoCapturePage(requestId: requestId)
+              ? PhotoCapturePage(requestId: requestId, mode: mode)
               : _errorScreen('❌ Missing requestId');
         },
       ),
