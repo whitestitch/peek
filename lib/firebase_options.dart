@@ -31,46 +31,49 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyD1KWlLtsoJgzN-CWHlnNlMJFWcJuJoB_c',
-    appId: '1:96119580821:web:263dc3bbd59cb77e17939c',
-    messagingSenderId: '96119580821',
-    projectId: 'peek-fire',
-    authDomain: 'peek-fire.firebaseapp.com',
-    storageBucket: 'peek-fire.appspot.com',
+    apiKey: 'AIzaSyDcwck7BYvsEh6KUpSyFYyR4PpQok_VXbA',
+    appId: '1:458153260208:web:2819def88574cc1b30f775',
+    messagingSenderId: '458153260208',
+    projectId: 'peekio-db',
+    authDomain: 'peekio-db.firebaseapp.com',
+    storageBucket: 'peekio-db.firebasestorage.app',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyBFctI-qM68_pf2VSxH5qNJMbxQRdSfnbs',
-    appId: '1:96119580821:android:44958f8030bf285217939c',
-    messagingSenderId: '96119580821',
-    projectId: 'peek-fire',
-    storageBucket: 'peek-fire.firebasestorage.app',
+    apiKey: 'AIzaSyAtvrAWS-wmC3pobfprw9ElCNyUKFp1grI',
+    appId: '1:458153260208:android:1d3ff67e6429f6cf30f775',
+    messagingSenderId: '458153260208',
+    projectId: 'peekio-db',
+    storageBucket: 'peekio-db.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyAtTWVA82YltlEc9OnrYGQ44p6bsPmPSFg',
-    appId: '1:96119580821:ios:5f2c560c976c292b17939c',
-    messagingSenderId: '96119580821',
-    projectId: 'peek-fire',
-    storageBucket: 'peek-fire.firebasestorage.app',
+    apiKey: 'AIzaSyBHh_zpl6jb1Hp9rN1sUGZbazRnJKFZCHA',
+    appId: '1:458153260208:ios:35922ed5e28d6a9730f775',
+    messagingSenderId: '458153260208',
+    projectId: 'peekio-db',
+    storageBucket: 'peekio-db.firebasestorage.app',
+    iosClientId: '458153260208-o07aepatsq9sjdltm0re07fk8eoq868e.apps.googleusercontent.com',
     iosBundleId: 'com.fab.peek',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
-    apiKey: 'AIzaSyAtTWVA82YltlEc9OnrYGQ44p6bsPmPSFg',
-    appId: '1:96119580821:ios:889ce1d2cd69dd8117939c',
-    messagingSenderId: '96119580821',
-    projectId: 'peek-fire',
-    storageBucket: 'peek-fire.appspot.com',
+    apiKey: 'AIzaSyBHh_zpl6jb1Hp9rN1sUGZbazRnJKFZCHA',
+    appId: '1:458153260208:ios:35922ed5e28d6a9730f775',
+    messagingSenderId: '458153260208',
+    projectId: 'peekio-db',
+    storageBucket: 'peekio-db.firebasestorage.app',
+    iosClientId: '458153260208-o07aepatsq9sjdltm0re07fk8eoq868e.apps.googleusercontent.com',
     iosBundleId: 'com.fab.peek',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(
-    apiKey: 'AIzaSyD1KWlLtsoJgzN-CWHlnNlMJFWcJuJoB_c',
-    appId: '1:96119580821:web:de29393a0867828b17939c',
-    messagingSenderId: '96119580821',
-    projectId: 'peek-fire',
-    authDomain: 'peek-fire.firebaseapp.com',
-    storageBucket: 'peek-fire.appspot.com',
+    apiKey: 'AIzaSyDcwck7BYvsEh6KUpSyFYyR4PpQok_VXbA',
+    appId: '1:458153260208:web:670a5d4d16dc615830f775',
+    messagingSenderId: '458153260208',
+    projectId: 'peekio-db',
+    authDomain: 'peekio-db.firebaseapp.com',
+    storageBucket: 'peekio-db.firebasestorage.app',
   );
+
 }

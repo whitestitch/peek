@@ -275,7 +275,7 @@ exports.autoPingReceiverOnRequestCreate = onDocumentCreated(
       }
 
       try {
-        const payload = {
+        const message = {
           // Visible alert content
           notification: {
             title: "👁 Someone wants to Peekio!",
@@ -286,7 +286,6 @@ exports.autoPingReceiverOnRequestCreate = onDocumentCreated(
             requestId: requestId,
             type: "peek_request_received",
           },
-          token: fcmToken,
           // Platform-specific configuration
           android: {
             priority: "high",
@@ -296,20 +295,30 @@ exports.autoPingReceiverOnRequestCreate = onDocumentCreated(
             },
           },
           apns: {
+            headers: {
+              "apns-push-type": "alert",
+              "apns-priority": "10",
+            },
             payload: {
               aps: {
-                "sound": "default",
-                // This flag helps wake the app for background processing
-                "content-available": 1,
+                alert: {
+                  title: "NEW PEEK REQUEST!",
+                  body: "Someone wants to peek at you! Tap to respond.",
+                },
+                sound: "default",
+                badge: 1,
               },
             },
           },
+          token: fcmToken,
         };
 
-        await admin.messaging().send(payload);
+        await admin.messaging().send(message);
         logger.info(
+
             `✅ autoPingReceiver: Ping sent to ${receiverUid}`,
             `for ${requestId}.`,
+
         );
       } catch (err) {
         logger.error(

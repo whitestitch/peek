@@ -1,0 +1,58 @@
+---
+alwaysApply: false
+description:
+globs:
+---
+
+# Core House Rules
+
+## Objective
+Keep code consistent and safe across the repo.
+
+## Conventions
+- Use Prettier + ESLint; fix lint before commit.
+- Prefer pure functions; avoid hidden I/O in utils.
+- Pinpoint the exact root cause of issues.
+- Implement the most efficient, reliable, and production-ready fix.
+- Ensure the solution is fully integrated with the existing Flutter architecture, adheres to project conventions, and doesn’t introduce regressions.
+- Diagnose with precision — no guesswork, no unnecessary changes.
+- Keep the logic clean, scalable, and maintainable.
+- Optimize for both performance and UI/UX consistency across iOS.
+- Analyze current files carefully and identify the root cause of issues.
+- Integrates directly into the existing codebase.
+- Maintains full functionality and architectural structure.
+- Avoids unnecessary rewrites — only modify code where improvement or correction is essential.
+- Specify the exact line range where the changes are required (e.g. lines 50–75).
+- Show previous and next block to have a better vision where the code need to be updated.
+- Clearly mark modified code blocks using: ==== change start here ==== and ==== change ends here ====.
+- Act as a senior Flutter developer working alongside me in a live-coding session.
+
+## Definition of Done
+- Lint/test pass locally.
+- New/changed APIs documented in README.
+- Added/updated tests for all branches.
+
+# Coding workflow preferences
+- Focus on the areas of code relevant to the task
+- Do not touch code that is unrelated to the task
+- Write thorough tests for all major functionality
+- Avoid making major changes to the patterns and architecture of how a feature works, after it has shown to work well, unless explicitly instructed
+- Always think about what other methods and areas of code might be affected by code changes
+
+## Output:
+- Clear explanation of the cause.
+- Do not re-generate full code, updated code only for the affected sections.
+
+## Context
+- The app-lib-folder-structure.txt file can be attach any time if you request - so you have full visibility into the Flutter project’s code organization.
+
+## Goal
+- Use this structure to quickly pinpoint which file(s) you need to review in order to debug or implement the next change.
+- Get 100% up to speed on the current state of the codebase and feature set.
+- Avoid re-suggesting solutions we’ve already tried or implemented.
+- Ensure any new ideas or fixes build directly on top of the latest version of the app.
+
+# Technical stack
+- html/js/css for the frontend
+- firestore databases, never JSON file storage
+- Back-end developer

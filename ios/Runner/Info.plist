@@ -70,6 +70,17 @@
 		<string>fetch</string>
 		<string>remote-notification</string>
 	</array>
+	<key>FirebaseMessagingAutoInitEnabled</key>
+	<true/>
+	<key>UIUserNotificationSettings</key>
+	<dict>
+		<key>UIUserNotificationTypesAlert</key>
+		<true/>
+		<key>UIUserNotificationTypesBadge</key>
+		<true/>
+		<key>UIUserNotificationTypesSound</key>
+		<true/>
+	</dict>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
