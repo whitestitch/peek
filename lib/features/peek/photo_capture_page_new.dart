@@ -69,8 +69,9 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
 
   /// Initialize all manager components
   void _initializeManagers() {
+    // Initialize with empty cameras list - will be recreated in _initializeCapture
     _cameraManager = CameraControllerManager(
-      cameras: _cameras,
+      cameras: [],
       onCameraInitialized: () => setState(() {}),
       onError: _handleError,
       onCameraChanged: () => setState(() {}),
@@ -124,6 +125,12 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
       // Lock orientation
       await SystemChrome.setPreferredOrientations(
           [DeviceOrientation.portraitUp]);
+
+      // Initialize cameras first
+      await initializeCameras();
+
+      // Update camera manager with initialized cameras
+      _cameraManager.updateCamerasList(_cameras);
 
       // Load user settings
       await _userSettings.loadUserSettings();

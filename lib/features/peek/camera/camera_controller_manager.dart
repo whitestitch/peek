@@ -14,7 +14,7 @@ class CameraControllerManager with WidgetsBindingObserver {
   String? _initializationError;
 
   // External dependencies
-  final List<CameraDescription> cameras;
+  List<CameraDescription> cameras;
   final VoidCallback? onCameraInitialized;
   final ValueChanged<String>? onError;
   final VoidCallback? onCameraChanged;
@@ -35,6 +35,13 @@ class CameraControllerManager with WidgetsBindingObserver {
   bool get isChangingCamera => _isChangingCamera;
   int get selectedCameraIndex => _selectedCameraIndex;
   String? get initializationError => _initializationError;
+
+  /// Update cameras list (used after availableCameras() is called)
+  void updateCamerasList(List<CameraDescription> newCameras) {
+    cameras = newCameras;
+    debugPrint(
+        "[CameraController] Cameras list updated with ${cameras.length} cameras");
+  }
 
   /// Initialize camera system
   Future<void> initialize({
