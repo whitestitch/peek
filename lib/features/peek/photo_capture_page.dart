@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:peek/features/peek/controllers/peek_controller.dart';
 import 'package:peek/theme/colors.dart';
+import 'package:peek/core/widgets/peek_loading_indicator.dart';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -18,21 +19,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 
-// --- Global Camera List & Initialization (Keep As Is) ---
+// Global camera initialization
 List<CameraDescription> _cameras = [];
 Future<void> initializeCameras() async {
-  // ... (Keep existing initializeCameras code) ...
   if (_cameras.isNotEmpty) return;
   try {
     _cameras = await availableCameras();
-    debugPrint("[CameraInit] Available cameras: ${_cameras.length}");
-    if (_cameras.isEmpty) debugPrint("⚠️ [CameraInit] No cameras found.");
   } catch (e) {
     debugPrint("❌ Error initializing cameras: $e");
     _cameras = [];
   }
 }
-// ---------------------------------------------------
 
 class PhotoCapturePage extends ConsumerStatefulWidget {
   final String requestId;
@@ -43,7 +40,7 @@ class PhotoCapturePage extends ConsumerStatefulWidget {
 
 class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
     with WidgetsBindingObserver, SingleTickerProviderStateMixin {
-  // --- State Variables (Keep As Is) ---
+  // State variables
   CameraController? _controller;
   bool _isCameraInitializing = false;
   bool _isCameraInitialized = false;
@@ -76,7 +73,7 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
   // Timer? _previewTimer;
   // int? _previewSecondsRemaining;
 
-  // --- initState (Keep As Is) ---
+  // Initialize component
   @override
   void initState() {
     super.initState();
@@ -292,7 +289,7 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
           _isSenderPremium = data?['isPremium'] as bool? ?? false;
           _senderSharesLocation =
               data?['shareLocationPreference'] as bool? ?? false;
-          // ?????????????????????????
+          // Location preference handling
           // _senderAllowsLocationReveal =
           //     data?['seeOthersLocationPreference'] as bool? ?? false;
           _senderDisplayName =
@@ -420,7 +417,7 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
     }
   }
 
-  // --- Pre-capture gate: request location (if needed) before camera, then init camera ---
+  // Request location before initializing camera
   Future<void> _preCaptureAndInitCamera() async {
     // Load user settings so we know whether the sender wants to share location.
     await _loadUserSettings();
@@ -446,11 +443,10 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
     _findAndInitializeCamera(); // Starts camera and (later) the capture countdown
   }
 
-  // --- _findAndInitializeCamera (Keep As Is) ---
+  // Find and initialize camera
   void _findAndInitializeCamera({
     CameraLensDirection preferredDirection = CameraLensDirection.back,
   }) {
-    // ... (Keep existing code) ...
     if (_isChangingCamera || _isCameraInitializing) return;
     if (_cameras.isEmpty) {
       _showErrorAndGoHome("Camera unavailable on this device.");
@@ -482,7 +478,7 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
     _initializeCamera(_cameras[cameraIndex]);
   }
 
-  // --- _initializeCamera (Keep As Is) ---
+  // Initialize camera controller
   Future<void> _initializeCamera(CameraDescription cameraDescription) async {
     debugPrint(
         "[PhotoCapturePage] Attempting to initialize camera: ${cameraDescription.name}");
@@ -608,7 +604,7 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
     }
   }
 
-  // --- didChangeAppLifecycleState (Keep As Is) ---
+  // Handle app lifecycle changes
   @override
   Future<void> didChangeAppLifecycleState(AppLifecycleState state) async {
     super.didChangeAppLifecycleState(state); // Call super
@@ -700,9 +696,8 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
     }
   }
 
-  // --- _switchCamera (Keep As Is) ---
+  // Switch between front and back camera
   void _switchCamera() async {
-    // ... (Keep existing code) ...
     if (_cameras.length < 2 || _isChangingCamera || _isCameraInitializing) {
       debugPrint(
         "[PhotoCapturePage] Switch camera blocked: Changing:$_isChangingCamera, Initializing:$_isCameraInitializing",
@@ -722,9 +717,8 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
     _initializeCamera(_cameras[newCameraIndex]);
   }
 
-  // --- _takePicture (Keep As Is - already includes flip logic) ---
+  // Capture photo with flip logic for front camera
   Future<void> _takePicture() async {
-    // ... (Keep existing code) ...
     if (_isTakingPicture ||
         !_isCameraInitialized ||
         _controller == null ||
@@ -769,9 +763,8 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
     }
   }
 
-  // --- _uploadPhoto (Keep As Is - already uses bytes) ---
+  // Upload photo to Firebase Storage
   Future<void> _uploadPhoto() async {
-    // ... (Keep existing code) ...
     if (_capturedImageBytes == null || _uploading || !mounted) return;
     // _previewTimer?.cancel();
     setState(() => _uploading = true);
@@ -1001,7 +994,7 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              CircularProgressIndicator(color: Colors.white),
+              PeekLoadingIndicator.medium(logoColor: Colors.white),
               SizedBox(height: 20),
               Text("Sending Peek...", style: TextStyle(color: Colors.white)),
             ],
@@ -1207,7 +1200,7 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
         !controller.value.isInitialized) {
       /* ... loading UI ... */
       return const Center(
-        child: CircularProgressIndicator(color: Colors.white),
+        child: PeekLoadingIndicator.medium(logoColor: Colors.white),
       );
     }
 

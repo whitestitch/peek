@@ -81,19 +81,11 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
           imageUrl != null &&
           imageUrl.isNotEmpty) {
         material.debugPrint(
-            "[PeekSenderWaitPage] Received image response. Navigating to splash with location: $senderLocation");
+            "[PeekSenderWaitPage] Received image response. Starting final countdown before showing image.");
 
-        // Build the query parameters map
-        final queryParams = {
-          'requestId': widget.requestId,
-          'initialImageUrl': imageUrl,
-          // Conditionally add the senderLocation if it exists
-          if (senderLocation != null) 'senderLocation': senderLocation,
-        };
-
-        // Use Uri to build the path and query, then navigate
-        final uri = Uri(path: '/splash', queryParameters: queryParams);
-        _navigateToNext(uri.toString());
+        // Cancel the existing countdown and start final 3-second countdown
+        _countdownTimer?.cancel();
+        _startFinalCountdown(imageUrl, senderLocation);
       } else if (status == 'cancelled_by_receiver' || status == 'declined') {
         material.debugPrint(
             "[PeekSenderWaitPage] Peek was cancelled or declined by receiver. Navigating home.");
@@ -135,6 +127,45 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
       } else {
         setState(() {
           _secondsRemaining = remaining;
+        });
+      }
+    });
+  }
+
+  void _startFinalCountdown(String imageUrl, String? senderLocation) {
+    if (!mounted) return;
+
+    // Set initial countdown to 3 seconds
+    setState(() {
+      _secondsRemaining = 3;
+    });
+
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+
+      if (_secondsRemaining! <= 1) {
+        timer.cancel();
+
+        // Navigate directly to image view, skipping the black splash screen
+        material.debugPrint(
+            "[PeekSenderWaitPage] Final countdown finished. Navigating directly to image view.");
+
+        if (mounted) {
+          context.go(
+            '/peek-image',
+            extra: {
+              'requestId': widget.requestId,
+              'imageUrl': imageUrl,
+              if (senderLocation != null) 'senderLocation': senderLocation,
+            },
+          );
+        }
+      } else {
+        setState(() {
+          _secondsRemaining = _secondsRemaining! - 1;
         });
       }
     });

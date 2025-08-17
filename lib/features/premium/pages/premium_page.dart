@@ -7,6 +7,7 @@ import '../providers/premium_controller.dart';
 import '../controllers/subscription_state.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:peek/theme/colors.dart';
+import 'package:peek/core/widgets/peek_loading_indicator.dart';
 
 class PeekPremiumPage extends ConsumerWidget {
   const PeekPremiumPage({super.key});
@@ -111,9 +112,8 @@ class PeekPremiumPage extends ConsumerWidget {
                       ? const SizedBox(
                           width: 20,
                           height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
+                          child: PeekLoadingIndicator.small(
+                            logoColor: Colors.white,
                           ),
                         )
                       : const Text(
@@ -242,9 +242,8 @@ class PeekPremiumPage extends ConsumerWidget {
                       width: 24,
                       height: 24,
                       padding: const EdgeInsets.all(2.0),
-                      child: const CircularProgressIndicator(
-                        strokeWidth: 3,
-                        color: Colors.white,
+                      child: const PeekLoadingIndicator.small(
+                        logoColor: Colors.white,
                       ),
                     )
                   : const Icon(Icons.star_purple500_outlined),

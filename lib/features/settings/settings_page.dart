@@ -9,13 +9,13 @@ import 'package:peek/core/firestore_service.dart'; // Import FirestoreService AN
 import 'package:peek/theme/colors.dart'; // Import colors
 import 'package:flutter_svg/flutter_svg.dart';
 
-// Provider for reading preference (Placeholder - see TODO)
+// Provider for reading location sharing preference
 final shareLocationPreferenceProvider = Provider<bool>((ref) {
   return false; // Placeholder default value
 });
 
 final seeOthersLocationPreferenceProvider = Provider<bool>((ref) {
-  // Example: ref.watch(userDataProvider).value?.seeOthersLocationPreference ?? false;
+  // Connect to user data provider when available
   return false; // Placeholder default
 });
 
@@ -39,9 +39,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   @override
   void initState() {
     super.initState();
-    // TODO: Load initial preference state here if needed
+    // Load initial preference state
     _loadInitialPreferences();
-    // Example: Read from a snapshot if userDataProvider includes the field
+    // Initialize from user preferences when available
     // final initialPref = ref.read(userDataProvider).asData?.value?.data()?['shareLocationPreference'] ?? false;
     // _localLocationSharingEnabled = initialPref;
   }
@@ -60,6 +60,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 data?['shareLocationPreference'] as bool? ?? false;
 
             // // Load preference for "Location Reveal" (seeing others' locations)
+            // Load see others location preference
             // _localSeeOthersLocationEnabled =
             //     data?['seeOthersLocationPreference'] as bool? ?? false;
 

@@ -39,33 +39,24 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     );
   }
 
-  debugPrint(
-    "📨 [NotificationService BG Handler] A background message was received: ${message.messageId}",
-  );
   // The OS now handles displaying the notification, so no further action is needed here.
 
   // 1. Check if the app is already in the foreground.
   final prefs = await SharedPreferences.getInstance();
   // No need to reload, the main app isolate is responsible for setting it.
   if (prefs.getBool('isAppInForeground') ?? false) {
-    debugPrint(
-        "[NotificationService BG Handler] App is in foreground. EXITING. The live listener will handle it.");
-    return; // Exit immediately.
+    return;
   }
 
   // If the remote push already includes a 'notification' block,
   // iOS will show the system alert. Avoid creating a duplicate local notif.
   if (message.notification != null) {
-    debugPrint(
-        "[NotificationService BG Handler] Remote 'notification' present; relying on system UI.");
     return;
   }
 
   // 2. For iOS: If the message has a notification block, let the OS handle it
   // iOS will automatically display the notification from the APNs payload
   if (Platform.isIOS && message.notification != null) {
-    debugPrint(
-        "[NotificationService BG Handler] iOS notification block present - OS will handle display automatically");
     return;
   }
 
@@ -116,7 +107,6 @@ Future<void> _showLocalNotification(String title, String body, int id) async {
     body,
     notificationDetails,
   );
-  debugPrint("[NotificationService] Local notification shown: $title");
 }
 
 class NotificationService {
@@ -207,7 +197,7 @@ class NotificationService {
   /// Checks for an initial message if the app was opened from terminated state.
   /// Should be called once after initialize() in main.dart.
   Future<void> checkForInitialMessage() async {
-    // --- Keep your existing checkForInitialMessage method code ---
+    // Check for initial message implementation
     RemoteMessage? initialMessage =
         await _firebaseMessaging.getInitialMessage();
     if (initialMessage != null) {
@@ -224,7 +214,7 @@ class NotificationService {
   }
 
   Future<void> _requestPermissions() async {
-    // --- Keep your existing _requestPermissions method code ---
+    // Request notification permissions
     NotificationSettings settings = await _firebaseMessaging.requestPermission(
       alert: true,
       announcement: false,
@@ -237,16 +227,6 @@ class NotificationService {
     debugPrint(
       '[NotificationService] User granted permission: ${settings.authorizationStatus}',
     );
-
-    // Explicitly set foreground presentation options for iOS
-    // if (!kIsWeb && Platform.isIOS) {
-    //   await _firebaseMessaging.setForegroundNotificationPresentationOptions(
-    //     // Required to display a heads up notification
-    //     alert: false,
-    //     badge: true,
-    //     sound: true,
-    //   );
-    // }
 
     // Apply suppression ONLY to foreground notifications
     // Background notifications will be handled by the system
@@ -287,7 +267,7 @@ class NotificationService {
     );
   }
 
-  // --- MODIFIED: _handleNotificationTap (Handles both notification types) ---
+  // Handle notification tap and navigate appropriately
   void _handleNotificationTap(Map<String, dynamic> data) {
     if (_router == null) {
       debugPrint(
@@ -300,7 +280,7 @@ class NotificationService {
       "[NotificationService] Handling notification tap navigation. Data: $data",
     );
 
-    // --- Extract required data fields ---
+    // Extract notification data
     final String? type =
         data['type'] as String?; // Crucial field to determine action
     String? requestId = data['requestId'];

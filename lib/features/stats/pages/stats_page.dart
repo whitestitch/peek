@@ -11,6 +11,7 @@ import 'package:intl/intl.dart';
 import 'package:peek/features/peek/providers/peek_providers.dart'; // For userProfileStreamProvider
 import 'package:peek/features/premium/providers/premium_controller.dart'; // For premiumStatusProvider
 import 'package:peek/theme/colors.dart'; // Your app's theme colors
+import 'package:peek/core/widgets/peek_loading_indicator.dart';
 
 class MonthlyStat {
   final int monthValue; // 1 for Jan, 2 for Feb, etc. or 0-5 for last 6 months
@@ -221,7 +222,7 @@ class _StatsPageState extends ConsumerState<StatsPage> {
     return userProfileAsyncValue.when(
       loading: () => const Scaffold(
         backgroundColor: peekBackgroundColor,
-        body: Center(child: CircularProgressIndicator(color: peekPrimaryColor)),
+        body: const Center(child: PeekLoadingIndicator.medium()),
       ),
       error: (err, stack) {
         debugPrint("[StatsPage] Error loading user profile: $err");

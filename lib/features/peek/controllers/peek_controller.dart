@@ -73,9 +73,6 @@ class PeekController extends StateNotifier<PeekControllerState> {
     }
 
     try {
-      debugPrint(
-          "[PeekController] Calling 'initiatePeekRequest' Cloud Function (Standard SDK Auth)...");
-
       final HttpsCallable callable = _functions.httpsCallable(
         'initiatePeekRequest',
         options: HttpsCallableOptions(
