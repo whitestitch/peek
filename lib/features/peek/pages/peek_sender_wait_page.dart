@@ -47,6 +47,9 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
 
     _listenForUpdates();
 
+    // Start a manual 30-second countdown immediately for the "Get Ready!" screen
+    _startManualCountdown();
+
     // Start a watchdog timer. If the official countdown doesn't start
     // within 35s, timeout gracefully. This prevents getting stuck.
     _watchdogTimer = Timer(const Duration(seconds: 35), () {
@@ -163,6 +166,36 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
             },
           );
         }
+      } else {
+        setState(() {
+          _secondsRemaining = _secondsRemaining! - 1;
+        });
+      }
+    });
+  }
+
+  /// Start a manual 30-second countdown for the "Get Ready!" screen
+  void _startManualCountdown() {
+    if (!mounted || _secondsRemaining != null) return;
+
+    material
+        .debugPrint("[PeekSenderWaitPage] Starting manual 30-second countdown");
+
+    // Set initial countdown to 30 seconds
+    setState(() {
+      _secondsRemaining = 30;
+    });
+
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+
+      if (_secondsRemaining! <= 0) {
+        timer.cancel();
+        // Don't navigate here - let the Firestore listener handle the timeout
+        material.debugPrint("[PeekSenderWaitPage] Manual countdown finished");
       } else {
         setState(() {
           _secondsRemaining = _secondsRemaining! - 1;
