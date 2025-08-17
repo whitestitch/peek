@@ -7,9 +7,7 @@ import 'package:peek/features/peek/pages/peek_sender_wait_page.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 
-// --- Feature Page Imports ---
 import 'package:peek/features/home/home_page.dart';
 import 'package:peek/features/onboarding/pages/onboarding_page.dart';
 import 'package:peek/features/onboarding/providers/onboarding_provider.dart';
@@ -18,12 +16,8 @@ import 'package:peek/features/splash/splash_start.dart';
 import 'package:peek/features/settings/settings_page.dart';
 import 'package:peek/features/stats/pages/stats_page.dart';
 
-// --- App Shell and other top-level pages ---
 import 'package:peek/core/widgets/app_shell.dart';
-import 'package:peek/features/auth/auth_wrapper.dart';
-import 'package:peek/services/terms_service.dart';
 
-// All other pages
 import 'package:peek/features/menu/about_page.dart';
 import '../features/peek/photo_capture_page_new.dart';
 import '../features/peek/splash_page.dart';
@@ -44,24 +38,11 @@ import 'package:peek/main.dart';
 // Helper provider to ensure sign-in is only triggered once.
 final _signInTriggeredProvider = StateProvider<bool>((ref) => false);
 
-// HIDE TOP APPBAR WIDGET
-const List<String> routesInShellWithoutAppBar = [
-  // Example: if '/settings/profile-edit' was a child of ShellRoute and needed a custom AppBar or no AppBar
-  // '/settings/profile-edit',
-  // '/stats',
-  '/settings'
-];
+const List<String> routesInShellWithoutAppBar = ['/settings'];
 
-// List of route paths (CHILDREN of ShellRoute) where the AppShell's BottomNavigationBar should be hidden.
-// (This was your existing routesInShellWithoutBottomNav, keeping its purpose for BottomNav)
-const List<String> routesInShellWithoutBottomNav = [
-  // Example:
-  // '/settings/full-screen-subpage',
-];
+const List<String> routesInShellWithoutBottomNav = [];
 
-// List of TOP-LEVEL route paths that should NOT use the AppShell at all.
-// These routes will not have the AppShell's AppBar or BottomNavigationBar.
-// (This was your existing routesWithoutShell)
+// Routes without AppShell
 const List<String> routesWithoutShell = [
   '/terms',
   '/onboarding',
@@ -78,18 +59,11 @@ const List<String> routesWithoutShell = [
   '/peek-feedback',
   '/upgrade',
   '/premium',
-  // If /privacy and /info are full-screen and don't need the shell, they belong here.
-  // If they are part of the shell (e.g. opened from drawer, want AppBar/BottomNav),
-  // they should be child routes of ShellRoute.
-  // For now, assuming they are top-level full-screen as per previous setup.
   '/privacy',
   '/info',
 ];
 
-// This list is now less critical if AppShell directly uses routesInShellWithoutBottomNav
-// and routesInShellWithoutAppBar. It was originally for HomePage to manage its own BottomNav.
-// If AppShell uses the more specific lists above, this one might become redundant or serve a different purpose.
-// For clarity, the AppShell will use the new specific lists.
+// Legacy routes without bottom navigation
 const List<String> routesWithoutBottomNav = [
   '/terms',
   '/onboarding',
@@ -108,38 +82,22 @@ const List<String> routesWithoutBottomNav = [
   '/premium',
   '/privacy',
   '/info',
-  // '/settings', // Settings is now part of ShellRoute, AppShell controls its AppBar/BottomNav
-  // '/stats',    // Stats is now part of ShellRoute
 ];
 
-// final rootNavigatorKey = GlobalKey<NavigatorState>();
-// This key is for the shell navigator.
+// Shell navigator key
 final shellNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'shell');
-
-// final rootNavigatorKeyProvider =
-//     Provider<GlobalKey<NavigatorState>>((ref) => rootNavigatorKey);
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authStateProvider);
 
-  // This ValueNotifier will trigger the router to re-evaluate its redirects
-  // whenever the authentication state changes. This is the key to the fix.
-  // Use a simple tick so we always notify (even if auth value is "equal").
+  // Trigger router re-evaluation on auth state changes
   final refreshTick = ValueNotifier<int>(0);
-  final refreshListenable = ValueNotifier<AsyncValue<User?>>(authState);
 
-  // Update the listenable when auth state changes
   ref.listen(authStateProvider, (previous, next) {
-    debugPrint("🔄 Auth state changed in router - updating refresh listenable");
     refreshTick.value++;
   });
 
-  // Also refresh when the user document readiness changes,
-  // so we can leave /splash-start as soon as the doc exists.
   ref.listen(userDocumentProvider, (prev, next) {
-    debugPrint("🔄 User document changed - refreshing router redirects");
-    // Bump the same notifier; ValueNotifier notifies even with the same value.
-    // Force a notify regardless of equality.
     refreshTick.value++;
   });
 
@@ -149,25 +107,16 @@ final routerProvider = Provider<GoRouter>((ref) {
     initialLocation: '/splash-start',
     debugLogDiagnostics: true,
     redirect: (context, state) async {
-      // Watch the initialization provider.
       final userDocument = ref.read(userDocumentProvider);
 
-      debugPrint(
-          "🔄 Router redirect called - location: ${state.matchedLocation}");
-      debugPrint(
-          "🔄 Auth state: loading=${authState.isLoading}, hasError=${authState.hasError}, value=${authState.valueOrNull?.uid}");
-
-      // While auth state is loading, show the splash screen.
       if (authState.isLoading || authState.hasError) {
-        debugPrint(
-            "🔄 Auth still loading or has error, staying on current location");
-        return null; // Returning null from redirect preserves the current location
+        return null;
       }
 
       final isLoggedIn = authState.valueOrNull != null;
       final onSplash = state.matchedLocation == '/splash-start';
 
-      // Case A: NOT logged in → keep on splash and trigger anon sign-in once
+      // Not logged in - trigger anonymous sign-in
       if (!isLoggedIn) {
         if (onSplash) {
           if (!ref.read(_signInTriggeredProvider)) {
@@ -176,17 +125,15 @@ final routerProvider = Provider<GoRouter>((ref) {
               FirebaseAuth.instance.signInAnonymously();
             });
           }
-          return null; // stay on splash while sign-in happens
+          return null;
         }
         return '/splash-start';
       }
 
-      // Case B: Logged in but user doc not ready → keep/return to splash
+      // User document not ready - return to splash
       if (userDocument.isLoading ||
           userDocument.hasError ||
           !userDocument.hasValue) {
-        debugPrint(
-            "🔄 Gatekeeper: Logged in but user document not ready (loading=${userDocument.isLoading}, hasError=${userDocument.hasError}, hasValue=${userDocument.hasValue}). Staying on/returning to splash.");
         return onSplash ? null : '/splash-start';
       }
 
@@ -201,43 +148,19 @@ final routerProvider = Provider<GoRouter>((ref) {
       //         .doc(uid)
       //         .get();
 
-      //     if (!userDoc.exists) {
-      //       debugPrint("🔄 Creating user document in router for $uid");
-      //       await FirebaseFirestore.instance.collection('users').doc(uid).set({
-      //         'uid': uid,
-      //         'displayName': 'User ${uid.substring(0, 6)}',
-      //         'createdAt': FieldValue.serverTimestamp(),
-      //         'isPremium': false,
-      //         'dailyPeekCount': 0,
-      //         'isAnonymous': authState.valueOrNull!.isAnonymous,
-      //       });
-      //     }
-      //   } catch (e) {
-      //     debugPrint("🔄 Error creating user doc in router: $e");
-      //   }
-      // }
-
       final termsAccepted = prefs.getBool('termsAccepted') ?? false;
       final onboardingComplete = prefs.getBool(onboardingCompleteKey) ?? false;
-      final onAuthFlow = state.matchedLocation == '/terms' ||
-          state.matchedLocation == '/onboarding';
 
       final currentPath = state.matchedLocation;
 
       if (!termsAccepted) {
-        // return onAuthFlow ? null : '/terms';
         return currentPath == '/terms' ? null : '/terms';
       }
 
       if (!onboardingComplete) {
-        // return onAuthFlow ? null : '/onboarding';
         return currentPath == '/onboarding' ? null : '/onboarding';
       }
 
-      // If the user is fully set up and is on any of the initial screens, go to home.
-      // if (onSplash || onAuthFlow) {
-      //   return '/';
-      // }
       if (onboardingComplete && onSplash) {
         return '/';
       }
