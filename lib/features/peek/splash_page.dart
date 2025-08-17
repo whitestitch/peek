@@ -8,6 +8,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:go_router/go_router.dart';
 import 'package:peek/core/firestore_service.dart';
+import 'package:peek/core/widgets/peek_loading_indicator.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// SplashPage:
@@ -163,13 +164,10 @@ class _SplashPageState extends ConsumerState<SplashPage> {
     // --- Build Logic based on State ---
     if (_isLoading) {
       // State 1: Loading URL/preparing
-      content = const Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          CircularProgressIndicator(color: Colors.white),
-          SizedBox(height: 20),
-          Text("Preparing Peek...", style: TextStyle(color: Colors.white70)),
-        ],
+      content = const PeekLoadingIndicator.medium(
+        logoColor: Colors.white,
+        loadingText: "Preparing Peek...",
+        textStyle: TextStyle(color: Colors.white70),
       );
     } else if (_errorMessage != null) {
       // State 2: Error occurred during preparation

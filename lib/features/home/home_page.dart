@@ -17,6 +17,7 @@ import 'package:peek/features/home/providers/home_state_provider.dart';
 
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:peek/theme/colors.dart';
+import 'package:peek/core/widgets/peek_loading_indicator.dart';
 import 'package:rive/rive.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:peek/main.dart';
@@ -246,8 +247,7 @@ class _HomePageState extends ConsumerState<HomePage> {
 
     return material.Center(
       child: homeStateAsync.when(
-        loading: () =>
-            const material.CircularProgressIndicator(color: peekPrimaryColor),
+        loading: () => const PeekLoadingIndicator.medium(),
         error: (e, _) => _buildErrorUI('Error loading user data.'),
         data: (state) {
           _manageCooldownTimer(state.cooldownEndTime);
@@ -323,8 +323,8 @@ class _HomePageState extends ConsumerState<HomePage> {
                                   : peekSurfaceColor.withOpacity(0.5),
                             ),
                             child: isLoading
-                                ? const material.CircularProgressIndicator(
-                                    color: material.Colors.white)
+                                ? const PeekLoadingIndicator.small(
+                                    logoColor: material.Colors.white)
                                 : isCooldownActive && _secondsRemaining != null
                                     ? material.Text(
                                         '$_secondsRemaining',
@@ -391,9 +391,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                         // ),
                       ),
                     ),
-                  // DEBUG
-                  // DEBUG
-                  // DEBUG
+                  // Development helper
 
                   if (kDebugMode)
                     material.Padding(
@@ -419,9 +417,6 @@ class _HomePageState extends ConsumerState<HomePage> {
                       ),
                     ),
 
-                  // END DEBUG
-                  // END DEBUG
-                  // END DEBUG
                   // -------------  Space
                   // const material.SizedBox(height: 20),
                   // material.SizedBox(

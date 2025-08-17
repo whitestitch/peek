@@ -7,6 +7,7 @@ import 'package:peek/core/providers.dart';
 import 'package:peek/features/onboarding/providers/onboarding_provider.dart';
 import 'package:peek/features/onboarding/widgets/onboarding_slide.dart';
 import 'package:peek/theme/colors.dart';
+import 'package:peek/core/widgets/peek_loading_indicator.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:peek/core/firestore_service.dart';
 
@@ -136,7 +137,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
     return userDocAsync.when(
       loading: () => const Scaffold(
         backgroundColor: peekBackgroundColor,
-        body: Center(child: CircularProgressIndicator()),
+        body: const Center(child: PeekLoadingIndicator.medium()),
       ),
       error: (err, stack) => Scaffold(
         backgroundColor: peekBackgroundColor,
@@ -305,9 +306,8 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                 ? const SizedBox(
                     height: 24,
                     width: 24,
-                    child: CircularProgressIndicator(
-                      color: peekSurfaceColor,
-                      strokeWidth: 3,
+                    child: PeekLoadingIndicator.small(
+                      logoColor: peekSurfaceColor,
                     ),
                   )
                 : const Text('Enable Location'),

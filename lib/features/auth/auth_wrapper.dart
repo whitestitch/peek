@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:peek/core/widgets/peek_loading_indicator.dart';
 import 'package:peek/core/providers.dart';
 import 'package:peek/features/home/home_page.dart';
 import 'package:peek/features/onboarding/pages/onboarding_page.dart';
@@ -34,7 +35,7 @@ class AuthWrapper extends ConsumerWidget {
       // While the auth state is being determined, show a loading spinner.
       loading: () => const Scaffold(
         body: Center(
-          child: CircularProgressIndicator(),
+          child: PeekLoadingIndicator.medium(),
         ),
       ),
       // If there's an error fetching the auth state, show an error message.

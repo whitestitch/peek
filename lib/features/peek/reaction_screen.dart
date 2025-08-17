@@ -12,6 +12,7 @@ import 'package:go_router/go_router.dart';
 // import 'package:lottie/lottie.dart';
 import 'package:peek/theme/colors.dart';
 import 'package:peek/core/firestore_service.dart';
+import 'package:peek/core/widgets/peek_loading_indicator.dart';
 
 class ReactionScreen extends ConsumerStatefulWidget {
   final String requestId;
@@ -306,7 +307,8 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
     if (_isLoading) {
       return const Scaffold(
         backgroundColor: Colors.black,
-        body: Center(child: CircularProgressIndicator(color: Colors.white)),
+        body: const Center(
+            child: PeekLoadingIndicator.medium(logoColor: Colors.white)),
       );
     }
 
@@ -338,7 +340,7 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
             loadingBuilder: (context, child, loadingProgress) {
               if (loadingProgress == null) return child;
               return const Center(
-                  child: CircularProgressIndicator(color: Colors.white));
+                  child: PeekLoadingIndicator.small(logoColor: Colors.white));
             },
             errorBuilder: (context, error, stackTrace) {
               // This error should now be much rarer
@@ -560,7 +562,7 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
               child: Container(
                 color: Colors.black.withOpacity(0.6),
                 child: const Center(
-                    child: CircularProgressIndicator(color: Colors.white)),
+                    child: PeekLoadingIndicator.small(logoColor: Colors.white)),
               ),
             )
         ],
