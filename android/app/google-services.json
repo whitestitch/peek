@@ -1,45 +1,43 @@
 {
   "project_info": {
-    "project_number": "96119580821",
-    "project_id": "peek-fire",
-    "storage_bucket": "peek-fire.firebasestorage.app"
+    "project_number": "458153260208",
+    "project_id": "peekio-db",
+    "storage_bucket": "peekio-db.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:96119580821:android:5a073baaaedf340e17939c",
-        "android_client_info": {
-          "package_name": "com.example.peek"
-        }
-      },
-      "oauth_client": [],
-      "api_key": [
-        {
-          "current_key": "AIzaSyBFctI-qM68_pf2VSxH5qNJMbxQRdSfnbs"
-        }
-      ],
-      "services": {
-        "appinvite_service": {
-          "other_platform_oauth_client": []
-        }
-      }
-    },
-    {
-      "client_info": {
-        "mobilesdk_app_id": "1:96119580821:android:44958f8030bf285217939c",
+        "mobilesdk_app_id": "1:458153260208:android:1d3ff67e6429f6cf30f775",
         "android_client_info": {
           "package_name": "com.fab.peek"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "458153260208-abkb59p3q9c37jb88ak3rnslfjb8qrgg.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
-          "current_key": "AIzaSyBFctI-qM68_pf2VSxH5qNJMbxQRdSfnbs"
+          "current_key": "AIzaSyAtvrAWS-wmC3pobfprw9ElCNyUKFp1grI"
         }
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "458153260208-abkb59p3q9c37jb88ak3rnslfjb8qrgg.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "458153260208-o07aepatsq9sjdltm0re07fk8eoq868e.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.fab.peek"
+              }
+            }
+          ]
         }
       }
     }

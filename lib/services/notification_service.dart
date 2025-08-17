@@ -1,6 +1,6 @@
 // services/notification_service.dart
 import 'dart:async';
-import 'dart:io'; // Required for Platform check
+import 'dart:io';
 import 'package:flutter/material.dart';
 
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -53,48 +53,70 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     return; // Exit immediately.
   }
 
-  // 2. If in background, create and show a LOCAL notification.
-  final title = message.data['title'] as String?;
-  final body = message.data['body'] as String?;
-
-  if (title != null && body != null) {
-    final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
-
-    // Define platform-specific details
-    const androidDetails = AndroidNotificationDetails(
-      'peek_requests_channel', // MUST match the channel ID from the class
-      'Peek Requests',
-      channelDescription: 'Channel for new Peek request notifications.',
-      importance: Importance.max,
-      priority: Priority.high,
-      icon: '@mipmap/ic_launcher',
-    );
-    const iosDetails = DarwinNotificationDetails(
-      presentAlert: true,
-      presentBadge: true,
-      presentSound: true,
-    );
-    const notificationDetails = NotificationDetails(
-      android: androidDetails,
-      iOS: iosDetails,
-    );
-
-    // Initialize the plugin (safe to call multiple times)
-    await flutterLocalNotificationsPlugin.initialize(
-        const InitializationSettings(
-            android: AndroidInitializationSettings('@mipmap/ic_launcher'),
-            iOS: DarwinInitializationSettings()));
-
-    // Show the notification
-    await flutterLocalNotificationsPlugin.show(
-      message.hashCode,
-      title,
-      body,
-      notificationDetails,
-    );
+  // If the remote push already includes a 'notification' block,
+  // iOS will show the system alert. Avoid creating a duplicate local notif.
+  if (message.notification != null) {
     debugPrint(
-        "[NotificationService BG Handler] App in background, local notification shown.");
+        "[NotificationService BG Handler] Remote 'notification' present; relying on system UI.");
+    return;
   }
+
+  // 2. For iOS: If the message has a notification block, let the OS handle it
+  // iOS will automatically display the notification from the APNs payload
+  if (Platform.isIOS && message.notification != null) {
+    debugPrint(
+        "[NotificationService BG Handler] iOS notification block present - OS will handle display automatically");
+    return;
+  }
+
+  // 3. For Android or data-only messages: Create local notification if needed
+  if (Platform.isAndroid || message.notification == null) {
+    final title =
+        message.data['title'] as String? ?? message.notification?.title;
+    final body = message.data['body'] as String? ?? message.notification?.body;
+
+    if (title != null && body != null) {
+      await _showLocalNotification(title, body, message.hashCode);
+    }
+  }
+}
+
+// Helper function for background handler (must be top-level)
+Future<void> _showLocalNotification(String title, String body, int id) async {
+  final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+
+  // Define platform-specific details
+  const androidDetails = AndroidNotificationDetails(
+    'peek_requests_channel',
+    'Peek Requests',
+    channelDescription: 'Channel for new Peek request notifications.',
+    importance: Importance.max,
+    priority: Priority.high,
+    icon: '@mipmap/ic_launcher',
+  );
+  const iosDetails = DarwinNotificationDetails(
+    presentAlert: true,
+    presentBadge: true,
+    presentSound: true,
+  );
+  const notificationDetails = NotificationDetails(
+    android: androidDetails,
+    iOS: iosDetails,
+  );
+
+  // Initialize the plugin (safe to call multiple times)
+  await flutterLocalNotificationsPlugin.initialize(const InitializationSettings(
+      android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+      iOS: DarwinInitializationSettings()));
+
+  // Show the notification
+  await flutterLocalNotificationsPlugin.show(
+    id,
+    title,
+    body,
+    notificationDetails,
+  );
+  debugPrint("[NotificationService] Local notification shown: $title");
 }
 
 class NotificationService {
@@ -208,7 +230,7 @@ class NotificationService {
       announcement: false,
       badge: true,
       carPlay: false,
-      criticalAlert: false,
+      criticalAlert: true, // Enable critical alerts for better delivery
       provisional: false,
       sound: true,
     );
@@ -226,9 +248,10 @@ class NotificationService {
     //   );
     // }
 
-    // Apply suppression to **both** iOS and Android
+    // Apply suppression ONLY to foreground notifications
+    // Background notifications will be handled by the system
     await _firebaseMessaging.setForegroundNotificationPresentationOptions(
-      alert: false,
+      alert: false, // Suppress alerts in foreground only
       badge: true,
       sound: true,
     );
@@ -403,19 +426,41 @@ class NotificationService {
   Future<void> _getAndSaveTokens() async {
     // Keep your existing token saving logic
     try {
+      // Force delete old token and get a fresh one
+      await _firebaseMessaging.deleteToken();
+      debugPrint('🗑️ [NotificationService] Old FCM token deleted');
+
       final fcmToken = await _firebaseMessaging.getToken();
       debugPrint('📲 [NotificationService] FCM Token: $fcmToken');
       final uid = _auth.currentUser?.uid;
       if (uid != null && fcmToken != null) {
-        await _firestore.collection('users').doc(uid).set({
-          'fcmToken': fcmToken,
-          'fcmTokenTimestamp':
-              FieldValue.serverTimestamp(), // Good to track when it was updated
-        }, SetOptions(merge: true));
-        debugPrint('✅ [NotificationService] FCM Token saved to Firestore');
+        // Add detailed error handling for Firestore write
+        try {
+          await _firestore.collection('users').doc(uid).set({
+            'fcmToken': fcmToken,
+            'fcmTokenTimestamp': FieldValue
+                .serverTimestamp(), // Good to track when it was updated
+          }, SetOptions(merge: true));
+
+          // Verify the write succeeded by reading it back
+          final doc = await _firestore.collection('users').doc(uid).get();
+          final savedToken = doc.data()?['fcmToken'] as String?;
+
+          if (savedToken == fcmToken) {
+            debugPrint(
+                '✅ [NotificationService] FCM Token saved to Firestore and verified');
+          } else {
+            debugPrint(
+                '❌ [NotificationService] FCM Token save verification FAILED. Expected: $fcmToken, Got: $savedToken');
+          }
+        } catch (firestoreError) {
+          debugPrint(
+              '❌ [NotificationService] Firestore write failed: $firestoreError');
+          rethrow; // Re-throw to be caught by outer catch
+        }
       } else {
         debugPrint(
-          '⚠️ [NotificationService] User ID or FCM token is null, cannot save.',
+          '⚠️ [NotificationService] User ID or FCM token is null, cannot save. UID: $uid, Token: $fcmToken',
         );
       }
     } catch (e) {

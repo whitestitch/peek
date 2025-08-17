@@ -424,6 +424,9 @@ class _PeekAppState extends ConsumerState<PeekApp> with WidgetsBindingObserver {
       debugPrint("[PeekApp] ✅ Sign-out complete.");
     }
 
+    // Initialize notification service
+    await _initializeNotificationService();
+
     // Attach the listener AFTER the initial state has been settled.
     FirebaseAuth.instance.authStateChanges().listen((User? user) {
       if (mounted && user == null) {

@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 // REMOVED: import 'package:peek/features/peek/controllers/peek_controller.dart';
 import '../data/peek_repository.dart';
 import '../../../core/overlay_animation_service.dart';
+import 'package:peek/features/onboarding/providers/onboarding_provider.dart';
 
 final peekAuthUidProvider = StreamProvider<String?>((ref) {
   return FirebaseAuth.instance.authStateChanges().map((user) => user?.uid);
@@ -17,6 +18,10 @@ final peekRepositoryProvider = Provider<PeekRepository>((ref) {
     auth: FirebaseAuth.instance,
   );
 });
+
+/// Captures the moment this ProviderScope came alive.
+/// Used to ignore any "old" reaction docs on the first snapshot.
+final appStartTimeProvider = Provider<DateTime>((ref) => DateTime.now());
 
 final navigatorKeyProvider = Provider<GlobalKey<NavigatorState>>((ref) {
   throw UnimplementedError(
@@ -178,10 +183,15 @@ final newReactionStreamProvider = StreamProvider.autoDispose<
     return Stream.value([]);
   }
 
+  // Only consider reactions created after this app session started.
+  final appStart = ref.read(appStartTimeProvider);
+
   return FirebaseFirestore.instance
       .collection('users')
       .doc(uid)
       .collection('received_reactions')
+      // Filter out any historical/backlog docs on the initial snapshot.
+      .where('timestamp', isGreaterThan: Timestamp.fromDate(appStart))
       .orderBy('timestamp', descending: false)
       .snapshots()
       .map((snap) => snap.docs);
@@ -197,6 +207,13 @@ final processedReactionIdsProvider = StateProvider<Set<String>>((ref) => {});
 final reactionOverlayListenerProvider = Provider.autoDispose<void>((ref) {
   final overlay = ref.read(overlayAnimationServiceProvider);
 
+  final onboardingDone = ref
+      .watch(onboardingCompleteProvider)
+      .maybeWhen(data: (v) => v, orElse: () => false);
+
+  // first emission guard
+  var primed = false;
+
   ref.listen(
     newReactionStreamProvider,
     (previous, next) {
@@ -207,20 +224,52 @@ final reactionOverlayListenerProvider = Provider.autoDispose<void>((ref) {
       final processedCtl = ref.read(processedReactionIdsProvider.notifier);
       final already = {...processedCtl.state};
 
+      // On the *first* snapshot, only animate docs created *after* app start.
+      // Everything older (or missing timestamp) is "primed" without animation.
+      if (!primed) {
+        final appStart = ref.read(appStartTimeProvider); // defined earlier
+
+        // If onboarding isn't done yet, or this is the first emission for this session,
+        // prime all existing docs as processed WITHOUT animating.
+        // We detect "first emission" by the processed set being empty.
+        final isFirstEmission = already.isEmpty;
+        if (!onboardingDone || isFirstEmission) {
+          for (final doc in docs) {
+            already.add(doc.id);
+          }
+          processedCtl.state = already; // ✅ prime & bail
+          return;
+        }
+
+        // Subsequent emissions: animate only truly new docs.
+        for (final doc in docs) {
+          final id = doc.id;
+          if (already.contains(id)) continue;
+          final data = doc.data();
+          final type = (data['reactionType'] ?? '').toString().toLowerCase();
+          if (type == 'like') {
+            overlay.showLikeAnimation();
+          } else if (type == 'dislike') {
+            overlay.showDislikeAnimation();
+          }
+          already.add(id);
+        }
+        processedCtl.state = already;
+        primed = true;
+        return;
+      }
+
+      // Subsequent snapshots: animate only truly new docs.
       for (final doc in docs) {
         final id = doc.id;
         if (already.contains(id)) continue;
-
         final data = doc.data();
         final type = (data['reactionType'] ?? '').toString().toLowerCase();
-
         if (type == 'like') {
           overlay.showLikeAnimation();
         } else if (type == 'dislike') {
           overlay.showDislikeAnimation();
         }
-
-        // Mark as processed so we don't replay this doc again.
         already.add(id);
       }
 
