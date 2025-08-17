@@ -46,6 +46,17 @@ class CountdownManager {
     });
   }
 
+  /// Start countdown manually (when camera is ready)
+  void startManualCountdown({int durationSeconds = 30}) {
+    if (_countdownHasBeenTriggered) return;
+
+    _countdownHasBeenTriggered = true;
+    final deadline = DateTime.now().add(Duration(seconds: durationSeconds));
+    _startCountdown(deadline);
+    debugPrint(
+        "[CountdownManager] Manual countdown started: ${durationSeconds}s");
+  }
+
   /// Start countdown timer
   void _startCountdown(DateTime deadline) {
     if (_countdownTimer?.isActive ?? false) return;

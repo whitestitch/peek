@@ -58,6 +58,8 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
   // State
   String? _currentLocation;
   bool _isInitializing = true;
+  bool _isProcessingAction = false;
+  bool _isButtonPressed = false;
 
   @override
   void initState() {
@@ -72,7 +74,10 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
     // Initialize with empty cameras list - will be recreated in _initializeCapture
     _cameraManager = CameraControllerManager(
       cameras: [],
-      onCameraInitialized: () => setState(() {}),
+      onCameraInitialized: () {
+        _triggerCountdownStart();
+        setState(() {});
+      },
       onError: _handleError,
       onCameraChanged: () => setState(() {}),
     );
@@ -97,7 +102,11 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
     );
 
     _countdownManager = CountdownManager(
-      onCountdownUpdate: (seconds) => setState(() {}),
+      onCountdownUpdate: (seconds) {
+        debugPrint(
+            "[PhotoCapturePage] Countdown update: ${seconds}s remaining");
+        setState(() {});
+      },
       onCountdownComplete: _triggerCountdownStart,
       onTimeout: _handleTimeout,
     );
@@ -154,31 +163,61 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
 
   /// Handle capture button press
   Future<void> _handleCapturePress() async {
-    if (_captureLogic.capturedImageBytes != null) {
-      // Upload existing photo
-      await _captureLogic.uploadPhoto(
-        requestId: widget.requestId,
-        senderLocation: _currentLocation,
-      );
-    } else {
-      // Take new photo
-      await _captureLogic.takePicture(
-        controller: _cameraManager.controller,
-        isFrontCamera: _cameraManager.isFrontCamera,
-      );
+    // Prevent multiple rapid taps
+    if (_isProcessingAction) return;
+
+    setState(() => _isProcessingAction = true);
+
+    try {
+      if (_captureLogic.capturedImageBytes != null) {
+        // Upload existing photo
+        debugPrint("[PhotoCapturePage] Starting photo upload...");
+        await _captureLogic.uploadPhoto(
+          requestId: widget.requestId,
+          senderLocation: _currentLocation,
+          senderDisplayName: _userSettings.senderDisplayName,
+          senderAvatarUrl: _userSettings.senderAvatarUrl,
+        );
+      } else {
+        // Take new photo
+        debugPrint("[PhotoCapturePage] Taking photo...");
+        await _captureLogic.takePicture(
+          controller: _cameraManager.controller,
+        );
+      }
+    } catch (e) {
+      debugPrint("[PhotoCapturePage] Action failed: $e");
+      _handleError("Action failed: $e");
+    } finally {
+      if (mounted) {
+        setState(() => _isProcessingAction = false);
+      }
     }
   }
 
   /// Handle retake button press
   void _handleRetake() {
-    _captureLogic.retakePicture();
-    setState(() {});
+    if (_isProcessingAction) return;
+
+    setState(() => _isProcessingAction = true);
+
+    try {
+      _captureLogic.retakePicture();
+      setState(() {});
+    } catch (e) {
+      debugPrint("[PhotoCapturePage] Retake failed: $e");
+      _handleError("Retake failed: $e");
+    } finally {
+      if (mounted) {
+        setState(() => _isProcessingAction = false);
+      }
+    }
   }
 
-  /// Handle camera switch
-  Future<void> _handleCameraSwitch() async {
-    await _cameraManager.switchCamera();
-  }
+  /// Handle camera switch - REMOVED: Only back camera allowed
+  // Future<void> _handleCameraSwitch() async {
+  //   await _cameraManager.switchCamera();
+  // }
 
   /// Handle upload success
   void _handleUploadSuccess(String downloadUrl) {
@@ -199,12 +238,88 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
 
   /// Handle timeout
   void _handleTimeout() {
-    context.go('/peek-timed-out?requestId=${widget.requestId}');
+    if (!mounted) return;
+
+    debugPrint("[PhotoCapturePage] Capture timeout reached - showing modal");
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        // Auto-close after 5 seconds
+        Future.delayed(const Duration(seconds: 5), () {
+          if (ctx.mounted) {
+            Navigator.of(ctx).pop();
+          }
+        });
+
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(20),
+          decoration: const BoxDecoration(
+            color: Colors.black87,
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(20),
+              topRight: Radius.circular(20),
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.timer_off_outlined,
+                  size: 60, color: Colors.white70),
+              const SizedBox(height: 20),
+              const Text("Time's Up!",
+                  style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white)),
+              const SizedBox(height: 10),
+              const Text("The photo capture window has expired.",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 16, color: Colors.white70)),
+              const SizedBox(height: 30),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: Colors.black,
+                    minimumSize: const Size(double.infinity, 50),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(30),
+                    ),
+                  ),
+                  child: const Text('OK',
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    ).then((_) {
+      // After the sheet is closed (either by timer or manually), navigate home
+      if (mounted) {
+        context.go('/');
+      }
+    });
   }
 
   /// Trigger countdown start
   void _triggerCountdownStart() {
+    // Ensure this is only called once (match original logic)
+    if (!mounted) return;
+
+    debugPrint(
+        "[PhotoCapturePage] Camera is ready, triggering countdown start.");
     _pulseController.repeat(reverse: true);
+
+    // Start the 30-second countdown manually
+    _countdownManager.startManualCountdown(durationSeconds: 30);
   }
 
   @override
@@ -295,19 +410,46 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
       );
     }
 
-    return Positioned.fill(
-      child: AspectRatio(
-        aspectRatio: _cameraManager.controller!.value.aspectRatio,
-        child: CameraPreview(_cameraManager.controller!),
-      ),
-    );
+    // Use FittedBox with proper dimensions like the original
+    Widget cameraPreviewWidget;
+    try {
+      cameraPreviewWidget = FittedBox(
+        fit: BoxFit.cover,
+        child: SizedBox(
+          width: _cameraManager.controller!.value.previewSize?.height ?? 100,
+          height: _cameraManager.controller!.value.previewSize?.width ?? 100,
+          child: CameraPreview(_cameraManager.controller!),
+        ),
+      );
+    } catch (e) {
+      debugPrint("❌ Error building CameraPreview widget with FittedBox: $e");
+      cameraPreviewWidget = const Center(
+        child: Text("Preview Error", style: TextStyle(color: Colors.red)),
+      );
+    }
+
+    return Positioned.fill(child: Center(child: cameraPreviewWidget));
   }
 
   /// Build countdown overlay
   Widget _buildCountdownOverlay() {
     return Positioned.fill(
       child: Container(
-        color: Colors.black.withOpacity(0.7),
+        // Show gradient background only when photo is taken (SEND button visible)
+        decoration: _captureLogic.capturedImageBytes != null
+            ? BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withOpacity(0.9),
+                    Colors.black.withOpacity(0.6),
+                    Colors.black.withOpacity(0.4),
+                  ],
+                ),
+              )
+            : null,
+        // No background during countdown, gradient only after photo capture
         child: Center(
           child: AnimatedBuilder(
             animation: _pulseAnimation,
@@ -317,7 +459,7 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
                 child: Text(
                   '${_countdownManager.secondsRemaining}',
                   style: const TextStyle(
-                    fontSize: 120,
+                    fontSize: 60,
                     fontWeight: FontWeight.bold,
                     color: Colors.white,
                   ),
@@ -337,24 +479,24 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
       left: 0,
       right: 0,
       child: Container(
-        padding: const EdgeInsets.all(24),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        padding: const EdgeInsets.only(
+          left: 24,
+          right: 24,
+          top: 24,
+          bottom: 79, // 24 + 35 + 20 = 79px total bottom padding
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            // Switch camera button
-            if (_cameras.length > 1)
-              IconButton(
-                onPressed: _handleCameraSwitch,
-                icon: const Icon(Icons.switch_camera,
-                    color: Colors.white, size: 32),
-              ),
-
-            // Capture/Upload button
-            GestureDetector(
-              onTap: _handleCapturePress,
-              child: Container(
+            // Main capture/upload button - centered with consistent positioning
+            Center(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                curve: Curves.easeInOut,
                 width: 80,
                 height: 80,
+                transform: Matrix4.identity()
+                  ..scale(_isButtonPressed ? 0.95 : 1.0),
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: _captureLogic.capturedImageBytes != null
@@ -362,24 +504,86 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
                       : Colors.white,
                   border: Border.all(color: Colors.white, width: 4),
                 ),
-                child: Icon(
-                  _captureLogic.capturedImageBytes != null
-                      ? Icons.upload
-                      : Icons.camera_alt,
-                  color: _captureLogic.capturedImageBytes != null
-                      ? Colors.white
-                      : Colors.black,
-                  size: 32,
+                child: GestureDetector(
+                  onTap: _isProcessingAction ? null : _handleCapturePress,
+                  onTapDown: (_) => setState(() => _isButtonPressed = true),
+                  onTapUp: (_) => setState(() => _isButtonPressed = false),
+                  onTapCancel: () => setState(() => _isButtonPressed = false),
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 300),
+                    transitionBuilder:
+                        (Widget child, Animation<double> animation) {
+                      return ScaleTransition(
+                        scale: animation,
+                        child: FadeTransition(
+                          opacity: animation,
+                          child: child,
+                        ),
+                      );
+                    },
+                    child: _isProcessingAction
+                        ? const SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor:
+                                  AlwaysStoppedAnimation<Color>(Colors.white),
+                            ),
+                          )
+                        : Icon(
+                            _captureLogic.capturedImageBytes != null
+                                ? Icons.send_rounded // ✅ Consistent send icon
+                                : Icons.camera_alt,
+                            color: _captureLogic.capturedImageBytes != null
+                                ? Colors
+                                    .white // ✅ Consistent white color for send
+                                : Colors.black,
+                            size: 32,
+                            key: ValueKey(
+                                _captureLogic.capturedImageBytes != null),
+                          ),
+                  ),
                 ),
               ),
             ),
 
-            // Retake button
-            if (_captureLogic.capturedImageBytes != null)
-              IconButton(
-                onPressed: _handleRetake,
-                icon: const Icon(Icons.refresh, color: Colors.white, size: 32),
+            // Retake button - always present but hidden when not needed
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOut,
+              height: _captureLogic.capturedImageBytes != null ? 56 : 0,
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 300),
+                opacity: _captureLogic.capturedImageBytes != null ? 1.0 : 0.0,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 16),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        onPressed: _isProcessingAction ? null : _handleRetake,
+                        icon: _isProcessingAction
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                      Colors.white),
+                                ),
+                              )
+                            : const Icon(
+                                Icons.refresh,
+                                color: Colors.white,
+                                size: 32,
+                              ),
+                      ),
+                      const Spacer(), // ✅ Push retake button to left
+                    ],
+                  ),
+                ),
               ),
+            ),
           ],
         ),
       ),

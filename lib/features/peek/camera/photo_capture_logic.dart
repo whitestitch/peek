@@ -3,9 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:image/image.dart' as img;
 
 /// Handles photo capture, processing, and upload logic
 class PhotoCaptureLogic {
@@ -38,14 +36,15 @@ class PhotoCaptureLogic {
   Uint8List? get capturedImageBytes => _capturedImageBytes;
   File? get tempProcessedFile => _tempProcessedFile;
 
-  /// Capture photo with flip logic for front camera
+  /// Capture photo - back camera only (no flip needed)
   Future<void> takePicture({
     required CameraController? controller,
-    required bool isFrontCamera,
   }) async {
     if (_isTakingPicture ||
         controller == null ||
         !controller.value.isInitialized) {
+      debugPrint(
+          "[PhotoCapture] Take picture blocked: _isTakingPicture=$_isTakingPicture, controller=${controller != null}, initialized=${controller?.value.isInitialized}");
       return;
     }
 
@@ -57,50 +56,53 @@ class PhotoCaptureLogic {
       final XFile imageFile = await controller.takePicture();
       final Uint8List imageBytes = await imageFile.readAsBytes();
 
-      // Process image (flip if front camera)
-      Uint8List processedBytes = imageBytes;
-      if (isFrontCamera) {
-        processedBytes = await _flipImageHorizontally(imageBytes);
-      }
-
-      _capturedImageBytes = processedBytes;
+      // No flip needed for back camera
+      _capturedImageBytes = imageBytes;
       debugPrint("[PhotoCapture] Picture captured successfully");
       onCaptureComplete?.call();
     } catch (e) {
       debugPrint("[PhotoCapture] Error taking picture: $e");
       onError?.call("Failed to capture photo: $e");
+      // Reset state on error
+      _capturedImageBytes = null;
     } finally {
       _isTakingPicture = false;
     }
   }
 
-  /// Flip image horizontally for front camera
-  Future<Uint8List> _flipImageHorizontally(Uint8List imageBytes) async {
-    try {
-      final img.Image? originalImage = img.decodeImage(imageBytes);
-      if (originalImage == null) {
-        debugPrint("[PhotoCapture] Failed to decode image for flipping");
-        return imageBytes; // Return original if decode fails
-      }
+  /// Flip image horizontally for front camera - REMOVED: Only back camera allowed
+  // Future<Uint8List> _flipImageHorizontally(Uint8List imageBytes) async {
+  //   try {
+  //     final img.Image? originalImage = img.decodeImage(imageBytes);
+  //     if (originalImage == null) {
+  //       debugPrint("[PhotoCapture] Failed to decode image for flipping");
+  //       return imageBytes; // Return original if decode fails
+  //     }
 
-      final img.Image flippedImage = img.flipHorizontal(originalImage);
-      final Uint8List flippedBytes =
-          Uint8List.fromList(img.encodeJpg(flippedImage));
+  //     final img.Image flippedImage = img.flipHorizontal(originalImage);
+  //     final Uint8List flippedBytes =
+  //         Uint8List.fromList(img.encodeJpt(flippedImage));
 
-      debugPrint("[PhotoCapture] Image flipped successfully");
-      return flippedBytes;
-    } catch (e) {
-      debugPrint("[PhotoCapture] Error flipping image: $e");
-      return imageBytes; // Return original if flip fails
-    }
-  }
+  //     debugPrint("[PhotoCapture] Image flipped successfully");
+  //     return flippedBytes;
+  //   } catch (e) {
+  //       debugPrint("[PhotoCapture] Error flipping image: $e");
+  //       return imageBytes; // Return original if flip fails
+  //     }
+  // }
 
   /// Upload photo to Firebase Storage
   Future<void> uploadPhoto({
     required String requestId,
     String? senderLocation,
+    String? senderDisplayName,
+    String? senderAvatarUrl,
   }) async {
-    if (_capturedImageBytes == null || _uploading) return;
+    if (_capturedImageBytes == null || _uploading) {
+      debugPrint(
+          "[PhotoCapture] Upload blocked: _capturedImageBytes=${_capturedImageBytes != null}, _uploading=$_uploading");
+      return;
+    }
 
     _uploading = true;
     onUploadStart?.call();
@@ -128,6 +130,8 @@ class PhotoCaptureLogic {
         requestId: requestId,
         imageUrl: downloadUrl,
         senderLocation: senderLocation,
+        senderDisplayName: senderDisplayName,
+        senderAvatarUrl: senderAvatarUrl,
       );
 
       onUploadSuccess?.call(downloadUrl);
@@ -145,6 +149,8 @@ class PhotoCaptureLogic {
     required String requestId,
     required String imageUrl,
     String? senderLocation,
+    String? senderDisplayName,
+    String? senderAvatarUrl,
   }) async {
     try {
       final updateData = {
@@ -152,6 +158,15 @@ class PhotoCaptureLogic {
         'imageUrl': imageUrl,
         'respondedAt': FieldValue.serverTimestamp(),
       };
+
+      // Add sender information if provided
+      if (senderDisplayName != null && senderDisplayName.isNotEmpty) {
+        updateData['senderDisplayName'] = senderDisplayName;
+      }
+
+      if (senderAvatarUrl != null && senderAvatarUrl.isNotEmpty) {
+        updateData['senderAvatarUrl'] = senderAvatarUrl;
+      }
 
       // Add location if provided
       if (senderLocation != null && senderLocation.isNotEmpty) {
@@ -163,7 +178,8 @@ class PhotoCaptureLogic {
           .doc(requestId)
           .update(updateData);
 
-      debugPrint("[PhotoCapture] Firestore updated successfully");
+      debugPrint(
+          "[PhotoCapture] Firestore updated successfully with sender info: $senderDisplayName");
     } catch (e) {
       debugPrint("[PhotoCapture] Firestore update failed: $e");
       throw Exception("Failed to update request status: $e");

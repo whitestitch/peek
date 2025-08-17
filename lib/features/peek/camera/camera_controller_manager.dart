@@ -123,45 +123,45 @@ class CameraControllerManager with WidgetsBindingObserver {
     }
   }
 
-  /// Switch between front and back camera
-  Future<void> switchCamera() async {
-    if (cameras.length < 2 || _isChangingCamera || _isCameraInitializing) {
-      debugPrint("[CameraController] Switch camera blocked");
-      return;
-    }
+  /// Switch between front and back camera - REMOVED: Only back camera allowed
+  // Future<void> switchCamera() async {
+  //   if (cameras.length < 2 || _isChangingCamera || _isCameraInitializing) {
+  //     debugPrint("[CameraController] Switch camera blocked");
+  //     return;
+  //   }
 
-    _isChangingCamera = true;
+  //   _isChangingCamera = true;
 
-    // Find opposite camera
-    final currentDirection = cameras[_selectedCameraIndex].lensDirection;
-    final targetDirection = currentDirection == CameraLensDirection.back
-        ? CameraLensDirection.front
-        : CameraLensDirection.back;
+  //   // Find opposite camera
+  //   final currentDirection = cameras[_selectedCameraIndex].lensDirection;
+  //   // final targetDirection = currentDirection == CameraLensDirection.back
+  //   //     ? CameraLensDirection.front
+  //   //     : CameraLensDirection.back;
 
-    final newCameraIndex = cameras.indexWhere(
-      (camera) => camera.lensDirection == targetDirection,
-    );
+  //   final newCameraIndex = cameras.indexWhere(
+  //     (camera) => camera.lensDirection == targetDirection,
+  //   );
 
-    if (newCameraIndex == -1) {
-      _isChangingCamera = false;
-      return;
-    }
+  //   if (newCameraIndex == -1) {
+  //     _isChangingCamera = false;
+  //     return;
+  //   }
 
-    _selectedCameraIndex = newCameraIndex;
-    onCameraChanged?.call();
+  //   _selectedCameraIndex = newCameraIndex;
+  //   onCameraChanged?.call();
 
-    await _initializeCamera(cameras[newCameraIndex]);
-    _isChangingCamera = false;
-  }
+  //   await _initializeCamera(cameras[newCameraIndex]);
+  //   _isChangingCamera = false;
+  // }
 
-  /// Check if current camera is front-facing
-  bool get isFrontCamera {
-    if (_selectedCameraIndex == -1 || _selectedCameraIndex >= cameras.length) {
-      return false;
-    }
-    return cameras[_selectedCameraIndex].lensDirection ==
-        CameraLensDirection.front;
-  }
+  /// Check if current camera is front-facing - REMOVED: Only back camera allowed
+  // bool get isFrontCamera {
+  //   if (_selectedCameraIndex == -1 || _selectedCameraIndex >= cameras.length) {
+  //     return false;
+  //   }
+  //   return cameras[_selectedCameraIndex].lensDirection ==
+  //       CameraLensDirection.front;
+  // }
 
   /// Handle app lifecycle changes
   @override
