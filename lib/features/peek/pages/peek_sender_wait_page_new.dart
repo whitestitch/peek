@@ -1,7 +1,6 @@
 // lib/features/peek/pages/peek_sender_wait_page_new.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:peek/features/peek/providers/peek_providers.dart';
 import 'package:peek/features/peek/controllers/peek_controller.dart';
 import 'package:peek/theme/colors.dart';
 import 'managers/peek_sender_wait_timer_manager.dart';
@@ -129,8 +128,6 @@ class _PeekSenderWaitPageNewState extends ConsumerState<PeekSenderWaitPageNew>
 
   @override
   Widget build(BuildContext context) {
-    ref.watch(reactionOverlayListenerProvider);
-
     return Scaffold(
       backgroundColor: peekBackgroundColor,
       appBar: _uiBuilder.buildAppBar(

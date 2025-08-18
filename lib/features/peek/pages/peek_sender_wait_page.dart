@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:peek/features/peek/controllers/peek_controller.dart';
-import 'package:peek/features/peek/providers/peek_providers.dart';
 import 'package:peek/theme/colors.dart';
 
 class PeekSenderWaitPage extends ConsumerStatefulWidget {
@@ -320,8 +319,6 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
 
   @override
   material.Widget build(material.BuildContext context) {
-    ref.watch(reactionOverlayListenerProvider);
-
     return material.Scaffold(
       backgroundColor: peekBackgroundColor,
 
