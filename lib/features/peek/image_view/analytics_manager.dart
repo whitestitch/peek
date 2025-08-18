@@ -39,9 +39,9 @@ class AnalyticsManager {
         name: 'peek_image_view_started',
         parameters: {
           'request_id': requestId,
-          'is_premium': isPremium,
+          'is_premium': isPremium ? 'true' : 'false',
           'sender_name': senderDisplayName ?? 'anonymous',
-          'has_location': senderLocation != null,
+          'has_location': senderLocation != null ? 'true' : 'false',
           'timestamp': _viewStartTime!.millisecondsSinceEpoch,
         },
       );

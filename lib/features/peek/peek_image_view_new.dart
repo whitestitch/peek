@@ -1,9 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+
 import 'package:peek/features/peek/image_view/image_display_manager.dart';
 import 'package:peek/features/peek/image_view/view_timer_manager.dart';
 import 'package:peek/features/peek/image_view/user_permissions_manager.dart';
@@ -45,6 +46,16 @@ class _PeekImageViewState extends ConsumerState<PeekImageView> {
     super.initState();
     _initializeManagers();
     _loadAllData();
+
+    // Make status bar transparent for better edge spacing
+    SystemChrome.setSystemUIOverlayStyle(
+      const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light,
+        systemNavigationBarColor: Colors.transparent,
+        systemNavigationBarIconBrightness: Brightness.light,
+      ),
+    );
   }
 
   /// Initialize all manager components
@@ -120,7 +131,10 @@ class _PeekImageViewState extends ConsumerState<PeekImageView> {
       }
 
       final data = doc.data()!;
-      final senderId = data['senderId'] as String?;
+      final senderId = data['senderUid']
+          as String?; // Changed from 'senderId' to 'senderUid'
+
+      debugPrint("[PeekImageView] Fetched peek data - senderId: $senderId");
 
       _moderationManager.updateSenderId(senderId);
 
@@ -149,16 +163,6 @@ class _PeekImageViewState extends ConsumerState<PeekImageView> {
   /// Handle image loaded successfully
   void _handleImageLoaded() {
     _analyticsManager.logImageLoaded();
-
-    // Start analytics tracking
-    _analyticsManager.logViewStarted(
-      isPremium: _permissionsManager.isReceiverPremium,
-      senderDisplayName: _permissionsManager.senderDisplayName,
-    );
-
-    // Start timer for non-premium users
-    _timerManager.startViewTimer();
-
     setState(() {});
   }
 
@@ -170,6 +174,15 @@ class _PeekImageViewState extends ConsumerState<PeekImageView> {
 
   /// Handle image shown
   void _handleImageShown() {
+    // Start analytics tracking
+    _analyticsManager.logViewStarted(
+      isPremium: _permissionsManager.isReceiverPremium,
+      senderDisplayName: _permissionsManager.senderDisplayName,
+    );
+
+    // Start timer for non-premium users
+    _timerManager.startViewTimer();
+
     setState(() {});
   }
 
@@ -198,32 +211,24 @@ class _PeekImageViewState extends ConsumerState<PeekImageView> {
 
   /// Decide next navigation based on app state
   Future<void> _decideNextNavigation() async {
-    try {
-      // Check if there are pending peek requests
-      final pendingRequests = await FirebaseFirestore.instance
-          .collection('peek_requests')
-          .where('receiverId',
-              isEqualTo: FirebaseAuth.instance.currentUser?.uid)
-          .where('status', isEqualTo: 'pending')
-          .limit(1)
-          .get();
+    if (!mounted) return;
 
-      if (pendingRequests.docs.isNotEmpty && mounted) {
-        // There are pending requests, go to home
-        context.go('/');
-      } else if (mounted) {
-        // No pending requests, check for reaction screen
-        final originalSenderId = _permissionsManager.originalSenderId;
-        if (originalSenderId != null) {
-          context.go(
-              '/peek-reaction?requestId=${widget.requestId}&originalSenderUid=$originalSenderId');
-        } else {
-          context.go('/');
-        }
-      }
-    } catch (e) {
-      debugPrint("Error in navigation decision: $e");
-      if (mounted) context.go('/');
+    // Simple check: if we have the sender ID, go to reaction screen
+    final originalSenderId = _permissionsManager.originalSenderId;
+    debugPrint(
+        "[PeekImageView] Navigation decision - originalSenderId: $originalSenderId");
+
+    if (originalSenderId != null && originalSenderId.isNotEmpty) {
+      debugPrint(
+          "[PeekImageView] Navigating to Reaction Screen. RequestId: ${widget.requestId}, OriginalSenderUid: $originalSenderId");
+
+      context.go(
+          '/peek-reaction?requestId=${widget.requestId}&originalSenderUid=$originalSenderId');
+    } else {
+      // Fallback if sender ID couldn't be found
+      debugPrint(
+          "[PeekImageView] OriginalSenderId is null or empty. Navigating to home.");
+      context.go('/');
     }
   }
 
@@ -254,6 +259,16 @@ class _PeekImageViewState extends ConsumerState<PeekImageView> {
 
   @override
   void dispose() {
+    // Restore default system UI
+    SystemChrome.setSystemUIOverlayStyle(
+      const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.dark,
+        systemNavigationBarColor: Colors.transparent,
+        systemNavigationBarIconBrightness: Brightness.dark,
+      ),
+    );
+
     _imageManager.dispose();
     _timerManager.dispose();
     _permissionsManager.dispose();
@@ -343,36 +358,61 @@ class _PeekImageViewState extends ConsumerState<PeekImageView> {
   /// Build top controls
   Widget _buildTopControls() {
     return Positioned(
-      top: MediaQuery.of(context).padding.top + 16,
-      left: 16,
-      right: 16,
+      top: MediaQuery.of(context).padding.top + 40,
+      left: 20,
+      right: 20,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Close button
-          IconButton(
-            onPressed: _handleCloseAction,
-            icon: const Icon(Icons.close, color: Colors.white, size: 28),
+          // Report button (3 dots) - aligned left
+          CircleAvatar(
+            radius: 20,
+            backgroundColor: Colors.black.withOpacity(0.4),
+            child: IconButton(
+              onPressed: () => _showMoreOptions(context),
+              icon: const Icon(Icons.more_vert, color: Colors.white, size: 22),
+              padding: EdgeInsets.zero,
+            ),
           ),
 
-          // Sender info
+          // Sender name - centered
           if (_permissionsManager.hasSenderInfo())
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               decoration: BoxDecoration(
                 color: Colors.black54,
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(20),
               ),
-              child: Text(
-                'From ${_permissionsManager.getSenderDisplayName()}',
-                style: const TextStyle(color: Colors.white, fontSize: 14),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.person,
+                    color: peekWhiteColor,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    _permissionsManager.getSenderDisplayName(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
               ),
             ),
 
-          // More options
-          IconButton(
-            onPressed: () => _showMoreOptions(context),
-            icon: const Icon(Icons.more_vert, color: Colors.white, size: 28),
+          // Close button (X) - aligned right
+          CircleAvatar(
+            radius: 20,
+            backgroundColor: Colors.black.withOpacity(0.4),
+            child: IconButton(
+              onPressed: _handleCloseAction,
+              icon: const Icon(Icons.close, color: Colors.white, size: 24),
+              padding: EdgeInsets.zero,
+            ),
           ),
         ],
       ),
@@ -382,29 +422,47 @@ class _PeekImageViewState extends ConsumerState<PeekImageView> {
   /// Build bottom controls
   Widget _buildBottomControls() {
     return Positioned(
-      bottom: MediaQuery.of(context).padding.bottom + 32,
+      bottom: MediaQuery.of(context).padding.bottom + 60,
       left: 0,
       right: 0,
       child: Center(
-        child: GestureDetector(
-          onTap: _handleCloseAction,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(25),
-              border: Border.all(color: Colors.white.withOpacity(0.3)),
-            ),
-            child: const Text(
-              'Tap to continue',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-              ),
+        child: _buildLocationInfo(),
+      ),
+    );
+  }
+
+  /// Build location information (only for premium users)
+  Widget _buildLocationInfo() {
+    // Only show location for premium users and if location is available
+    if (!_permissionsManager.isReceiverPremium ||
+        widget.senderLocation == null) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.black54,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.location_on,
+            color: Colors.red,
+            size: 20,
+          ),
+          const SizedBox(width: 8),
+          Text(
+            widget.senderLocation!,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
             ),
           ),
-        ),
+        ],
       ),
     );
   }

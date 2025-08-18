@@ -54,24 +54,29 @@ class _AppShellState extends ConsumerState<AppShell> {
 
   @override
   material.Widget build(material.BuildContext context) {
-    // This listener for reactions is safe and does not affect navigation.
-    ref.listen(newReactionStreamProvider, (previous, next) {
-      if (next.isLoading || !next.hasValue) return;
-      final newReactions = next.value ?? [];
-      for (final reactionDoc in newReactions) {
-        final Set<String> processedIds = ref.read(processedReactionIdsProvider);
-        if (processedIds.add(reactionDoc.id)) {
-          final data = reactionDoc.data();
-          final type = data['reactionType'] as String?;
-          final overlayService = ref.read(overlayAnimationServiceProvider);
-          if (type == 'like') {
-            overlayService.showLikeAnimation();
-          } else if (type == 'dislike') {
-            overlayService.showDislikeAnimation();
-          }
-        }
+    // Activate the proper reaction overlay listener provider
+    ref.watch(reactionOverlayListenerProvider);
+
+    // Debug: Monitor reaction stream for debugging
+    final reactionStream = ref.watch(newReactionStreamProvider);
+    material.debugPrint(
+        "[AppShell] 🔍 Reaction stream status: ${reactionStream.toString()}");
+    if (reactionStream.hasValue && reactionStream.value!.isNotEmpty) {
+      material.debugPrint(
+          "[AppShell] ✅ Reaction stream active with ${reactionStream.value!.length} reactions");
+      for (final doc in reactionStream.value!) {
+        final data = doc.data();
+        material.debugPrint(
+            "[AppShell] 📄 Reaction doc: ${doc.id} - type: ${data['reactionType']}");
       }
-    });
+    } else if (reactionStream.isLoading) {
+      material.debugPrint("[AppShell] ⏳ Reaction stream loading...");
+    } else if (reactionStream.hasError) {
+      material.debugPrint(
+          "[AppShell] ❌ Reaction stream error: ${reactionStream.error}");
+    } else {
+      material.debugPrint("[AppShell] ℹ️ Reaction stream empty or no data");
+    }
 
     // Declaratively calculate the index and UI visibility from the router state.
     final int selectedIndex =

@@ -12,6 +12,7 @@ import 'package:peek/features/peek/camera/countdown_manager.dart';
 import 'package:peek/features/peek/camera/user_settings_manager.dart';
 import 'package:peek/theme/colors.dart';
 import 'package:peek/core/widgets/peek_loading_indicator.dart';
+import 'package:firebase_auth/firebase_auth.dart'; // Added for FirebaseAuth
 
 // Global camera list (keeping this as is for compatibility)
 List<CameraDescription> _cameras = [];
@@ -174,6 +175,8 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
         debugPrint("[PhotoCapturePage] Starting photo upload...");
         await _captureLogic.uploadPhoto(
           requestId: widget.requestId,
+          senderUid: FirebaseAuth.instance.currentUser?.uid ??
+              '', // Add senderUid parameter
           senderLocation: _currentLocation,
           senderDisplayName: _userSettings.senderDisplayName,
           senderAvatarUrl: _userSettings.senderAvatarUrl,
