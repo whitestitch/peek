@@ -8,11 +8,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:peek/features/peek/reaction_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:peek/shared/upgrade_prompt_dialog.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'package:peek/core/feature_flags.dart';
 import 'package:peek/features/peek/controllers/peek_controller.dart';
-import 'package:peek/features/peek/providers/peek_providers.dart';
 import 'package:peek/features/home/providers/home_state_provider.dart';
 
 import 'package:flutter/foundation.dart' show kDebugMode;
@@ -220,9 +218,6 @@ class _HomePageState extends ConsumerState<HomePage> {
 
   @override
   material.Widget build(material.BuildContext context) {
-    // Keep reaction → overlay listener active app-wide.
-    ref.watch(reactionOverlayListenerProvider);
-
     final goRouterState = GoRouterState.of(context);
     if (goRouterState.uri.queryParameters['show'] == 'peekCancelled') {
       // Determine which message to show based on the 'reason' parameter.

@@ -2,11 +2,13 @@
 import 'package:flutter/material.dart' as material; // Using alias
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:lottie/lottie.dart';
 import 'package:peek/core/router.dart';
 import 'package:peek/features/peek/providers/peek_providers.dart';
 import 'package:peek/features/menu/drawer_menu.dart'; // Your existing drawer
 import 'package:peek/main.dart';
 import 'package:peek/theme/colors.dart'; // Your theme colors
+import 'package:cloud_firestore/cloud_firestore.dart'; // Added for Timestamp
 
 class AppShell extends ConsumerStatefulWidget {
   final GoRouterState routerState; // Current router state
@@ -32,6 +34,22 @@ class _AppShellState extends ConsumerState<AppShell> {
     return 0; // Default to home
   }
 
+  // State to track reaction animation display
+  String? _currentReactionId;
+  String? _currentReactionType;
+  bool _showReactionAnimation = false;
+  // Dedupe reactions within this app session
+  final Set<String> _processedReactionIds = <String>{};
+  // Track last seen reaction timestamp to avoid showing old reactions
+  DateTime? _lastSeenReactionTime;
+
+  @override
+  void initState() {
+    super.initState();
+    // Initialize last seen time to now to avoid showing old reactions
+    _lastSeenReactionTime = DateTime.now();
+  }
+
   void _onItemTapped(int index, material.BuildContext context) {
     switch (index) {
       case 0:
@@ -52,11 +70,98 @@ class _AppShellState extends ConsumerState<AppShell> {
     }
   }
 
+  // Method to show the reaction dialog
+  void _showReactionDialog(String reactionId, String reactionType) {
+    if (_currentReactionId != reactionId) {
+      material.debugPrint(
+          '[AppShell] ▶ Showing reaction dialog for $reactionType ($reactionId)');
+      material.debugPrint(
+          '[AppShell] 🔧 Setting state: _showReactionAnimation = true');
+      setState(() {
+        _currentReactionId = reactionId;
+        _currentReactionType = reactionType;
+        _showReactionAnimation = true;
+      });
+
+      // Auto-hide after 2 seconds
+      Future.delayed(const Duration(milliseconds: 2000), () {
+        if (mounted && _currentReactionId == reactionId) {
+          material.debugPrint(
+              '[AppShell] ⏹ Hiding reaction dialog for $reactionType ($reactionId)');
+          material.debugPrint(
+              '[AppShell] 🔧 Setting state: _showReactionAnimation = false');
+          setState(() {
+            _showReactionAnimation = false;
+            _currentReactionId = null;
+            _currentReactionType = null;
+          });
+        } else {
+          material.debugPrint(
+              '[AppShell] ⚠️ Cannot hide dialog - widget not mounted or reaction changed');
+        }
+      });
+    } else {
+      material.debugPrint(
+          '[AppShell] ⏭️ Skipping duplicate reaction: $reactionType ($reactionId)');
+    }
+  }
+
+  // Method to build the reaction dialog
+  material.Widget _buildReactionDialog() {
+    material.debugPrint(
+        '[AppShell] 🎨 Building reaction dialog: type=$_currentReactionType, show=$_showReactionAnimation');
+    return material.Center(
+      child: material.AnimatedOpacity(
+        opacity: _showReactionAnimation ? 1.0 : 0.0,
+        duration: const Duration(milliseconds: 300),
+        child: material.Container(
+          margin: const material.EdgeInsets.all(32),
+          padding: const material.EdgeInsets.all(24),
+          decoration: material.BoxDecoration(
+            color: material.Colors.white,
+            borderRadius: material.BorderRadius.circular(16),
+            boxShadow: [
+              material.BoxShadow(
+                color: material.Colors.black.withValues(alpha: 0.1),
+                blurRadius: 10,
+                spreadRadius: 2,
+              ),
+            ],
+          ),
+          child: material.Column(
+            mainAxisSize: material.MainAxisSize.min,
+            children: [
+              material.Text(
+                _currentReactionType == 'like' ? '👍 Liked!' : '👎 Disliked!',
+                style: material.TextStyle(
+                  fontSize: 24,
+                  fontWeight: material.FontWeight.bold,
+                  color: _currentReactionType == 'like'
+                      ? material.Colors.green.shade600
+                      : material.Colors.red.shade600,
+                ),
+              ),
+              const material.SizedBox(height: 16),
+              material.SizedBox(
+                height: 120,
+                width: 120,
+                child: Lottie.asset(
+                  _currentReactionType == 'like'
+                      ? 'assets/animations/lottie/like_animation.json'
+                      : 'assets/animations/lottie/dislike_animation.json',
+                  repeat: false,
+                  fit: material.BoxFit.contain,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   material.Widget build(material.BuildContext context) {
-    // Activate the proper reaction overlay listener provider
-    ref.watch(reactionOverlayListenerProvider);
-
     // Debug: Monitor reaction stream for debugging
     final reactionStream = ref.watch(newReactionStreamProvider);
     material.debugPrint(
@@ -91,6 +196,7 @@ class _AppShellState extends ConsumerState<AppShell> {
     return material.Stack(
       fit: material.StackFit.expand,
       children: [
+        // Layer 1: Background Image (bottom)
         material.Image.asset(
           homeBackgroundPath,
           fit: material.BoxFit.cover,
@@ -98,6 +204,8 @@ class _AppShellState extends ConsumerState<AppShell> {
             return material.Container(color: peekBackgroundColor);
           },
         ),
+
+        // Layer 2: Main Content (middle)
         material.Scaffold(
           backgroundColor: material.Colors.transparent,
           appBar: showAppBar
@@ -128,7 +236,76 @@ class _AppShellState extends ConsumerState<AppShell> {
                 )
               : null,
           drawer: const DrawerMenu(),
-          body: widget.child,
+          body: material.Stack(
+            children: [
+              widget.child,
+              // Reaction watcher - positioned above the main content
+              Consumer(
+                builder: (context, ref, child) {
+                  // Watch for new reactions and show dialog (only once per reaction)
+                  final newReactions = ref.watch(newReactionStreamProvider);
+
+                  // Only process if we have new reactions and don't already have one showing
+                  if (newReactions.hasValue &&
+                      newReactions.value!.isNotEmpty &&
+                      !_showReactionAnimation) {
+                    final latest = newReactions.value!.last;
+                    final data = latest.data();
+                    material.debugPrint(
+                        '[AppShell] 🔍 Reaction document data: $data');
+                    final reactionType =
+                        (data['reactionType'] ?? '').toString().toLowerCase();
+                    final reactionId = latest.id;
+
+                    // Get reaction timestamp (serverTimestamp or timestamp)
+                    final reactionTime = data['timestamp'] as Timestamp?;
+                    if (reactionTime == null) {
+                      material.debugPrint(
+                          '[AppShell] ⚠️ No timestamp found for reaction: $reactionId');
+                      return const material.SizedBox.shrink();
+                    }
+
+                    material.debugPrint(
+                        '[AppShell] 🔍 Reaction timestamp: ${reactionTime.toDate()}, Last seen: $_lastSeenReactionTime');
+
+                    // Skip if this reaction is older than our last seen time
+                    if (_lastSeenReactionTime != null &&
+                        reactionTime
+                            .toDate()
+                            .isBefore(_lastSeenReactionTime!)) {
+                      material.debugPrint(
+                          '[AppShell] ⏭️ Skipping old reaction: $reactionType ($reactionId)');
+                      return const material.SizedBox.shrink();
+                    }
+
+                    // Skip if already processed in this session
+                    if (_processedReactionIds.contains(reactionId)) {
+                      material.debugPrint(
+                          '[AppShell] ⏭️ Skipping duplicate reaction: $reactionType ($reactionId)');
+                      return const material.SizedBox.shrink();
+                    }
+
+                    if (reactionType == 'like' || reactionType == 'dislike') {
+                      material.debugPrint(
+                          '[AppShell] 🎯 Processing new reaction: $reactionType ($reactionId)');
+                      material.debugPrint(
+                          '[AppShell] 🔧 About to set _showReactionAnimation = true');
+                      // Mark as processed and update last seen time
+                      _processedReactionIds.add(reactionId);
+                      _lastSeenReactionTime = reactionTime.toDate();
+                      material.WidgetsBinding.instance
+                          .addPostFrameCallback((_) {
+                        _showReactionDialog(reactionId, reactionType);
+                      });
+                    }
+                  }
+
+                  // No reaction to show
+                  return const material.SizedBox.shrink();
+                },
+              ),
+            ],
+          ),
           bottomNavigationBar: showBottomNav
               ? material.BottomNavigationBar(
                   backgroundColor: material.Colors.transparent,
@@ -166,6 +343,16 @@ class _AppShellState extends ConsumerState<AppShell> {
                 )
               : null,
         ),
+
+        // Layer 3: Reaction Dialog (top - above everything else)
+        // This shows reactions in a clean dialog instead of background overlay
+        if (_showReactionAnimation && _currentReactionType != null)
+          material.Positioned.fill(
+            child: material.Material(
+              color: material.Colors.transparent,
+              child: _buildReactionDialog(),
+            ),
+          ),
       ],
     );
   }
