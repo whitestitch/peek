@@ -94,6 +94,7 @@ class PhotoCaptureLogic {
   /// Upload photo to Firebase Storage
   Future<void> uploadPhoto({
     required String requestId,
+    required String senderUid, // Add required senderUid parameter
     String? senderLocation,
     String? senderDisplayName,
     String? senderAvatarUrl,
@@ -129,6 +130,7 @@ class PhotoCaptureLogic {
       await _updateFirestoreWithImage(
         requestId: requestId,
         imageUrl: downloadUrl,
+        senderUid: senderUid, // Pass senderUid to the update method
         senderLocation: senderLocation,
         senderDisplayName: senderDisplayName,
         senderAvatarUrl: senderAvatarUrl,
@@ -148,6 +150,7 @@ class PhotoCaptureLogic {
   Future<void> _updateFirestoreWithImage({
     required String requestId,
     required String imageUrl,
+    required String senderUid, // Add required senderUid parameter
     String? senderLocation,
     String? senderDisplayName,
     String? senderAvatarUrl,
@@ -157,6 +160,8 @@ class PhotoCaptureLogic {
         'status': 'responded_with_image',
         'imageUrl': imageUrl,
         'respondedAt': FieldValue.serverTimestamp(),
+        'senderId':
+            senderUid, // Add the senderId field that Cloud Function needs
       };
 
       // Add sender information if provided

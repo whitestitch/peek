@@ -331,6 +331,12 @@ class FirestoreService {
           "❌ [FirestoreService] addReactionToPeek: no authenticated user.");
       return;
     }
+
+    debugPrint(
+        "[FirestoreService] 🚀 Creating reaction document: peek_requests/$requestId/reactions/$reactorUid");
+    debugPrint(
+        "[FirestoreService] 📝 Reaction data: {type: '${reactionType.toLowerCase()}', createdAt: serverTimestamp}");
+
     final reactionRef = _db
         .collection('peek_requests')
         .doc(requestId)
@@ -342,7 +348,9 @@ class FirestoreService {
         'createdAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
       debugPrint(
-          "[FirestoreService] Reaction '$reactionType' created for $requestId by $reactorUid.");
+          "✅ [FirestoreService] Reaction '$reactionType' created for $requestId by $reactorUid.");
+      debugPrint(
+          "[FirestoreService] 🔍 Cloud Function 'onReactionCreated' should now trigger...");
     } catch (e) {
       debugPrint(
           "❌ [FirestoreService] Error creating reaction for $requestId: $e");
