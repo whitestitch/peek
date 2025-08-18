@@ -2,7 +2,6 @@
 import 'package:flutter/material.dart' as material; // Using alias
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:lottie/lottie.dart';
 import 'package:peek/core/router.dart';
 import 'package:peek/features/peek/providers/peek_providers.dart';
 import 'package:peek/features/menu/drawer_menu.dart'; // Your existing drawer
@@ -24,7 +23,8 @@ class AppShell extends ConsumerStatefulWidget {
   ConsumerState<AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends ConsumerState<AppShell> {
+class _AppShellState extends ConsumerState<AppShell>
+    with material.TickerProviderStateMixin {
   // Helper function to determine the selected index directly from the router state.
   int _calculateSelectedIndex(String uri) {
     final path = uri.split('?').first;
@@ -41,13 +41,55 @@ class _AppShellState extends ConsumerState<AppShell> {
   // Dedupe reactions within this app session
   final Set<String> _processedReactionIds = <String>{};
   // Track last seen reaction timestamp to avoid showing old reactions
-  DateTime? _lastSeenReactionTime;
+  DateTime? _lastSeenReactionTime = DateTime.now();
+
+  // Animation controllers for smooth card animations
+  late material.AnimationController _cardAnimationController;
+  late material.Animation<double> _cardSlideAnimation;
+  late material.Animation<double> _cardScaleAnimation;
+  late material.Animation<double> _cardFadeAnimation;
+
+  // Track the specific context of the reaction dialog so we only pop that dialog
+  material.BuildContext? _reactionDialogContext;
 
   @override
   void initState() {
     super.initState();
     // Initialize last seen time to now to avoid showing old reactions
     _lastSeenReactionTime = DateTime.now();
+
+    // Initialize card animation controller
+    _cardAnimationController = material.AnimationController(
+      duration: const Duration(milliseconds: 400),
+      vsync: this,
+    );
+
+    // Setup slide animation (from bottom)
+    _cardSlideAnimation = material.Tween<double>(
+      begin: 1.0, // Start from bottom
+      end: 0.0, // End at center
+    ).animate(material.CurvedAnimation(
+      parent: _cardAnimationController,
+      curve: material.Curves.easeOutBack,
+    ));
+
+    // Setup scale animation (subtle pop effect)
+    _cardScaleAnimation = material.Tween<double>(
+      begin: 0.95,
+      end: 1.0,
+    ).animate(material.CurvedAnimation(
+      parent: _cardAnimationController,
+      curve: material.Curves.easeOutBack,
+    ));
+
+    // Setup fade animation
+    _cardFadeAnimation = material.Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(material.CurvedAnimation(
+      parent: _cardAnimationController,
+      curve: material.Curves.easeInOut,
+    ));
   }
 
   void _onItemTapped(int index, material.BuildContext context) {
@@ -83,18 +125,61 @@ class _AppShellState extends ConsumerState<AppShell> {
         _showReactionAnimation = true;
       });
 
+      // Start the card entrance animation
+      _cardAnimationController.forward();
+
+      // Show the reaction dialog using showDialog to avoid z-index conflicts
+      material.showDialog(
+        context: context,
+        barrierDismissible: false,
+        barrierColor: material.Colors.transparent,
+        builder: (dialogContext) {
+          _reactionDialogContext = dialogContext;
+          return material.AnimatedBuilder(
+            animation: _cardAnimationController,
+            builder: (context, child) {
+              return material.Material(
+                color: material.Colors.transparent,
+                child: material.Stack(
+                  children: [
+                    // Background gradient layer that animates with the dialog
+                    material.Opacity(
+                      opacity: _cardFadeAnimation.value * 0.8,
+                      child: material.Container(
+                        decoration: material.BoxDecoration(
+                          gradient: material.LinearGradient(
+                            begin: material.Alignment.topCenter,
+                            end: material.Alignment.bottomCenter,
+                            colors: [
+                              peekBackgroundColor.withValues(alpha: 0.9),
+                              peekBackgroundColor.withValues(alpha: 0.7),
+                              peekBackgroundColor.withValues(alpha: 0.0),
+                            ],
+                            stops: const [0.0, 0.7, 1.0],
+                          ),
+                        ),
+                      ),
+                    ),
+                    // Centered dialog
+                    material.Center(
+                      child: _buildReactionDialog(),
+                    ),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      );
+
       // Auto-hide after 2 seconds
-      Future.delayed(const Duration(milliseconds: 2000), () {
+      Future.delayed(const Duration(milliseconds: 5000), () {
         if (mounted && _currentReactionId == reactionId) {
           material.debugPrint(
               '[AppShell] ⏹ Hiding reaction dialog for $reactionType ($reactionId)');
           material.debugPrint(
               '[AppShell] 🔧 Setting state: _showReactionAnimation = false');
-          setState(() {
-            _showReactionAnimation = false;
-            _currentReactionId = null;
-            _currentReactionType = null;
-          });
+          _hideReactionDialog();
         } else {
           material.debugPrint(
               '[AppShell] ⚠️ Cannot hide dialog - widget not mounted or reaction changed');
@@ -106,58 +191,122 @@ class _AppShellState extends ConsumerState<AppShell> {
     }
   }
 
-  // Method to build the reaction dialog
+  void _hideReactionDialog() {
+    // Reverse the animation for smooth exit
+    _cardAnimationController.reverse().then((_) {
+      if (!mounted) return;
+
+      // Close only the reaction dialog if still present
+      final ctx = _reactionDialogContext;
+      if (ctx != null && material.Navigator.of(ctx).canPop()) {
+        material.Navigator.of(ctx).pop();
+      }
+      _reactionDialogContext = null;
+
+      setState(() {
+        _showReactionAnimation = false;
+        _currentReactionId = null;
+        _currentReactionType = null;
+      });
+      // Reset controller for next use
+      _cardAnimationController.reset();
+    });
+  }
+
+  // Method to build the new card-style reaction dialog
   material.Widget _buildReactionDialog() {
     material.debugPrint(
-        '[AppShell] 🎨 Building reaction dialog: type=$_currentReactionType, show=$_showReactionAnimation');
-    return material.Center(
-      child: material.AnimatedOpacity(
-        opacity: _showReactionAnimation ? 1.0 : 0.0,
-        duration: const Duration(milliseconds: 300),
-        child: material.Container(
-          margin: const material.EdgeInsets.all(32),
-          padding: const material.EdgeInsets.all(24),
-          decoration: material.BoxDecoration(
-            color: material.Colors.white,
-            borderRadius: material.BorderRadius.circular(16),
-            boxShadow: [
-              material.BoxShadow(
-                color: material.Colors.black.withValues(alpha: 0.1),
-                blurRadius: 10,
-                spreadRadius: 2,
-              ),
-            ],
-          ),
-          child: material.Column(
-            mainAxisSize: material.MainAxisSize.min,
-            children: [
-              material.Text(
-                _currentReactionType == 'like' ? '👍 Liked!' : '👎 Disliked!',
-                style: material.TextStyle(
-                  fontSize: 24,
-                  fontWeight: material.FontWeight.bold,
-                  color: _currentReactionType == 'like'
-                      ? material.Colors.green.shade600
-                      : material.Colors.red.shade600,
+        '[AppShell] 🎨 Building card-style reaction dialog: type=$_currentReactionType, show=$_showReactionAnimation');
+
+    return material.AnimatedBuilder(
+      animation: _cardAnimationController,
+      builder: (context, child) {
+        return material.Transform.translate(
+          offset: material.Offset(0, _cardSlideAnimation.value * 100),
+          child: material.Transform.scale(
+            scale: _cardScaleAnimation.value,
+            child: material.Opacity(
+              opacity: _cardFadeAnimation.value,
+              child: material.Center(
+                child: material.Container(
+                  width: 320,
+                  height: 280,
+                  margin: const material.EdgeInsets.all(32),
+                  decoration: material.BoxDecoration(
+                    color: peekBackgroundColor,
+                    borderRadius: material.BorderRadius.circular(24),
+                  ),
+                  padding: const material.EdgeInsets.all(24.0),
+                  child: material.Column(
+                    mainAxisAlignment: material.MainAxisAlignment.center,
+                    children: [
+                      // Title (no emoji, just text like existing dialogs)
+                      material.Text(
+                        _currentReactionType == 'like'
+                            ? "A positive reaction!"
+                            : "Not their favorite!",
+                        style: const material.TextStyle(
+                          fontSize: 24,
+                          fontWeight: material.FontWeight.bold,
+                          color: peekWhiteColor,
+                        ),
+                        textAlign: material.TextAlign.center,
+                      ),
+
+                      const material.SizedBox(height: 8),
+
+                      // Body text (shortened to max 2 lines)
+                      material.Text(
+                        _currentReactionType == 'like'
+                            ? "Someone thinks your peek is absolutely amazing!"
+                            : "Sorry, what you're watching isn't quite their style.",
+                        style: const material.TextStyle(
+                          fontSize: 16,
+                          color: material.Colors.white70,
+                          height: 1.4,
+                        ),
+                        textAlign: material.TextAlign.center,
+                      ),
+
+                      const material.SizedBox(height: 32),
+
+                      // Full-width button matching existing dialog style
+                      material.SizedBox(
+                        width: double.infinity,
+                        child: material.ElevatedButton(
+                          style: material.ElevatedButton.styleFrom(
+                            backgroundColor: _currentReactionType == 'like'
+                                ? peekPrimaryColor
+                                : peekErrorColor,
+                          ),
+                          onPressed: () {
+                            // Auto-dismiss the dialog
+                            _hideReactionDialog();
+                          },
+                          child: const material.Text(
+                            'OK',
+                            style: material.TextStyle(
+                              fontWeight: material.FontWeight.w600,
+                              color: peekOnSecondaryColor,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-              const material.SizedBox(height: 16),
-              material.SizedBox(
-                height: 120,
-                width: 120,
-                child: Lottie.asset(
-                  _currentReactionType == 'like'
-                      ? 'assets/animations/lottie/like_animation.json'
-                      : 'assets/animations/lottie/dislike_animation.json',
-                  repeat: false,
-                  fit: material.BoxFit.contain,
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
+  }
+
+  @override
+  void dispose() {
+    _cardAnimationController.dispose();
+    super.dispose();
   }
 
   @override
@@ -343,16 +492,6 @@ class _AppShellState extends ConsumerState<AppShell> {
                 )
               : null,
         ),
-
-        // Layer 3: Reaction Dialog (top - above everything else)
-        // This shows reactions in a clean dialog instead of background overlay
-        if (_showReactionAnimation && _currentReactionType != null)
-          material.Positioned.fill(
-            child: material.Material(
-              color: material.Colors.transparent,
-              child: _buildReactionDialog(),
-            ),
-          ),
       ],
     );
   }

@@ -280,3 +280,6 @@ final reactionOverlayListenerProvider = Provider.autoDispose<void>((ref) {
 
 // This allows us to programmatically dismiss it if the request is cancelled.
 final activePeekRequestDialogProvider = StateProvider<String?>((ref) => null);
+
+final lastPendingRequestIdsProvider =
+    StateProvider<Set<String>?>((ref) => null);
