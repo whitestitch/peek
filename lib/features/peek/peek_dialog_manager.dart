@@ -40,7 +40,7 @@ class PeekDialogManager {
         content: Text(
           'Someone wants to share a peek with you. Accept?',
           style: TextStyle(
-            color: peekWhiteColor.withOpacity(1),
+            color: peekWhiteColor.withValues(alpha: 1),
             height: 1.55,
             fontSize: 17,
             fontWeight: FontWeight.w400,
@@ -50,7 +50,7 @@ class PeekDialogManager {
         actions: <Widget>[
           TextButton(
             style: TextButton.styleFrom(
-              foregroundColor: peekOnBackgroundColor.withOpacity(0.7),
+              foregroundColor: peekOnBackgroundColor.withValues(alpha: 0.7),
               textStyle: const TextStyle(
                 fontWeight: FontWeight.w700,
               ),
@@ -143,13 +143,34 @@ class PeekDialogManager {
     // Close dialog if request is no longer pending
     if (activeDialogId != null && !requestIds.contains(activeDialogId)) {
       _handleRequestStatusChange(activeDialogId);
+      return;
     }
 
-    // Show dialog for new request if no dialog is active
-    if (ref.read(activePeekRequestDialogProvider) == null &&
-        requests.isNotEmpty) {
-      showPeekRequestDialog(requests.first);
+    // Prevent showing on initial load with existing items: only react when list grows
+    final previous = ref.read(lastPendingRequestIdsProvider);
+    if (previous == null) {
+      // Cache current set, do not show dialog on initial app start
+      ref.read(lastPendingRequestIdsProvider.notifier).state = requestIds;
+      return;
     }
+
+    // Compute newly added requests
+    final newlyAdded = requestIds.difference(previous);
+    if (newlyAdded.isEmpty) {
+      // Update cache and return
+      ref.read(lastPendingRequestIdsProvider.notifier).state = requestIds;
+      return;
+    }
+
+    // Show dialog for the first newly added request if no dialog is active
+    if (ref.read(activePeekRequestDialogProvider) == null) {
+      final firstNewId = newlyAdded.first;
+      final firstDoc = requests.firstWhere((r) => r.id == firstNewId);
+      showPeekRequestDialog(firstDoc);
+    }
+
+    // Update cache after handling
+    ref.read(lastPendingRequestIdsProvider.notifier).state = requestIds;
   }
 
   /// Handle request status change (cancelled, expired, etc.)
