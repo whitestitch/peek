@@ -1,4 +1,4 @@
-// lib/features/peek/pages/peek_receiver_page_new.dart
+// lib/features/peek/pages/peek_receiver_page.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:go_router/go_router.dart';
@@ -7,16 +7,16 @@ import 'managers/peek_request_listener.dart';
 import 'managers/peek_response_handler.dart';
 import 'managers/peek_receiver_ui.dart';
 
-class PeekReceiverPageNew extends StatefulWidget {
+class PeekReceiverPage extends StatefulWidget {
   static String pageBackgroundPath = 'assets/images/onboarding_bg_02.jpg';
 
-  const PeekReceiverPageNew({super.key});
+  const PeekReceiverPage({super.key});
 
   @override
-  State<PeekReceiverPageNew> createState() => _PeekReceiverPageNewState();
+  State<PeekReceiverPage> createState() => _PeekReceiverPageState();
 }
 
-class _PeekReceiverPageNewState extends State<PeekReceiverPageNew> {
+class _PeekReceiverPageState extends State<PeekReceiverPage> {
   final _requestListener = PeekRequestListener();
   final _responseHandler = PeekResponseHandler();
   final _uiBuilder = PeekReceiverUI();
