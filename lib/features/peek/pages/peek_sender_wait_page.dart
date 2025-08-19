@@ -1,14 +1,16 @@
 // lib/features/peek/pages/peek_sender_wait_page.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:peek/features/peek/controllers/peek_controller.dart';
+import 'package:peek/features/peek/pages/managers/peek_sender_wait_listener.dart';
+import 'package:peek/features/peek/pages/managers/peek_sender_wait_navigation.dart';
+import 'package:peek/features/peek/pages/managers/peek_sender_wait_timer_manager.dart';
+import 'package:peek/features/peek/pages/managers/peek_sender_wait_ui.dart';
 import 'package:peek/features/peek/providers/peek_providers.dart';
 import 'package:peek/theme/colors.dart';
-import 'managers/peek_sender_wait_timer_manager.dart';
-import 'managers/peek_sender_wait_listener.dart';
-import 'managers/peek_sender_wait_ui.dart';
-import 'managers/peek_sender_wait_navigation.dart';
-import 'dart:async'; // Added for Timer
+import 'dart:async';
+import 'package:camera/camera.dart';
 
 class PeekSenderWaitPage extends ConsumerStatefulWidget {
   final String requestId;
@@ -33,8 +35,9 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
   bool _navigated = false;
   Timer? _countdownTimer;
   DateTime? _captureExpirationTime;
-  bool _isPostSendMode = false; // Track if we're in post-send mode
-  Timer? _postSendTimer; // Separate timer for post-send countdown
+  bool _isPostSendMode = false;
+  Timer? _postSendTimer;
+  bool _permissionsChecked = false;
 
   @override
   void initState() {
@@ -46,7 +49,7 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
     _secondsRemaining = null;
 
     _initializeManagers();
-    _startInitialCountdown();
+    _checkPermissionsAndStartCountdown();
   }
 
   void _initializeManagers() {
@@ -80,6 +83,55 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
     _navigation = PeekSenderWaitNavigation();
   }
 
+  Future<void> _checkPermissionsAndStartCountdown() async {
+    try {
+      debugPrint("[PeekSenderWaitPage] Checking camera permissions...");
+
+      // Try to get available cameras - this will fail if permissions aren't granted
+      final cameras = await availableCameras();
+
+      if (cameras.isNotEmpty) {
+        debugPrint(
+            "[PeekSenderWaitPage] Camera permission granted, starting countdown");
+        _permissionsChecked = true;
+        _startInitialCountdown();
+      } else {
+        // If no cameras available, it might be a timing issue, not necessarily permission denied
+        // Proceed with countdown anyway - the photo capture page will handle camera initialization
+        debugPrint(
+            "[PeekSenderWaitPage] No cameras available, but proceeding with countdown (will handle in photo capture)");
+        _permissionsChecked = true;
+        _startInitialCountdown();
+      }
+    } catch (e) {
+      // If camera permission check fails, it's likely a permission issue
+      debugPrint("[PeekSenderWaitPage] Error checking camera permissions: $e");
+
+      // Check if this is a permission denied error vs other camera issues
+      if (e.toString().contains('permission') ||
+          e.toString().contains('denied')) {
+        _handlePermissionDenied();
+      } else {
+        // Other camera errors - proceed with countdown, let photo capture handle it
+        debugPrint(
+            "[PeekSenderWaitPage] Camera error (not permission), proceeding with countdown");
+        _permissionsChecked = true;
+        _startInitialCountdown();
+      }
+    }
+  }
+
+  void _handlePermissionDenied() {
+    if (!_navigated) {
+      _navigated = true;
+      debugPrint(
+          "[PeekSenderWaitPage] Permission denied, showing 'Not ready to peek'");
+
+      // Show "Not ready to peek" slide panel and redirect to home
+      _navigation.navigateToHomeWithCancellation(context);
+    }
+  }
+
   void _startInitialCountdown() {
     debugPrint(
         "[PeekSenderWaitPage] Starting photo capture countdown for request ${widget.requestId}");
@@ -111,11 +163,15 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
       final now = DateTime.now();
       final remaining = _captureExpirationTime!.difference(now).inSeconds;
 
+      // Add 3-second buffer to Get Ready countdown to prevent race conditions
+      // This ensures Get Ready finishes after Photo Capture countdown starts
+      final bufferedRemaining = remaining + 1;
+
       setState(() {
-        _secondsRemaining = remaining > 0 ? remaining : 0;
+        _secondsRemaining = bufferedRemaining > 0 ? bufferedRemaining : 0;
       });
       debugPrint(
-          "[PeekSenderWaitPage] Immediate countdown started with Firestore sync: ${_secondsRemaining}s");
+          "[PeekSenderWaitPage] Immediate countdown started with Firestore sync: ${_secondsRemaining}s (original: ${remaining}s + 3s buffer)");
 
       // Start the live countdown timer
       _startLiveCountdown();
@@ -177,19 +233,22 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
       final now = DateTime.now();
       final remaining = _captureExpirationTime!.difference(now).inSeconds;
 
-      if (remaining <= 0) {
-        // Time expired
+      // Add 3-second buffer to Get Ready countdown
+      final bufferedRemaining = remaining + 3;
+
+      if (bufferedRemaining <= 0) {
+        // Time expired (with buffer)
         timer.cancel();
         if (!_navigated) {
           _handleTimeout();
         }
       } else {
-        // Update the countdown display
+        // Update the countdown display (with buffer)
         setState(() {
-          _secondsRemaining = remaining;
+          _secondsRemaining = bufferedRemaining;
         });
         debugPrint(
-            "[PeekSenderWaitPage] Live countdown update: ${remaining}s remaining");
+            "[PeekSenderWaitPage] Live countdown update: ${bufferedRemaining}s remaining (original: ${remaining}s + 3s buffer)");
       }
     });
   }
