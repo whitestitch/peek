@@ -85,6 +85,9 @@ class _PeekAppState extends ConsumerState<PeekApp> {
       },
     );
 
+    // Note: Cancellation events are now handled directly by individual pages
+    // No need for centralized cancellation provider
+
     return MaterialApp.router(
       title: 'PEEK',
       debugShowCheckedModeBanner: false,

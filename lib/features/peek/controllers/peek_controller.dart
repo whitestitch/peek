@@ -9,17 +9,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
 
 // userDataProvider import
 import 'package:peek/core/providers.dart';
 
-import 'package:flutter/foundation.dart';
+// import 'package:flutter/foundation.dart';
 // import 'package:peek/features/home/home_page.dart';
 
 import '../data/peek_repository.dart';
 import '../providers/peek_providers.dart';
 
-@immutable
 class PeekControllerState {
   final bool isLoading;
   final String? error;
@@ -279,14 +279,36 @@ class PeekController extends StateNotifier<PeekControllerState> {
       return;
     }
     try {
-      await _firestore.collection('peek_requests').doc(requestId).update({
-        'status': 'cancelled_by_sender',
+      // Use Cloud Function for consistent cancellation handling
+      final functions = FirebaseFunctions.instanceFor(region: "us-central1");
+      final callable = functions.httpsCallable('cancelPeekRequest');
+
+      final result = await callable.call({
+        'requestId': requestId,
+        'reason': 'sender_cancelled',
+        'debug': kDebugMode,
       });
-      debugPrint(
-          "[PeekController] Updated peek request $requestId to 'cancelled_by_sender'.");
+
+      final responseData = result.data as Map<String, dynamic>;
+      if (responseData['success'] == true) {
+        debugPrint(
+            "[PeekController] Peek cancelled successfully via Cloud Function: $requestId");
+      } else {
+        throw Exception('Cloud Function returned success: false');
+      }
     } catch (e) {
       debugPrint(
           "❌ [PeekController] Failed to cancel peek request $requestId: $e");
+      // Fallback to direct Firestore update if Cloud Function fails
+      try {
+        await _firestore.collection('peek_requests').doc(requestId).update({
+          'status': 'cancelled_by_sender',
+        });
+        debugPrint(
+            "[PeekController] Fallback: Updated peek request $requestId to 'cancelled_by_sender'.");
+      } catch (fallbackError) {
+        debugPrint("❌ [PeekController] Fallback also failed: $fallbackError");
+      }
     }
   }
 

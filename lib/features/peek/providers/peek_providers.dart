@@ -194,7 +194,7 @@ final hasFCMTokenProvider = Provider<bool>((ref) {
   );
 });
 
-// 10. Provider for enhanced peek request status tracking
+// 11. Provider for enhanced peek request status tracking
 final peekRequestStatusProvider = StateProvider<Map<String, String>>((ref) {
   return <String, String>{};
 });

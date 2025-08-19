@@ -12,6 +12,10 @@ import 'package:peek/features/peek/camera/user_settings_manager.dart';
 import 'package:peek/theme/colors.dart';
 import 'package:peek/core/widgets/peek_loading_indicator.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:peek/features/peek/controllers/peek_controller.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 // Global camera list (keeping this as is for compatibility)
 List<CameraDescription> _cameras = [];
@@ -58,12 +62,47 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
   bool _isProcessingAction = false;
   bool _isButtonPressed = false;
 
+  // Status listener
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _statusListener;
+
   @override
   void initState() {
     super.initState();
     _initializeManagers();
     _setupAnimation();
     _initializeCapture();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Start status listener after dependencies are available
+    if (_statusListener == null) {
+      _startStatusListener();
+
+      // Add a periodic check to verify the listener is working
+      Timer.periodic(const Duration(seconds: 5), (timer) {
+        if (!mounted) {
+          timer.cancel();
+          return;
+        }
+
+        // Check current status to verify listener is working
+        FirebaseFirestore.instance
+            .collection('peek_requests')
+            .doc(widget.requestId)
+            .get()
+            .then((snapshot) {
+          if (snapshot.exists && mounted) {
+            final data = snapshot.data();
+            final status = data?['status'] as String?;
+            debugPrint("[PhotoCapturePage] Periodic status check: $status");
+          }
+        }).catchError((error) {
+          debugPrint("[PhotoCapturePage] Periodic status check error: $error");
+        });
+      });
+    }
   }
 
   /// Initialize all manager components
@@ -152,9 +191,170 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
       // Start listening for countdown
       _countdownManager.listenForCaptureDeadline(widget.requestId);
 
+      // Start listening for status changes (including cancellations)
+      // _startStatusListener(); // This line is now handled in didChangeDependencies
+
       setState(() => _isInitializing = false);
     } catch (e) {
       _handleError("Initialization failed: $e");
+    }
+  }
+
+  /// Start listening for status changes to detect cancellations
+  void _startStatusListener() {
+    debugPrint(
+        "[PhotoCapturePage] Starting status listener for request: ${widget.requestId}");
+
+    _statusListener = FirebaseFirestore.instance
+        .collection('peek_requests')
+        .doc(widget.requestId)
+        .snapshots()
+        .listen(
+      (snapshot) {
+        debugPrint(
+            "[PhotoCapturePage] Status listener triggered - mounted: $mounted, exists: ${snapshot.exists}");
+
+        if (!mounted || !snapshot.exists) {
+          debugPrint(
+              "[PhotoCapturePage] Skipping status update - not mounted or snapshot doesn't exist");
+          return;
+        }
+
+        final data = snapshot.data();
+        if (data == null) {
+          debugPrint("[PhotoCapturePage] Snapshot data is null");
+          return;
+        }
+
+        final status = data['status'] as String?;
+        debugPrint("[PhotoCapturePage] Status update received: $status");
+
+        // Log all status changes for debugging
+        if (status != null) {
+          debugPrint("[PhotoCapturePage] Full status data: $data");
+        }
+
+        // Handle cancellation events
+        if (status == 'cancelled_by_sender') {
+          debugPrint(
+              "[PhotoCapturePage] Sender cancelled peek. Redirecting home...");
+          if (mounted) {
+            // Use a more robust navigation approach
+            Future.delayed(const Duration(milliseconds: 100), () {
+              if (mounted) {
+                context.go('/?show=peekCancelled&reason=sender_cancelled');
+              }
+            });
+          }
+        } else if (status == 'cancelled_by_receiver') {
+          debugPrint(
+              "[PhotoCapturePage] Receiver cancelled peek. Redirecting home...");
+          if (mounted) {
+            // Use a more robust navigation approach
+            Future.delayed(const Duration(milliseconds: 100), () {
+              if (mounted) {
+                context.go('/?show=peekCancelled&reason=receiver_cancelled');
+              }
+            });
+          }
+        }
+
+        // Handle timeout/expiration events
+        if (status == 'expired' || status == 'expired_capture') {
+          debugPrint(
+              "[PhotoCapturePage] Peek request expired (status: $status). Showing Time Up! state...");
+          if (mounted) {
+            _showTimeUpState();
+          }
+        }
+      },
+      onError: (error) {
+        debugPrint("[PhotoCapturePage] Status listener error: $error");
+      },
+    );
+
+    debugPrint("[PhotoCapturePage] Status listener started successfully");
+  }
+
+  /// Show the Time Up! state when the peek request expires
+  void _showTimeUpState() {
+    // Cancel the countdown since it's no longer needed
+    _countdownManager.cancelCountdown();
+
+    // Show the Time Up! slide panel
+    if (mounted) {
+      showModalBottomSheet(
+        context: context,
+        backgroundColor: Colors.transparent,
+        isScrollControlled: true,
+        isDismissible: true,
+        builder: (context) {
+          return Container(
+            height: MediaQuery.of(context).size.height * 0.4,
+            width: double.infinity,
+            decoration: const BoxDecoration(
+              color: peekBackgroundColor,
+              borderRadius: BorderRadius.vertical(
+                top: Radius.circular(24),
+              ),
+            ),
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(
+                  Icons.timer_off_outlined,
+                  size: 60,
+                  color: Colors.white70,
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  "Time Up!",
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  "The peek request has expired.",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Colors.white70,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    if (mounted) {
+                      context.go('/');
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: peekBackgroundColor,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 32, vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text(
+                    "Go Home",
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      );
     }
   }
 
@@ -269,8 +469,11 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.timer_off_outlined,
-                  size: 60, color: Colors.white70),
+              const Icon(
+                Icons.timer_off_outlined,
+                size: 60,
+                color: Colors.white70,
+              ),
               const SizedBox(height: 20),
               const Text("Time's Up!",
                   style: TextStyle(
@@ -324,23 +527,69 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
     _countdownManager.startManualCountdown(durationSeconds: 30);
   }
 
+  /// Handle close action for the close button
+  void _handleCloseAction() async {
+    debugPrint(
+        "[PhotoCapturePage] Close button tapped. Attempting to decline peek as receiver...");
+
+    try {
+      // Use Cloud Function to cancel the peek request with admin privileges
+      final functions = FirebaseFunctions.instanceFor(region: "us-central1");
+      final callable = functions.httpsCallable('cancelPeekRequest');
+
+      final result = await callable.call({
+        'requestId': widget.requestId,
+        'reason': 'receiver_cancelled',
+        'debug': kDebugMode,
+      });
+
+      final responseData = result.data as Map<String, dynamic>;
+      if (responseData['success'] == true) {
+        debugPrint(
+            "[PhotoCapturePage] Peek cancelled successfully via Cloud Function. Navigating home...");
+
+        // Navigate directly to home with cancellation parameters
+        if (mounted) {
+          debugPrint(
+              "[PhotoCapturePage] Navigating to home with receiver cancellation...");
+          context.go('/?show=peekCancelled&reason=receiver_cancelled');
+        }
+      } else {
+        throw Exception('Cloud Function returned success: false');
+      }
+    } catch (e) {
+      debugPrint(
+          "[PhotoCapturePage] Error cancelling peek via Cloud Function: $e");
+      debugPrint("[PhotoCapturePage] Using fallback approach...");
+
+      // Fallback: Even if Cloud Function fails, navigate home
+      // The sender will eventually detect the cancellation through other means
+      if (mounted) {
+        debugPrint(
+            "[PhotoCapturePage] Fallback navigation due to Cloud Function error...");
+        context.go('/');
+      }
+    }
+  }
+
   @override
   void dispose() {
     _pulseController.dispose();
     _cameraManager.dispose();
     _captureLogic.dispose();
     _countdownManager.dispose();
+    _statusListener?.cancel(); // Cancel the listener
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isInitializing) {
-      return _buildLoadingScreen();
-    }
-
     if (_cameraManager.initializationError != null) {
       return _buildErrorScreen();
+    }
+
+    if (_isInitializing) {
+      return _buildLoadingScreen();
     }
 
     return Scaffold(
@@ -349,6 +598,9 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
         children: [
           // Camera preview
           _buildCameraPreview(),
+
+          // Close button overlay - top-right corner
+          _buildCloseButton(),
 
           // Countdown overlay
           if (_countdownManager.secondsRemaining != null)
@@ -485,7 +737,7 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
           left: 24,
           right: 24,
           top: 24,
-          bottom: 79, // 24 + 35 + 20 = 79px total bottom padding
+          bottom: 120, // Increased from 79 to 120 for more bottom spacing
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -504,7 +756,26 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
                   color: _captureLogic.capturedImageBytes != null
                       ? peekPrimaryColor
                       : Colors.white,
-                  border: Border.all(color: Colors.white, width: 4),
+                  border: Border.all(
+                    color: Colors.white,
+                    width: 4,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black
+                          .withOpacity(_isButtonPressed ? 0.05 : 0.08),
+                      blurRadius: _isButtonPressed ? 8 : 16,
+                      spreadRadius: _isButtonPressed ? 0.5 : 1,
+                      offset: Offset(0, _isButtonPressed ? 3 : 6),
+                    ),
+                    BoxShadow(
+                      color: Colors.black
+                          .withOpacity(_isButtonPressed ? 0.03 : 0.06),
+                      blurRadius: _isButtonPressed ? 20 : 32,
+                      spreadRadius: _isButtonPressed ? 0.3 : 0.6,
+                      offset: Offset(0, _isButtonPressed ? 6 : 12),
+                    ),
+                  ],
                 ),
                 child: GestureDetector(
                   onTap: _isProcessingAction ? null : _handleCapturePress,
@@ -602,6 +873,23 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
             logoColor: Colors.white,
             loadingText: "Sending Peek...",
           ),
+        ),
+      ),
+    );
+  }
+
+  /// Build close button overlay
+  Widget _buildCloseButton() {
+    return Positioned(
+      top: MediaQuery.of(context).padding.top + 50,
+      right: 20,
+      child: CircleAvatar(
+        radius: 20,
+        backgroundColor: Colors.black.withOpacity(0.4),
+        child: IconButton(
+          onPressed: _handleCloseAction,
+          icon: const Icon(Icons.close, color: Colors.white, size: 24),
+          padding: EdgeInsets.zero,
         ),
       ),
     );
