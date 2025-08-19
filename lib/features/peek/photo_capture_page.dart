@@ -4,7 +4,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:camera/camera.dart';
-// import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:peek/features/peek/camera/camera_controller_manager.dart';
 import 'package:peek/features/peek/camera/photo_capture_logic.dart';
 import 'package:peek/features/peek/camera/location_service.dart';
@@ -12,7 +11,7 @@ import 'package:peek/features/peek/camera/countdown_manager.dart';
 import 'package:peek/features/peek/camera/user_settings_manager.dart';
 import 'package:peek/theme/colors.dart';
 import 'package:peek/core/widgets/peek_loading_indicator.dart';
-import 'package:firebase_auth/firebase_auth.dart'; // Added for FirebaseAuth
+import 'package:firebase_auth/firebase_auth.dart';
 
 // Global camera list (keeping this as is for compatibility)
 List<CameraDescription> _cameras = [];
@@ -48,9 +47,6 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
   late final LocationService _locationService;
   late final CountdownManager _countdownManager;
   late final UserSettingsManager _userSettings;
-
-  // Analytics (for future use)
-  // final FirebaseAnalytics _analytics = FirebaseAnalytics.instance;
 
   // Animation
   late final AnimationController _pulseController;
@@ -246,6 +242,8 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
 
     debugPrint("[PhotoCapturePage] Capture timeout reached - showing modal");
 
+    // Use the centralized "Time Up!" panel from peek_dialog_manager.dart
+    // This ensures consistency across all timeout scenarios
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
@@ -259,9 +257,9 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
 
         return Container(
           width: double.infinity,
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.fromLTRB(30, 40, 30, 80),
           decoration: const BoxDecoration(
-            color: Colors.black87,
+            color: peekBackgroundColor,
             borderRadius: BorderRadius.only(
               topLeft: Radius.circular(20),
               topRight: Radius.circular(20),
@@ -277,7 +275,7 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
               const Text("Time's Up!",
                   style: TextStyle(
                       fontSize: 28,
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.w600,
                       color: Colors.white)),
               const SizedBox(height: 10),
               const Text("The photo capture window has expired.",
@@ -289,8 +287,8 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
                 child: ElevatedButton(
                   onPressed: () => Navigator.of(ctx).pop(),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    foregroundColor: Colors.black,
+                    backgroundColor: peekSecondaryColor,
+                    foregroundColor: peekSurfaceColor,
                     minimumSize: const Size(double.infinity, 50),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(30),

@@ -68,8 +68,6 @@ class _HomePageState extends ConsumerState<HomePage> {
           children: [
             // The main content container with rounded corners
             material.Container(
-              margin: const material.EdgeInsets.only(
-                  top: 24), // Space for close button
               height: material.MediaQuery.of(context).size.height * 0.4,
               width: double.infinity,
               decoration: const material.BoxDecoration(
@@ -108,23 +106,13 @@ class _HomePageState extends ConsumerState<HomePage> {
                     child: material.ElevatedButton(
                       style: material.ElevatedButton.styleFrom(
                         backgroundColor: peekSecondaryColor,
+                        foregroundColor: peekSurfaceColor,
                       ),
                       onPressed: () => material.Navigator.of(ctx).pop(),
                       child: const material.Text('OK'),
                     ),
                   )
                 ],
-              ),
-            ),
-            // Positioned Close Button
-            material.Positioned(
-              top: 24 + 8, // Position relative to the top of the Stack
-              right: 12,
-              child: material.IconButton(
-                icon: const material.Icon(material.Icons.close,
-                    color: material.Colors.white54),
-                onPressed: () => material.Navigator.of(ctx).pop(),
-                tooltip: 'Close',
               ),
             ),
           ],

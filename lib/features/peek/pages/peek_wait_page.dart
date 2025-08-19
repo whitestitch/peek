@@ -378,24 +378,10 @@ class _PeekWaitPageState extends ConsumerState<PeekWaitPage> {
           );
 
     return material.Scaffold(
-      // <<< Use prefix
       backgroundColor: peekBackgroundColor,
       body: material.Stack(
-        // <<< Use prefix
         fit: material.StackFit.expand,
         children: [
-          // --- Layer 1: Background Image ---
-          // material.Image.asset(
-          //   _backgroundImagePath,
-          //   fit: material.BoxFit.cover,
-          //   errorBuilder: (context, error, stackTrace) {
-          //     material
-          //         .debugPrint("❌ Error loading wait background image: $error");
-          //     return material.Container(
-          //         color: peekBackgroundColor); // <<< Use prefix
-          //   },
-          // ),
-
           // --- Layer 2: Rive Animation (Centered) ---
           material.Center(
             child: material.SizedBox(
