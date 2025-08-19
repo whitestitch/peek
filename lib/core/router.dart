@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:peek/core/providers.dart';
-import 'package:peek/features/peek/pages/peek_sender_wait_page_new.dart';
+import 'package:peek/features/peek/pages/peek_sender_wait_page.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -19,13 +19,13 @@ import 'package:peek/features/stats/pages/stats_page.dart';
 import 'package:peek/core/widgets/app_shell.dart';
 
 import 'package:peek/features/menu/about_page.dart';
-import '../features/peek/photo_capture_page_new.dart';
+import '../features/peek/photo_capture_page.dart';
 import '../features/peek/splash_page.dart';
-import '../features/peek/pages/peek_receiver_page_new.dart';
-import '../features/peek/peek_image_view_new.dart';
+import '../features/peek/pages/peek_receiver_page.dart';
+import '../features/peek/peek_image_view.dart';
 import '../features/peek/pages/peek_wait_page.dart';
 import '../features/peek/pages/peek_feedback_page.dart';
-import '../features/peek/pages/peek_accepted_page_new.dart';
+import '../features/peek/pages/peek_accepted_page.dart';
 import '../features/peek/peek_declined_page.dart';
 import '../features/peek/peek_timed_out_page.dart';
 import '../features/auth/upgrade_account.dart';
@@ -222,7 +222,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/receive',
         name: 'receive',
-        builder: (_, __) => const PeekReceiverPageNew(),
+        builder: (_, __) => const PeekReceiverPage(),
       ),
       GoRoute(
         path: '/capture',
@@ -240,9 +240,8 @@ final routerProvider = Provider<GoRouter>((ref) {
         name: 'peek-accepted',
         builder: (context, state) {
           final requestId = state.uri.queryParameters['requestId']!;
-          // MODIFIED: imageUrl is no longer needed or passed to PeekAcceptedPageNew.
-          // final imageUrl = state.uri.queryParameters['imageUrl']!;
-          return PeekAcceptedPageNew(
+          // MODIFIED: imageUrl is no longer needed or passed to PeekAcceptedPage.
+          return PeekAcceptedPage(
             requestId: requestId,
           );
         },
@@ -255,7 +254,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           if (requestId == null) {
             return _errorScreen('❌ Missing requestId for sender wait page');
           }
-          return PeekSenderWaitPageNew(requestId: requestId);
+          return PeekSenderWaitPage(requestId: requestId);
         },
       ),
       GoRoute(

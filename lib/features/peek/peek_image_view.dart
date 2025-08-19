@@ -1,14 +1,16 @@
-// lib/features/peek/peek_image_view.dart
 import 'dart:async';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:firebase_analytics/firebase_analytics.dart';
-import 'package:peek/core/firestore_service.dart'; // To fetch user settings
-import 'package:flutter_riverpod/flutter_riverpod.dart'; // To use FirestoreService provider
-import 'package:peek/theme/colors.dart'; // Assuming your color theme
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+import 'package:peek/features/peek/image_view/image_display_manager.dart';
+import 'package:peek/features/peek/image_view/view_timer_manager.dart';
+import 'package:peek/features/peek/image_view/user_permissions_manager.dart';
+import 'package:peek/features/peek/image_view/analytics_manager.dart';
+import 'package:peek/features/peek/image_view/moderation_manager.dart';
+import 'package:peek/theme/colors.dart';
 
 @immutable
 class PeekImageView extends ConsumerStatefulWidget {
@@ -27,725 +29,490 @@ class PeekImageView extends ConsumerStatefulWidget {
   ConsumerState<PeekImageView> createState() => _PeekImageViewState();
 }
 
-class _PeekImageViewState extends ConsumerState<PeekImageView>
-    with SingleTickerProviderStateMixin {
-  // Receiver's settings
-  bool _isReceiverPremium = false;
+class _PeekImageViewState extends ConsumerState<PeekImageView> {
+  // Managers
+  late final ImageDisplayManager _imageManager;
+  late final ViewTimerManager _timerManager;
+  late final UserPermissionsManager _permissionsManager;
+  late final AnalyticsManager _analyticsManager;
+  late final ModerationManager _moderationManager;
 
-  // Image state
-  // Controls if the image UI (or loader/error) is shown
-  bool _showImage = false;
-  // True when Image.network has successfully decoded the image
-  bool _imageActuallyLoaded = false;
-  bool _imageLoadFailed = false;
-
-  // Timers (only for non-premium)
-  Timer? _viewTimer;
-  int _viewDuration = 5;
-
-  // Data from widget
-  late final String _imageUrl;
-
-  // Analytics
-  final FirebaseAnalytics _analytics = FirebaseAnalytics.instance;
-  bool _viewStartedLogged = false;
-
-  // Location data
-  String? _senderLocation;
-  String? _senderDisplayName;
-  String? _senderAvatarUrl;
-
-  String? _originalSenderId;
-
-  // Tracks if receiver's settings have been fetched
-  // Tracks if sender's location has been attempted to fetch
-  bool _receiverSettingsLoaded = false;
-  bool _peekDataFetched = false;
-  bool _isProcessingAction = false;
+  // State
+  bool _isInitialized = false;
+  int _remainingSeconds = 0;
 
   @override
   void initState() {
     super.initState();
-    _imageUrl = widget.imageUrl;
-    _senderLocation = widget.senderLocation;
-    _loadAllNecessaryData();
+    _initializeManagers();
+    _loadAllData();
+
+    // Make status bar transparent for better edge spacing
+    SystemChrome.setSystemUIOverlayStyle(
+      const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light,
+        systemNavigationBarColor: Colors.transparent,
+        systemNavigationBarIconBrightness: Brightness.light,
+      ),
+    );
   }
 
-  Future<void> _loadAllNecessaryData() async {
-    // receiver's settings
-    // the sender's ID (for reporting).
-    await _loadReceiverSettings();
-    await _fetchPeekData();
-    if (mounted) {
-      _initiateImageDisplay();
-    }
+  /// Initialize all manager components
+  void _initializeManagers() {
+    _imageManager = ImageDisplayManager(
+      imageUrl: widget.imageUrl,
+      onImageLoaded: _handleImageLoaded,
+      onImageFailed: _handleImageFailed,
+      onImageShown: _handleImageShown,
+      onError: _handleError,
+    );
+
+    _timerManager = ViewTimerManager(
+      onTimerComplete: _handleTimerComplete,
+      onTimerTick: (seconds) {
+        setState(() => _remainingSeconds = seconds);
+      },
+      onTimerStarted: () => _analyticsManager.logTimerEvent(event: 'started'),
+      onTimerStopped: () => _analyticsManager.logTimerEvent(event: 'cancelled'),
+    );
+
+    _permissionsManager = UserPermissionsManager(
+      onSettingsLoaded: _handleSettingsLoaded,
+      onPremiumStatusChanged: _handlePremiumStatusChanged,
+      onError: _handleError,
+    );
+
+    _analyticsManager = AnalyticsManager(
+      requestId: widget.requestId,
+      imageUrl: widget.imageUrl,
+      senderLocation: widget.senderLocation,
+      onError: _handleError,
+    );
+
+    _moderationManager = ModerationManager(
+      requestId: widget.requestId,
+      onActionStarted: () => setState(() {}),
+      onActionCompleted: () => setState(() {}),
+      onError: _handleError,
+      onSuccess: _handleSuccess,
+    );
   }
 
-  Future<void> _loadReceiverSettings() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      debugPrint(
-          "[PeekImageView] User not logged in for receiver settings check.");
-      if (mounted) {
-        setState(() {
-          _isReceiverPremium = false;
-
-          _viewDuration = 5;
-          _receiverSettingsLoaded = true;
-        });
-      }
-      return;
-    }
-
+  /// Load all necessary data
+  Future<void> _loadAllData() async {
     try {
-      final firestoreService = ref.read(firestoreServiceProvider);
-      // ASSUMPTION: getCurrentUserDocument() exists in FirestoreService
-      final userDoc = await firestoreService.getCurrentUserDocument();
+      // Load user permissions first
+      await _permissionsManager.loadReceiverSettings();
 
-      bool isPremium = false;
+      // Fetch peek data for sender information
+      await _fetchPeekData();
 
-      if (userDoc != null && userDoc.exists) {
-        final data = userDoc.data();
-        isPremium = data?['isPremium'] as bool? ?? false;
-      }
+      // Initialize image display
+      _imageManager.initiateImageDisplay();
 
-      if (!mounted) return;
-      setState(() {
-        _isReceiverPremium = isPremium;
-
-        _viewDuration =
-            _isReceiverPremium ? 99999 : 5; // Effectively infinite for premium
-        _receiverSettingsLoaded = true;
-      });
+      setState(() => _isInitialized = true);
     } catch (e) {
-      debugPrint('⚠️ [PeekImageView] Failed to load receiver settings: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Could not verify your settings.'),
-            duration: Duration(seconds: 2),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-        setState(() {
-          _isReceiverPremium = false;
-
-          _viewDuration = 5;
-          _receiverSettingsLoaded =
-              true; // Mark as loaded even on error to proceed
-        });
-      }
+      _handleError("Initialization failed: $e");
     }
   }
 
+  /// Fetch peek data from Firestore
   Future<void> _fetchPeekData() async {
-    debugPrint(
-        "[PeekImageView] _fetchPeekData: Attempting to fetch data for requestId: ${widget.requestId}.");
     try {
-      final peekDoc = await FirebaseFirestore.instance
+      final doc = await FirebaseFirestore.instance
           .collection('peek_requests')
           .doc(widget.requestId)
           .get();
 
-      String? displayName;
-      String? avatarUrl;
-      String? fetchedSenderId;
+      if (!doc.exists) {
+        _handleError("Peek request not found");
+        return;
+      }
 
-      if (peekDoc.exists) {
-        final data = peekDoc.data();
-        fetchedSenderId = data?['senderId'] as String?;
-        debugPrint(
-            "[PeekImageView] Fetched originalSenderId for reactions/reporting: $fetchedSenderId");
+      final data = doc.data()!;
+      final senderId = data['senderUid']
+          as String?; // Changed from 'senderId' to 'senderUid'
 
-        // Only fetch display name and avatar if the user is premium
-        if (_isReceiverPremium) {
-          displayName = data?['senderDisplayName'] as String?;
-          avatarUrl = data?['senderAvatarUrl'] as String?;
+      debugPrint("[PeekImageView] Fetched peek data - senderId: $senderId");
+
+      _moderationManager.updateSenderId(senderId);
+
+      // Fetch sender information if available
+      if (senderId != null) {
+        final senderDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(senderId)
+            .get();
+
+        if (senderDoc.exists) {
+          final senderData = senderDoc.data()!;
+          _permissionsManager.updateSenderInfo(
+            displayName: senderData['displayName'] as String?,
+            avatarUrl: senderData['avatarUrl'] as String?,
+            senderId: senderId,
+          );
         }
       }
-
-      if (mounted) {
-        setState(() {
-          _originalSenderId = fetchedSenderId;
-          _senderDisplayName = displayName;
-          _senderAvatarUrl = avatarUrl;
-          // IMPORTANT: We no longer set _senderLocation here, preserving the value from the widget.
-          _peekDataFetched = true;
-        });
-      }
     } catch (e) {
-      debugPrint(
-          "❌ [PeekImageView] _fetchPeekData: Error fetching data for ${widget.requestId}: $e");
-      if (mounted) {
-        setState(() {
-          _peekDataFetched =
-              true; // Mark as fetched even on error to unblock UI
-          // _originalSenderId might still be null if doc wasn't found or senderId was missing in doc.
-          debugPrint(
-              "[PeekImageView] _fetchPeekData: State updated on error. _peekDataFetched: $_peekDataFetched, _originalSenderId: $_originalSenderId");
-        });
-      }
+      debugPrint("Error fetching peek data: $e");
+      _handleError("Failed to load peek information");
     }
   }
 
-  void _initiateImageDisplay() {
-    // This function is called after attempting to load all necessary data.
-    if (!mounted) return;
-    setState(() {
-      _showImage = true; // Trigger UI to show image or its loading/error state
-    });
-
-    // Log peek view started event (only once per view)
-    if (!_viewStartedLogged) {
-      try {
-        _analytics.logEvent(
-          name: 'peek_view_started',
-          parameters: {
-            'request_id_partial': widget.requestId.length >= 8
-                ? widget.requestId.substring(0, 8)
-                : widget.requestId,
-            'viewer_is_premium': _isReceiverPremium.toString(),
-          },
-        );
-        _viewStartedLogged = true;
-        debugPrint("[PeekImageView] Logged peek_view_started event.");
-      } catch (e) {
-        debugPrint("Error logging peek_view_started event: $e");
-      }
-    }
-
-    // Start view timer only for non-premium users
-    if (!_isReceiverPremium) {
-      debugPrint("[PeekImageView] Non-premium user, starting view timer.");
-      _startViewTimer();
-    } else {
-      debugPrint(
-          "[PeekImageView] Premium user, image will stay visible (no view timer).");
-    }
+  /// Handle image loaded successfully
+  void _handleImageLoaded() {
+    _analyticsManager.logImageLoaded();
+    setState(() {});
   }
 
+  /// Handle image load failure
+  void _handleImageFailed() {
+    _analyticsManager.logImageLoadFailed(error: "Network error");
+    setState(() {});
+  }
+
+  /// Handle image shown
+  void _handleImageShown() {
+    // Start analytics tracking
+    _analyticsManager.logViewStarted(
+      isPremium: _permissionsManager.isReceiverPremium,
+      senderDisplayName: _permissionsManager.senderDisplayName,
+    );
+
+    // Start timer for non-premium users
+    _timerManager.startViewTimer();
+
+    setState(() {});
+  }
+
+  /// Handle settings loaded
+  void _handleSettingsLoaded() {
+    setState(() {});
+  }
+
+  /// Handle premium status change
+  void _handlePremiumStatusChanged(bool isPremium) {
+    _timerManager.updatePremiumStatus(isPremium);
+    setState(() {});
+  }
+
+  /// Handle timer completion
+  void _handleTimerComplete() {
+    _analyticsManager.logTimerEvent(event: 'completed');
+    _decideNextNavigation();
+  }
+
+  /// Handle close action
+  Future<void> _handleCloseAction() async {
+    _analyticsManager.logViewCompleted(reason: 'user_closed');
+    _decideNextNavigation();
+  }
+
+  /// Decide next navigation based on app state
   Future<void> _decideNextNavigation() async {
     if (!mounted) return;
 
-    // It checks if the sender's ID was successfully fetched.
-    if (_originalSenderId != null && _originalSenderId!.isNotEmpty) {
-      debugPrint(
-          "[PeekImageView] Navigating to Reaction Screen. RequestId: ${widget.requestId}, OriginalSenderUid: $_originalSenderId");
+    // Simple check: if we have the sender ID, go to reaction screen
+    final originalSenderId = _permissionsManager.originalSenderId;
+    debugPrint(
+        "[PeekImageView] Navigation decision - originalSenderId: $originalSenderId");
 
-      // MODIFIED: Removed the imageUrl from the navigation parameters.
+    if (originalSenderId != null && originalSenderId.isNotEmpty) {
+      debugPrint(
+          "[PeekImageView] Navigating to Reaction Screen. RequestId: ${widget.requestId}, OriginalSenderUid: $originalSenderId");
+
       context.go(
-          '/peek-reaction?requestId=${widget.requestId}&originalSenderUid=$_originalSenderId');
+          '/peek-reaction?requestId=${widget.requestId}&originalSenderUid=$originalSenderId');
     } else {
-      // This is a fallback if the sender's ID couldn't be found for some reason.
+      // Fallback if sender ID couldn't be found
       debugPrint(
-          "[PeekImageView] _originalSenderId is null or empty. Navigating to home.");
-      context.go('/'); // Fallback to home
+          "[PeekImageView] OriginalSenderId is null or empty. Navigating to home.");
+      context.go('/');
     }
-
-    // FEEDBAK TEPORY DISABLED
-    // bool shouldShowFeedback = false;
-    // try {
-    //   final prefs = await SharedPreferences.getInstance();
-    //   final lastPromptMillis = prefs.getInt(_feedbackTimestampKey) ?? 0;
-    //   final nowMillis = DateTime.now().millisecondsSinceEpoch;
-    //   if ((nowMillis - lastPromptMillis) >
-    //       _feedbackPromptInterval.inMilliseconds) {
-    //     shouldShowFeedback = true;
-    //     await prefs.setInt(_feedbackTimestampKey, nowMillis);
-    //   }
-    // } catch (e) {
-    //   debugPrint("Error with SharedPreferences for feedback: $e");
-    // }
-
-    // if (!mounted) return;
-    // try {
-    //   context.go(shouldShowFeedback
-    //       ? '/peek-feedback?requestId=${widget.requestId}'
-    //       : '/');
-    // } catch (e) {
-    //   debugPrint(
-    //       "⚠️ [PeekImageView] Navigation failed in _decideNextNavigation: $e. Fallback to home.");
-    //   if (mounted) context.go('/'); // Fallback
-    // }
   }
 
-  void _startViewTimer() {
-    if (_isReceiverPremium) return; // Should not be called for premium
-    _viewTimer?.cancel();
-    _viewTimer = Timer(Duration(seconds: _viewDuration), () {
-      if (!mounted) return;
-      debugPrint("[PeekImageView] Non-premium view timer finished.");
-
-      // Call setState to hide the image
-      setState(() {
-        _showImage = false;
-      });
-
-      // Defer navigation until after the current frame is built
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          _decideNextNavigation();
-        }
-      });
-    });
+  /// Handle errors
+  void _handleError(String error) {
+    debugPrint("PeekImageView Error: $error");
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error),
+          backgroundColor: peekErrorColor,
+        ),
+      );
+    }
   }
 
-  Future<void> _handleCloseAction() async {
-    debugPrint("[PeekImageView] Close action initiated.");
-    _viewTimer?.cancel(); // Stop timer if non-premium
-
-    bool shouldHideImage = mounted && !_isReceiverPremium;
-
-    if (shouldHideImage) {
-      setState(() {
-        _showImage = false; // Hide image for non-premium on close
-      });
+  /// Handle success messages
+  void _handleSuccess(String message) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.green,
+        ),
+      );
     }
-
-    // Defer navigation until after the current frame is built,
-    // especially if setState was called.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        _decideNextNavigation();
-      }
-    });
   }
 
   @override
   void dispose() {
-    debugPrint("[PeekImageView] Disposing.");
-    _viewTimer?.cancel();
+    // Restore default system UI
+    SystemChrome.setSystemUIOverlayStyle(
+      const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.dark,
+        systemNavigationBarColor: Colors.transparent,
+        systemNavigationBarIconBrightness: Brightness.dark,
+      ),
+    );
+
+    _imageManager.dispose();
+    _timerManager.dispose();
+    _permissionsManager.dispose();
+    _analyticsManager.dispose();
+    _moderationManager.dispose();
     super.dispose();
-  }
-
-  Future<void> _reportThisPeek() async {
-    if (_originalSenderId == null || _originalSenderId!.isEmpty) {
-      debugPrint(
-          "[PeekImageView] Cannot report: Original Sender ID is missing.");
-      if (mounted)
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text("Cannot report this Peek: sender unknown.")));
-      return;
-    }
-    if (_isProcessingAction) return;
-    setState(() => _isProcessingAction = true);
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: peekSurfaceColor,
-        title: const Text("Report Peek?",
-            style: TextStyle(color: peekOnSurfaceColor)),
-        content: const Text(
-            "Are you sure you want to report this Peek for objectionable content? This action cannot be undone.",
-            style: TextStyle(color: peekOnSurfaceColor)),
-        actions: [
-          TextButton(
-            child: const Text("Cancel",
-                style: TextStyle(color: peekOnSurfaceColor)),
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-          ),
-          TextButton(
-            child: Text("Report",
-                style: TextStyle(color: Colors.redAccent.shade100)),
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true && mounted) {
-      try {
-        final firestoreService = ref.read(firestoreServiceProvider);
-        final reporterId = FirebaseAuth.instance.currentUser?.uid;
-        if (reporterId == null) throw Exception("Reporter not logged in");
-
-        await firestoreService.addReport(
-          peekRequestId: widget.requestId,
-          reportedImageUrl: _imageUrl,
-          reportedSenderId: _originalSenderId!,
-          reporterId: reporterId,
-          reason: "objectionable_content",
-        );
-        if (mounted)
-          ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text("Peek reported. Thank you.")));
-        context.go('/'); // Navigate home after reporting
-      } catch (e) {
-        debugPrint("❌ Error reporting Peek: $e");
-        if (mounted)
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text("Failed to report Peek. Please try again.")));
-      }
-    }
-    if (mounted) setState(() => _isProcessingAction = false);
-  }
-
-  Future<void> _blockThisSender() async {
-    if (_originalSenderId == null || _originalSenderId!.isEmpty) {
-      debugPrint(
-          "[PeekImageView] Cannot block: Original Sender ID is missing.");
-      if (mounted)
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text("Cannot block this sender: sender unknown.")));
-      return;
-    }
-    if (_isProcessingAction) return;
-    setState(() => _isProcessingAction = true);
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: peekSurfaceColor,
-        title: const Text("Block Sender?",
-            style: TextStyle(color: peekOnSurfaceColor)),
-        content: const Text(
-            "Are you sure you want to block this sender? You will no longer receive Peeks from them.",
-            style: TextStyle(color: peekOnSurfaceColor)),
-        actions: [
-          TextButton(
-            child: const Text("Cancel",
-                style: TextStyle(color: peekOnSurfaceColor)),
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-          ),
-          TextButton(
-            child: Text("Block",
-                style: TextStyle(color: Colors.redAccent.shade100)),
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true && mounted) {
-      try {
-        final firestoreService = ref.read(firestoreServiceProvider);
-        final currentUserId = FirebaseAuth.instance.currentUser?.uid;
-        if (currentUserId == null)
-          throw Exception("Current user not logged in");
-
-        await firestoreService.blockUser(
-            byUserId: currentUserId, userIdToBlock: _originalSenderId!);
-
-        if (mounted)
-          ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text("Sender blocked successfully.")));
-        context.go('/'); // Navigate home after blocking
-      } catch (e) {
-        debugPrint("❌ Error blocking sender: $e");
-        if (mounted)
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text("Failed to block sender. Please try again.")));
-      }
-    }
-    if (mounted) setState(() => _isProcessingAction = false);
   }
 
   @override
   Widget build(BuildContext context) {
-    // Determine if all prerequisite data for showing content has been loaded
-    bool canShowContent = _receiverSettingsLoaded &&
-        (_isReceiverPremium ? _peekDataFetched : true);
-
-    debugPrint(
-        "[PeekImageView] build(): canShowContent: $canShowContent (_receiverSettingsLoaded: $_receiverSettingsLoaded, _isReceiverPremium: $_isReceiverPremium, _peekDataFetched: $_peekDataFetched)");
-    debugPrint(
-        "[PeekImageView] build(): _imageLoadFailed: $_imageLoadFailed, _showImage: $_showImage");
-
-    Widget bodyContent;
-
-    if (!canShowContent) {
-      // Still loading initial settings or location data
-      bodyContent =
-          const Center(child: CircularProgressIndicator(color: Colors.white));
-    } else if (_imageLoadFailed) {
-      // Image loading failed state
-      bodyContent = Center(
-        child: Padding(
-          padding: const EdgeInsets.all(20.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.error_outline,
-                  size: 60, color: Colors.redAccent),
-              const SizedBox(height: 16),
-              const Text('❌ Failed to load Peek',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white, fontSize: 18)),
-              const SizedBox(height: 24),
-              TextButton(
-                onPressed: () => context.go('/'),
-                child: const Text('Go Home',
-                    style: TextStyle(color: Colors.white70)),
-              ),
-            ],
-          ),
-        ),
-      );
-    } else if (_showImage) {
-      bool shouldDisplayLocation = _isReceiverPremium &&
-          _senderLocation != null &&
-          _senderLocation!.isNotEmpty &&
-          _imageActuallyLoaded;
-
-      String displayNameToShow = _senderDisplayName?.isNotEmpty ?? false
-          ? _senderDisplayName!
-          : "Someone";
-      // Determine if the container should be shown (premium user & image loaded)
-      bool showSenderInfoContainer = _isReceiverPremium && _imageActuallyLoaded;
-      // Determine if the avatar URL is valid
-      bool hasValidAvatar =
-          _senderAvatarUrl != null && _senderAvatarUrl!.isNotEmpty;
-
-      debugPrint(
-          "[PeekImageView] build() location display conditions: _isReceiverPremium: $_isReceiverPremium, _senderLocation: $_senderLocation, _imageActuallyLoaded: $_imageActuallyLoaded. RESULT: shouldDisplayLocation: $shouldDisplayLocation");
-      debugPrint(
-          "[PeekImageView] build() sender info display conditions: _isReceiverPremium: $_isReceiverPremium, _senderDisplayName: $_senderDisplayName, _imageActuallyLoaded: $_imageActuallyLoaded. RESULT: showSenderInfoContainer: $showSenderInfoContainer");
-
-      // Image is being shown (or attempting to load)
-      bodyContent = Stack(
-        fit: StackFit.expand,
-        children: [
-          Image.network(
-            _imageUrl,
-            fit: BoxFit.cover,
-            frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
-              final bool isImageReady = frame != null;
-
-              // Use addPostFrameCallback to schedule the state update after the build phase
-              // This avoids calling setState during build, which is disallowed.
-              // It handles both synchronous and asynchronous loads correctly.
-              if (isImageReady && !_imageActuallyLoaded) {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (mounted && !_imageActuallyLoaded) {
-                    debugPrint(
-                        "[PeekImageView] frameBuilder: Image frame is ready (frame index: $frame). Setting _imageActuallyLoaded = true");
-                    setState(() {
-                      _imageActuallyLoaded = true;
-                    });
-                  }
-                });
-              }
-
-              return AnimatedOpacity(
-                opacity: frame == null ? 0 : 1,
-                duration: const Duration(milliseconds: 400),
-                curve: Curves.easeOut,
-                onEnd: () {
-                  if (frame != null && mounted) {
-                    debugPrint(
-                        "[PeekImageView] frameBuilder AnimatedOpacity.onEnd: Animation ended, frame available. Setting _imageActuallyLoaded = true");
-                    setState(() {
-                      _imageActuallyLoaded = true;
-                    });
-                  }
-                },
-                child: child,
-              );
-            },
-            loadingBuilder: (context, child, loadingProgress) {
-              if (loadingProgress == null) {
-                // Image data has been received. frameBuilder will handle display.
-                return child;
-              }
-              return const Center(
-                  child: CircularProgressIndicator(color: Colors.white));
-            },
-            errorBuilder: (_, error, stackTrace) {
-              debugPrint(
-                  '❌ [PeekImageView] Image.network errorBuilder: $error');
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (mounted) {
-                  setState(() {
-                    _imageLoadFailed = true;
-                    _showImage = false; // Trigger rebuild to show error state
-                  });
-                }
-              });
-              // Return a placeholder, error state will be built on next frame
-              return const Center(
-                  child: Icon(Icons.broken_image_outlined,
-                      color: Colors.white30, size: 60));
-            },
-          ),
-
-          // Close button for premium users
-          if (_isReceiverPremium)
-            Positioned(
-              top: MediaQuery.of(context).padding.top + 10, // Respect safe area
-              right: 15,
-              child: CircleAvatar(
-                radius: 18,
-                backgroundColor: Colors.black.withOpacity(0.5),
-                child: IconButton(
-                  tooltip: 'Close Peek',
-                  icon: const Icon(Icons.close, size: 20),
-                  color: Colors.white,
-                  onPressed: _handleCloseAction,
-                ),
-              ),
-            ),
-
-          // Display Sender Info Container (conditionally) - Placed Top Left
-          // Display Sender Info Container (conditionally) - Placed Top Left
-          if (showSenderInfoContainer)
-            Positioned(
-              top: MediaQuery.of(context).padding.top +
-                  10, // Align with close button
-              left: 15,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.black
-                      .withOpacity(0.6), // Semi-transparent background
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min, // Keep row tight
-                  children: [
-                    if (hasValidAvatar)
-                      CircleAvatar(
-                        radius: 12, // Small avatar
-                        backgroundColor:
-                            Colors.grey.shade700, // Fallback background
-                        backgroundImage: NetworkImage(_senderAvatarUrl!),
-                        onBackgroundImageError: (exception, stackTrace) {
-                          debugPrint("Error loading sender avatar: $exception");
-                          // Optionally, you could set a flag here to show the fallback icon
-                          // if avatar loading fails, but CircleAvatar handles it gracefully.
-                        },
-                      )
-                    else
-                      Icon(
-                        // Fallback icon if no avatar or error
-                        Icons.person_outline_rounded,
-                        color: peekWhiteColor.withOpacity(0.8),
-                        size: 16,
-                      ),
-                    const SizedBox(width: 8),
-                    Text(
-                      displayNameToShow, // Shows actual name or "Someone"
-                      style: TextStyle(
-                          color: peekWhiteColor,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          shadows: [
-                            Shadow(
-                                blurRadius: 1.0,
-                                color: Colors.black.withOpacity(0.7),
-                                offset: const Offset(1, 1)),
-                          ]),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-          // Display Sender Location (conditionally)
-          // Display Sender Location (conditionally)
-          if (_isReceiverPremium &&
-                  _senderLocation != null &&
-                  _senderLocation!.isNotEmpty &&
-                  _imageActuallyLoaded // Crucial: Only show when image is actually visible
-              )
-            Positioned(
-              bottom: MediaQuery.of(context).padding.bottom +
-                  20, // Respect safe area
-              left: 0,
-              right: 0,
-              child: Center(
-                // Center the location container
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.7),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.location_on_outlined,
-                        color: peekWhiteColor.withOpacity(0.8),
-                        size: 16,
-                      ),
-                      const SizedBox(width: 6),
-                      Flexible(
-                        child: Text(
-                          _senderLocation!,
-                          style: const TextStyle(
-                            color: peekWhiteColor,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              //   ),
-
-              // Positioned(
-              //   top: MediaQuery.of(context).padding.top + 10,
-              //   // Place it on the left if close button is on right, or adjust as needed
-              //   left: (_isReceiverPremium)
-              //       ? 60
-              //       : 15, // Offset if close button is present
-              //   child: CircleAvatar(
-              //     radius: 18,
-              //     backgroundColor: Colors.black.withOpacity(0.5),
-              //     child: PopupMenuButton<String>(
-              //       icon:
-              //           const Icon(Icons.more_vert, color: Colors.white, size: 20),
-              //       color: peekSurfaceColor, // Themed background for dropdown
-              //       onSelected: (String value) {
-              //         if (value == 'report') {
-              //           _reportThisPeek();
-              //         } else if (value == 'block') {
-              //           _blockThisSender();
-              //         }
-              //       },
-              //       itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-              //         const PopupMenuItem<String>(
-              //           value: 'report',
-              //           child: ListTile(
-              //             leading:
-              //                 Icon(Icons.flag_outlined, color: peekOnSurfaceColor),
-              //             title: Text('Report Peek',
-              //                 style: TextStyle(color: peekOnSurfaceColor)),
-              //           ),
-              //         ),
-              //         if (_originalSenderId != null &&
-              //             _originalSenderId!
-              //                 .isNotEmpty) // Only show block if sender ID is known
-              //           const PopupMenuItem<String>(
-              //             value: 'block',
-              //             child: ListTile(
-              //               leading: Icon(Icons.block_flipped,
-              //                   color:
-              //                       peekOnSurfaceColor), // consider Icons.person_remove_outlined
-              //               title: Text('Block Sender',
-              //                   style: TextStyle(color: peekOnSurfaceColor)),
-              //             ),
-              //           ),
-              //       ],
-              //     ),
-              //   ),
-            ),
-        ],
-      );
-    } else {
-      // Fallback / intermediate state (e.g., after non-premium timer, before navigation)
-      // Or if _showImage became false for some other reason and not an error
-      bodyContent =
-          const Center(child: CircularProgressIndicator(color: Colors.white));
+    if (!_isInitialized) {
+      return _buildLoadingScreen();
     }
 
-    return Scaffold(backgroundColor: Colors.black, body: bodyContent);
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          // Main image display
+          _buildImageDisplay(),
+
+          // Timer overlay (for non-premium users)
+          if (_timerManager.shouldShowTimer()) _buildTimerOverlay(),
+
+          // Top controls
+          _buildTopControls(),
+
+          // Bottom controls
+          _buildBottomControls(),
+
+          // Loading overlay for actions
+          if (_moderationManager.isProcessingAction)
+            _buildActionLoadingOverlay(),
+        ],
+      ),
+    );
+  }
+
+  /// Build loading screen
+  Widget _buildLoadingScreen() {
+    return const Scaffold(
+      backgroundColor: Colors.black,
+      body: Center(
+        child: CircularProgressIndicator(color: Colors.white),
+      ),
+    );
+  }
+
+  /// Build main image display
+  Widget _buildImageDisplay() {
+    return Positioned.fill(
+      child: _imageManager.buildImageWidget(
+        fit: BoxFit.contain,
+        loadingWidget: const Center(
+          child: CircularProgressIndicator(color: Colors.white),
+        ),
+      ),
+    );
+  }
+
+  /// Build timer overlay
+  Widget _buildTimerOverlay() {
+    return Positioned(
+      top: 100,
+      left: 0,
+      right: 0,
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.black54,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Text(
+            'Time remaining: ${_remainingSeconds}s',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Build top controls
+  Widget _buildTopControls() {
+    return Positioned(
+      top: MediaQuery.of(context).padding.top + 40,
+      left: 20,
+      right: 20,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          // Report button (3 dots) - aligned left
+          CircleAvatar(
+            radius: 20,
+            backgroundColor: Colors.black.withOpacity(0.4),
+            child: IconButton(
+              onPressed: () => _showMoreOptions(context),
+              icon: const Icon(Icons.more_vert, color: Colors.white, size: 22),
+              padding: EdgeInsets.zero,
+            ),
+          ),
+
+          // Sender name - centered
+          if (_permissionsManager.hasSenderInfo())
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.black54,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.person,
+                    color: peekWhiteColor,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    _permissionsManager.getSenderDisplayName(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          // Close button (X) - aligned right
+          CircleAvatar(
+            radius: 20,
+            backgroundColor: Colors.black.withOpacity(0.4),
+            child: IconButton(
+              onPressed: _handleCloseAction,
+              icon: const Icon(Icons.close, color: Colors.white, size: 24),
+              padding: EdgeInsets.zero,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Build bottom controls
+  Widget _buildBottomControls() {
+    return Positioned(
+      bottom: MediaQuery.of(context).padding.bottom + 60,
+      left: 0,
+      right: 0,
+      child: Center(
+        child: _buildLocationInfo(),
+      ),
+    );
+  }
+
+  /// Build location information (only for premium users)
+  Widget _buildLocationInfo() {
+    // Only show location for premium users and if location is available
+    if (!_permissionsManager.isReceiverPremium ||
+        widget.senderLocation == null) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.black54,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.location_on,
+            color: Colors.red,
+            size: 20,
+          ),
+          const SizedBox(width: 8),
+          Text(
+            widget.senderLocation!,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Build action loading overlay
+  Widget _buildActionLoadingOverlay() {
+    return Positioned.fill(
+      child: Container(
+        color: Colors.black54,
+        child: const Center(
+          child: CircularProgressIndicator(color: Colors.white),
+        ),
+      ),
+    );
+  }
+
+  /// Show more options menu
+  void _showMoreOptions(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.grey[900],
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.report, color: Colors.orange),
+              title: const Text('Report Content',
+                  style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(context);
+                _moderationManager.showReportDialog(context);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.block, color: Colors.red),
+              title: const Text('Block User',
+                  style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(context);
+                _moderationManager.showBlockDialog(context);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

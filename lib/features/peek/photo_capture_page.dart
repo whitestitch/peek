@@ -1,25 +1,20 @@
-// lib/features/peek/photo_capture_page.dart
 import 'dart:async';
-import 'package:firebase_analytics/firebase_analytics.dart';
-import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:peek/features/peek/controllers/peek_controller.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:camera/camera.dart';
+// import 'package:firebase_analytics/firebase_analytics.dart';
+import 'package:peek/features/peek/camera/camera_controller_manager.dart';
+import 'package:peek/features/peek/camera/photo_capture_logic.dart';
+import 'package:peek/features/peek/camera/location_service.dart';
+import 'package:peek/features/peek/camera/countdown_manager.dart';
+import 'package:peek/features/peek/camera/user_settings_manager.dart';
 import 'package:peek/theme/colors.dart';
 import 'package:peek/core/widgets/peek_loading_indicator.dart';
-import 'package:flutter/services.dart';
-import 'package:camera/camera.dart';
-import 'package:firebase_storage/firebase_storage.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:go_router/go_router.dart';
-import 'package:image/image.dart' as img;
-import 'package:peek/core/firestore_service.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:geolocator/geolocator.dart';
-import 'package:geocoding/geocoding.dart';
+import 'package:firebase_auth/firebase_auth.dart'; // Added for FirebaseAuth
 
-// Global camera initialization
+// Global camera list (keeping this as is for compatibility)
 List<CameraDescription> _cameras = [];
 Future<void> initializeCameras() async {
   if (_cameras.isNotEmpty) return;
@@ -33,155 +28,225 @@ Future<void> initializeCameras() async {
 
 class PhotoCapturePage extends ConsumerStatefulWidget {
   final String requestId;
-  const PhotoCapturePage({super.key, required this.requestId});
+  final String mode;
+
+  const PhotoCapturePage({
+    super.key,
+    required this.requestId,
+    required this.mode,
+  });
+
   @override
   ConsumerState<PhotoCapturePage> createState() => _PhotoCapturePageState();
 }
 
 class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
-    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
-  // State variables
-  CameraController? _controller;
-  bool _isCameraInitializing = false;
-  bool _isCameraInitialized = false;
-  bool _isTakingPicture = false;
-  bool _uploading = false;
-  Uint8List? _capturedImageBytes;
-  File? _tempProcessedFile;
-  int _selectedCameraIndex = -1;
+    with SingleTickerProviderStateMixin {
+  // Managers
+  late final CameraControllerManager _cameraManager;
+  late final PhotoCaptureLogic _captureLogic;
+  late final LocationService _locationService;
+  late final CountdownManager _countdownManager;
+  late final UserSettingsManager _userSettings;
 
-  bool _isChangingCamera = false;
-  String? _initializationError;
-  final FirebaseAnalytics _analytics = FirebaseAnalytics.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  bool _countdownHasBeenTriggered = false;
-  bool _isTimeoutHandled = false;
+  // Analytics (for future use)
+  // final FirebaseAnalytics _analytics = FirebaseAnalytics.instance;
 
-  bool _isSenderPremium = false;
-  bool _senderSharesLocation = false;
-
-  bool _senderAllowsLocationReveal = false;
-  bool _isFetchingLocation = false;
-  String? _senderDisplayName;
-  String? _senderAvatarUrl;
-  Timer? _countdownTimer;
-  int? _secondsRemaining;
-
+  // Animation
   late final AnimationController _pulseController;
   late final Animation<double> _pulseAnimation;
 
-  // Timer? _previewTimer;
-  // int? _previewSecondsRemaining;
+  // State
+  String? _currentLocation;
+  bool _isInitializing = true;
+  bool _isProcessingAction = false;
+  bool _isButtonPressed = false;
 
-  // Initialize component
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.portraitUp,
-      DeviceOrientation.portraitDown,
-    ]).then((_) {
-      Future.delayed(const Duration(milliseconds: 50), () {
-        if (mounted) {
-          _preCaptureAndInitCamera();
-          _listenForCaptureDeadline();
-        }
-      });
-    });
+    _initializeManagers();
+    _setupAnimation();
+    _initializeCapture();
+  }
 
+  /// Initialize all manager components
+  void _initializeManagers() {
+    // Initialize with empty cameras list - will be recreated in _initializeCapture
+    _cameraManager = CameraControllerManager(
+      cameras: [],
+      onCameraInitialized: () {
+        _triggerCountdownStart();
+        setState(() {});
+      },
+      onError: _handleError,
+      onCameraChanged: () => setState(() {}),
+    );
+
+    _captureLogic = PhotoCaptureLogic(
+      onCaptureStart: () => setState(() {}),
+      onCaptureComplete: () => setState(() {}),
+      onUploadStart: () => setState(() {}),
+      onUploadComplete: () => setState(() {}),
+      onError: _handleError,
+      onUploadSuccess: _handleUploadSuccess,
+    );
+
+    _locationService = LocationService(
+      onLocationStart: () => setState(() {}),
+      onLocationComplete: () => setState(() {}),
+      onError: _handleError,
+      onLocationSuccess: (location) {
+        _currentLocation = location;
+        setState(() {});
+      },
+    );
+
+    _countdownManager = CountdownManager(
+      onCountdownUpdate: (seconds) {
+        debugPrint(
+            "[PhotoCapturePage] Countdown update: ${seconds}s remaining");
+        setState(() {});
+      },
+      onCountdownComplete: _triggerCountdownStart,
+      onTimeout: _handleTimeout,
+    );
+
+    _userSettings = UserSettingsManager(
+      onSettingsLoaded: () => setState(() {}),
+      onError: _handleError,
+    );
+  }
+
+  /// Setup pulse animation
+  void _setupAnimation() {
     _pulseController = AnimationController(
+      duration: const Duration(milliseconds: 1000),
       vsync: this,
-      duration: const Duration(milliseconds: 600),
-    )..repeat(reverse: true);
-
-    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.15).animate(
+    );
+    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.2).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
   }
 
-  void _listenForCaptureDeadline() {
-    FirebaseFirestore.instance
-        .collection('peek_requests')
-        .doc(widget.requestId)
-        .snapshots()
-        .listen((snapshot) {
-      if (!mounted || !snapshot.exists) return;
-      final data = snapshot.data();
-      final expiresAt = data?['captureExpiresAt'] as Timestamp?;
-      final status = data?['status'] as String?;
+  /// Initialize capture process
+  Future<void> _initializeCapture() async {
+    try {
+      // Lock orientation
+      await SystemChrome.setPreferredOrientations(
+          [DeviceOrientation.portraitUp]);
 
-      // Check if the sender cancelled the peek
-      if (status == 'cancelled_by_sender') {
-        // The check is here
-        debugPrint(
-            "[PhotoCapturePage] Peek was cancelled by the sender. Closing.");
-        if (mounted) {
-          // The navigation to show the panel is also here
-          context.go('/?show=peekCancelled');
-        }
-        return;
+      // Initialize cameras first
+      await initializeCameras();
+
+      // Update camera manager with initialized cameras
+      _cameraManager.updateCamerasList(_cameras);
+
+      // Load user settings
+      await _userSettings.loadUserSettings();
+
+      // Get location if user shares location
+      if (_userSettings.shouldShareLocation()) {
+        await _locationService.getCurrentUserCity();
       }
 
-      if (expiresAt != null && _countdownTimer == null) {
-        _startCountdown(expiresAt.toDate());
-      }
-    });
-  }
+      // Initialize camera
+      await _cameraManager.initialize();
 
-  void _startCountdown(DateTime deadline) {
-    if (!mounted || (_countdownTimer?.isActive ?? false)) return;
+      // Start listening for countdown
+      _countdownManager.listenForCaptureDeadline(widget.requestId);
 
-    // Immediately set the initial countdown value without waiting for the first tick.
-    if (mounted) {
-      setState(() {
-        final now = DateTime.now();
-        final initialRemaining =
-            (deadline.difference(now).inMilliseconds / 1000).ceil();
-        _secondsRemaining = initialRemaining > 0 ? initialRemaining : 0;
-      });
+      setState(() => _isInitializing = false);
+    } catch (e) {
+      _handleError("Initialization failed: $e");
     }
-
-    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
-      final now = DateTime.now();
-      final remaining = (deadline.difference(now).inMilliseconds / 1000).ceil();
-
-      if (remaining < 0) {
-        timer.cancel();
-        // Ensure UI shows 0 before navigating, in case a frame was skipped.
-        if (mounted && _secondsRemaining != 0) {
-          setState(() => _secondsRemaining = 0);
-        }
-        _handleTimeout();
-      } else {
-        // This will now correctly display all values including 0.
-        if (mounted) {
-          setState(() {
-            _secondsRemaining = remaining;
-          });
-        }
-      }
-    });
   }
 
-  void _handleTimeout() {
-    if (_isTimeoutHandled) return;
-    _isTimeoutHandled = true;
+  /// Handle capture button press
+  Future<void> _handleCapturePress() async {
+    // Prevent multiple rapid taps
+    if (_isProcessingAction) return;
 
-    _countdownTimer?.cancel();
+    setState(() => _isProcessingAction = true);
+
+    try {
+      if (_captureLogic.capturedImageBytes != null) {
+        // Upload existing photo
+        debugPrint("[PhotoCapturePage] Starting photo upload...");
+        await _captureLogic.uploadPhoto(
+          requestId: widget.requestId,
+          senderUid: FirebaseAuth.instance.currentUser?.uid ??
+              '', // Add senderUid parameter
+          senderLocation: _currentLocation,
+          senderDisplayName: _userSettings.senderDisplayName,
+          senderAvatarUrl: _userSettings.senderAvatarUrl,
+        );
+      } else {
+        // Take new photo
+        debugPrint("[PhotoCapturePage] Taking photo...");
+        await _captureLogic.takePicture(
+          controller: _cameraManager.controller,
+        );
+      }
+    } catch (e) {
+      debugPrint("[PhotoCapturePage] Action failed: $e");
+      _handleError("Action failed: $e");
+    } finally {
+      if (mounted) {
+        setState(() => _isProcessingAction = false);
+      }
+    }
+  }
+
+  /// Handle retake button press
+  void _handleRetake() {
+    if (_isProcessingAction) return;
+
+    setState(() => _isProcessingAction = true);
+
+    try {
+      _captureLogic.retakePicture();
+      setState(() {});
+    } catch (e) {
+      debugPrint("[PhotoCapturePage] Retake failed: $e");
+      _handleError("Retake failed: $e");
+    } finally {
+      if (mounted) {
+        setState(() => _isProcessingAction = false);
+      }
+    }
+  }
+
+  /// Handle camera switch - REMOVED: Only back camera allowed
+  // Future<void> _handleCameraSwitch() async {
+  //   await _cameraManager.switchCamera();
+  // }
+
+  /// Handle upload success
+  void _handleUploadSuccess(String downloadUrl) {
+    debugPrint("Upload successful: $downloadUrl");
+    // Navigate directly to home instead of the 3-second confirmation page
+    context.go('/');
+  }
+
+  /// Handle errors
+  void _handleError(String error) {
+    debugPrint("PhotoCapture Error: $error");
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(error),
+        backgroundColor: peekErrorColor,
+      ),
+    );
+  }
+
+  /// Handle timeout
+  void _handleTimeout() {
     if (!mounted) return;
 
-    debugPrint(
-        "[PhotoCapturePage] Capture time expired for ${widget.requestId}.");
-    ref
-        .read(peekControllerProvider.notifier)
-        .expirePeekCapture(widget.requestId);
+    debugPrint("[PhotoCapturePage] Capture timeout reached - showing modal");
 
-    showModalBottomSheet(
+    showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (ctx) {
@@ -192,1027 +257,172 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
           }
         });
 
-        return Stack(
-          alignment: Alignment.topCenter,
-          children: [
-            Container(
-              margin: const EdgeInsets.only(
-                top: 24,
-              ),
-              width: double.infinity,
-              decoration: const BoxDecoration(
-                color: peekBackgroundColor,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-              ),
-              padding: const EdgeInsets.fromLTRB(
-                48,
-                48,
-                24,
-                100,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.timer_off_outlined,
-                      size: 60, color: Colors.white70),
-                  const SizedBox(height: 20),
-                  const Text("Time's Up!",
-                      style:
-                          TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  const Text("You didn't take a photo in time.",
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 16, color: Colors.white70)),
-
-                  // NEW "OK" BUTTON
-                  const SizedBox(height: 32),
-                  ElevatedButton(
-                    onPressed: () => Navigator.of(ctx).pop(),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: peekSecondaryColor,
-                      foregroundColor: Colors.black,
-                      minimumSize: const Size(double.infinity, 50),
-                      // shape: const CircleBorder(),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(30),
-                      ),
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(20),
+          decoration: const BoxDecoration(
+            color: Colors.black87,
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(20),
+              topRight: Radius.circular(20),
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.timer_off_outlined,
+                  size: 60, color: Colors.white70),
+              const SizedBox(height: 20),
+              const Text("Time's Up!",
+                  style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white)),
+              const SizedBox(height: 10),
+              const Text("The photo capture window has expired.",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 16, color: Colors.white70)),
+              const SizedBox(height: 30),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: Colors.black,
+                    minimumSize: const Size(double.infinity, 50),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(30),
                     ),
-                    child: const Text('OK',
-                        style: TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.bold)),
                   ),
-                ],
+                  child: const Text('OK',
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                ),
               ),
-            ),
-            Positioned(
-              top: 24 + 8,
-              right: 12,
-              child: IconButton(
-                icon: const Icon(Icons.close, color: Colors.white54),
-                onPressed: () => Navigator.of(ctx).pop(),
-              ),
-            ),
-          ],
+            ],
+          ),
         );
       },
     ).then((_) {
-      // After the sheet is closed (either by timer or manually), navigate home.
+      // After the sheet is closed (either by timer or manually), navigate home
       if (mounted) {
         context.go('/');
       }
     });
   }
 
+  /// Trigger countdown start
   void _triggerCountdownStart() {
-    // Ensure this is only called once
-    if (_countdownHasBeenTriggered || !mounted) return;
+    // Ensure this is only called once (match original logic)
+    if (!mounted) return;
 
     debugPrint(
         "[PhotoCapturePage] Camera is ready, triggering countdown start.");
-    setState(() {
-      _countdownHasBeenTriggered = true;
-    });
-    ref
-        .read(peekControllerProvider.notifier)
-        .startCaptureCountdown(widget.requestId);
-  }
+    _pulseController.repeat(reverse: true);
 
-  Future<void> _loadUserSettings() async {
-    final firestoreService = ref.read(firestoreServiceProvider);
-    try {
-      // ASSUMPTION: FirestoreService has getCurrentUserDocument()
-      final userDoc = await firestoreService.getCurrentUserDocument();
-      if (mounted && userDoc != null && userDoc.exists) {
-        final data = userDoc.data();
-        setState(() {
-          _isSenderPremium = data?['isPremium'] as bool? ?? false;
-          _senderSharesLocation =
-              data?['shareLocationPreference'] as bool? ?? false;
-          // Location preference handling
-          // _senderAllowsLocationReveal =
-          //     data?['seeOthersLocationPreference'] as bool? ?? false;
-          _senderDisplayName =
-              data?['displayName'] as String?; // Assuming 'displayName' field
-          _senderAvatarUrl =
-              data?['avatarUrl'] as String?; // Assuming 'avatarUrl' field
-          debugPrint(
-              "[PhotoCapturePage] Sender Settings Loaded - Premium: $_isSenderPremium, Shares Own Location: $_senderSharesLocation, Allows Reveal: $_senderAllowsLocationReveal, Name: $_senderDisplayName");
-        });
-      } else {
-        debugPrint(
-            "[PhotoCapturePage] Could not load user settings or document does not exist for sender.");
-        if (mounted) {
-          setState(() {
-            // Default to false if settings can't be loaded
-            _isSenderPremium = false;
-            _senderSharesLocation = false;
-            _senderAllowsLocationReveal = false; // Default
-          });
-        }
-      }
-    } catch (e) {
-      debugPrint(
-          "❌ [PhotoCapturePage] Error loading user settings for sender: $e");
-      if (mounted) {
-        // Default to false on error
-        setState(() {
-          _isSenderPremium = false;
-          _senderSharesLocation = false;
-          _senderAllowsLocationReveal = false; // Default
-        });
-      }
-    }
-  }
-
-  /// Handles permissions and errors. Returns null if conditions aren't met or location fails.
-  Future<String?> _getCurrentUserCity() async {
-    // 1. Check conditions (Premium user + Setting enabled)
-    if (!_senderSharesLocation) {
-      debugPrint(
-          "[PhotoCapturePage] _getCurrentUserCity: Condition NOT met (SharesOwnLocation: $_senderSharesLocation). Not fetching location.");
-      return null;
-    }
-
-    // 2. Prevent multiple simultaneous fetches
-    if (_isFetchingLocation) {
-      debugPrint(
-          "[PhotoCapturePage] _getCurrentUserCity: Already fetching location.");
-      return null; // Or return a previously fetched value if available
-    }
-    setState(() => _isFetchingLocation = true);
-    debugPrint(
-        "[PhotoCapturePage] _getCurrentUserCity: Conditions met, attempting to fetch location.");
-
-    try {
-      // 3. Check Location Service Enabled
-      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) {
-        debugPrint(
-            "[PhotoCapturePage] _getCurrentUserCity: Location services are disabled.");
-        if (mounted)
-          _showErrorSnackbar("Location services are disabled."); // Inform user
-        return null;
-      }
-
-      // 4. Check Permissions (do NOT request here; prompt is handled pre-capture)
-      final permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
-        debugPrint(
-            "[PhotoCapturePage] _getCurrentUserCity: Location not granted. Skipping city.");
-        return null;
-      }
-
-      // 5. Get Current Position (with timeout)
-      debugPrint(
-          "[PhotoCapturePage] _getCurrentUserCity: Permissions granted, fetching position...");
-      Position position = await Geolocator.getCurrentPosition(
-          desiredAccuracy:
-              LocationAccuracy.medium, // City/Region doesn't need high accuracy
-          timeLimit: const Duration(seconds: 10) // Add a timeout
-          );
-      debugPrint(
-          "[PhotoCapturePage] _getCurrentUserCity: Position fetched: ${position.latitude}, ${position.longitude}");
-
-      // 6. Reverse Geocode to get Placemark
-      List<Placemark> placemarks = await placemarkFromCoordinates(
-        position.latitude,
-        position.longitude,
-      );
-
-      if (placemarks.isNotEmpty) {
-        Placemark place = placemarks.first;
-        String city = place.locality ?? ""; // City
-        String region = place.administrativeArea ?? ""; // State/Province/Region
-
-        String locationString;
-        if (city.isNotEmpty && region.isNotEmpty) {
-          locationString = "$city, $region";
-        } else if (city.isNotEmpty) {
-          locationString = city;
-        } else if (region.isNotEmpty) {
-          locationString = region; // Fallback to region
-        } else {
-          locationString =
-              place.country ?? "Unknown Location"; // Further fallback
-        }
-        debugPrint(
-            "[PhotoCapturePage] _getCurrentUserCity: Determined location: $locationString");
-        return locationString;
-      } else {
-        debugPrint(
-            "[PhotoCapturePage] _getCurrentUserCity: No placemarks found for coordinates.");
-        return null;
-      }
-    } catch (e) {
-      debugPrint(
-          "❌ [PhotoCapturePage] _getCurrentUserCity: Error getting location/geocoding: $e");
-      if (mounted) _showErrorSnackbar("Could not determine location.");
-      return null;
-    } finally {
-      if (mounted) {
-        setState(() => _isFetchingLocation = false);
-      }
-    }
-  }
-
-  // Request location before initializing camera
-  Future<void> _preCaptureAndInitCamera() async {
-    // Load user settings so we know whether the sender wants to share location.
-    await _loadUserSettings();
-    if (!mounted) return;
-
-    // If the sender opted in, handle the OS permission BEFORE camera init & countdown.
-    if (_senderSharesLocation) {
-      try {
-        final status = await Geolocator.checkPermission();
-
-        if (status == LocationPermission.denied) {
-          // Request OS permission directly (system sheet only).
-          await Geolocator.requestPermission();
-        }
-
-        // If deniedForever, we just proceed without location (no blocking).
-      } catch (e) {
-        debugPrint("⚠️ [PhotoCapturePage] Pre-capture location gate error: $e");
-      }
-    }
-
-    if (!mounted) return;
-    _findAndInitializeCamera(); // Starts camera and (later) the capture countdown
-  }
-
-  // Find and initialize camera
-  void _findAndInitializeCamera({
-    CameraLensDirection preferredDirection = CameraLensDirection.back,
-  }) {
-    if (_isChangingCamera || _isCameraInitializing) return;
-    if (_cameras.isEmpty) {
-      _showErrorAndGoHome("Camera unavailable on this device.");
-      return;
-    }
-    int cameraIndex = _cameras.indexWhere(
-      (cam) => cam.lensDirection == preferredDirection,
-    );
-    if (cameraIndex == -1)
-      cameraIndex = _cameras.indexWhere(
-        (cam) => cam.lensDirection != preferredDirection,
-      );
-    if (cameraIndex == -1) cameraIndex = 0;
-    if (cameraIndex == -1) {
-      _showErrorAndGoHome("No suitable camera found.");
-      return;
-    }
-    if (_selectedCameraIndex == cameraIndex &&
-        _controller != null &&
-        _controller!.value.isInitialized) {
-      debugPrint(
-        "[PhotoCapturePage] Camera index $cameraIndex already selected and initialized.",
-      );
-      return;
-    }
-    setState(() {
-      _selectedCameraIndex = cameraIndex;
-    });
-    _initializeCamera(_cameras[cameraIndex]);
-  }
-
-  // Initialize camera controller
-  Future<void> _initializeCamera(CameraDescription cameraDescription) async {
-    debugPrint(
-        "[PhotoCapturePage] Attempting to initialize camera: ${cameraDescription.name}");
-
-    if (_isCameraInitializing) {
-      debugPrint(
-          "[PhotoCapturePage] Initialization already in progress. Aborting.");
-      return;
-    }
-
-    // If the requested camera is already active and initialized, do nothing.
-    if (_controller != null &&
-        _controller!.value.isInitialized &&
-        _controller!.description == cameraDescription) {
-      debugPrint(
-          "[PhotoCapturePage] Camera ${cameraDescription.name} is already initialized and active.");
-      if (mounted) {
-        // Ensure flags are correct
-        setState(() {
-          _isCameraInitialized = true;
-          _isCameraInitializing = false;
-        });
-        _triggerCountdownStart();
-      }
-      return;
-    }
-
-    setState(() {
-      _isCameraInitializing = true;
-      _isCameraInitialized =
-          false; // Mark as not initialized during the process
-      _initializationError = null;
-    });
-
-    // Dispose of the existing controller *only if it's different* from the one we are about to initialize
-    // or if it's the same but wasn't initialized (e.g. previous attempt failed).
-    // The app lifecycle's didChangeAppLifecycleState should handle disposing and nullifying _controller
-    // when the app goes to background.
-    if (_controller != null) {
-      debugPrint(
-          "[PhotoCapturePage] Disposing existing controller before initializing new one: ${_controller?.description.name}");
-      try {
-        await _controller!.dispose();
-        debugPrint(
-            "[PhotoCapturePage] Existing controller disposed successfully.");
-      } catch (e) {
-        debugPrint(
-            "⚠️ Error disposing existing controller in _initializeCamera: $e");
-      }
-      // No need to setState _controller to null here, as it will be replaced or nulled in error case.
-    }
-
-    // Create and initialize the new controller
-    final newController = CameraController(
-      cameraDescription,
-      ResolutionPreset.high,
-      enableAudio: false,
-      imageFormatGroup: ImageFormatGroup.jpeg,
-    );
-
-    try {
-      await newController.initialize();
-      if (!mounted) {
-        debugPrint(
-            "[PhotoCapturePage] Unmounted during camera initialization. Disposing new controller.");
-        await newController.dispose();
-        return;
-      }
-      setState(() {
-        _controller = newController;
-        _isCameraInitialized = true;
-        _isCameraInitializing = false;
-      });
-
-      _triggerCountdownStart();
-
-      debugPrint(
-          "[PhotoCapturePage] Camera initialized successfully: ${newController.description.name}");
-    } catch (error) {
-      debugPrint(
-          "❌ [PhotoCapturePage] Camera initialization error for ${newController.description.name}: $error");
-      // Attempt to dispose the new controller if its initialization failed
-      try {
-        await newController.dispose();
-        debugPrint(
-            "[PhotoCapturePage] Disposed new controller after initialization failure.");
-      } catch (disposeError) {
-        debugPrint(
-            "⚠️ Error disposing new controller after init failure: $disposeError");
-      }
-      if (mounted) {
-        String errorMessage = "Couldn't access camera. Please try again.";
-        if (error is CameraException) {
-          if (error.code == 'CameraAccessDenied') {
-            errorMessage =
-                "Camera permission denied. Please enable it in settings.";
-          }
-        }
-        setState(() {
-          _initializationError = "Init Error: $error";
-          _isCameraInitialized = false;
-          _isCameraInitializing = false;
-          _controller = null; // Ensure controller is null on error
-        });
-        _showErrorSnackbar(errorMessage);
-      }
-    } finally {
-      // If _isCameraInitializing is still true here, it means init didn't complete successfully
-      // nor threw to the catch block that resets it. Reset it to allow future attempts.
-      if (mounted && _isCameraInitializing && !_isCameraInitialized) {
-        setState(() => _isCameraInitializing = false);
-        debugPrint(
-            "[PhotoCapturePage] Reset _isCameraInitializing in finally block.");
-      }
-      // This was for _isChangingCamera, ensure it's still relevant or remove if handled elsewhere
-      if (_isChangingCamera && mounted) {
-        setState(() {
-          _isChangingCamera = false;
-        });
-        debugPrint(
-            "[PhotoCapturePage] Camera changing finished (from _initializeCamera finally).");
-      }
-    }
-  }
-
-  // Handle app lifecycle changes
-  @override
-  Future<void> didChangeAppLifecycleState(AppLifecycleState state) async {
-    super.didChangeAppLifecycleState(state); // Call super
-    debugPrint("[PhotoCapturePage] AppLifecycleState changed: $state");
-
-    final CameraController? currentCameraController =
-        _controller; // Capture instance
-
-    if (state == AppLifecycleState.inactive ||
-        state == AppLifecycleState.paused) {
-      if (currentCameraController != null) {
-        // Check if there is a controller to dispose
-        debugPrint(
-            "[PhotoCapturePage] App inactive/paused. Current controller: ${currentCameraController.description.name}, isInitialized: ${currentCameraController.value.isInitialized}");
-        if (mounted) {
-          setState(() {
-            // Mark as not initialized immediately to prevent usage.
-            // _controller will be nulled after dispose confirmation.
-            _isCameraInitialized = false;
-            // If we are initializing when app goes inactive, stop it.
-            if (_isCameraInitializing) _isCameraInitializing = false;
-          });
-        }
-        try {
-          await currentCameraController.dispose();
-          debugPrint(
-              "[PhotoCapturePage] Camera controller successfully disposed on lifecycle event.");
-        } catch (e) {
-          debugPrint(
-              "⚠️ Error disposing camera controller on lifecycle event: $e");
-        } finally {
-          // Ensure _controller is nulled if it was the one we disposed
-          if (mounted && _controller == currentCameraController) {
-            setState(() {
-              _controller = null;
-            });
-          }
-        }
-      } else if (mounted) {
-        // If no controller, still ensure flags are correct
-        setState(() {
-          _isCameraInitialized = false;
-          _isCameraInitializing = false;
-        });
-      }
-    } else if (state == AppLifecycleState.resumed) {
-      debugPrint("[PhotoCapturePage] App resumed.");
-      // Only re-initialize if controller is null AND we are not already trying to initialize.
-      if (_controller == null && !_isCameraInitializing) {
-        debugPrint(
-            "[PhotoCapturePage] Controller is null on resume. Re-initializing camera...");
-        // Add a small delay before re-initializing, can help on some platforms
-        await Future.delayed(const Duration(milliseconds: 100));
-        if (mounted && _controller == null && !_isCameraInitializing) {
-          // Double check condition after delay
-          SystemChrome.setPreferredOrientations(
-              [DeviceOrientation.portraitUp, DeviceOrientation.portraitDown]);
-          if (_selectedCameraIndex != -1 &&
-              _selectedCameraIndex < _cameras.length) {
-            _initializeCamera(_cameras[_selectedCameraIndex]);
-          } else {
-            _findAndInitializeCamera();
-          }
-        }
-      } else if (_controller != null && _controller!.value.isInitialized) {
-        debugPrint(
-            "[PhotoCapturePage] Controller exists and is initialized on resume. Ensuring orientation.");
-        SystemChrome.setPreferredOrientations([
-          DeviceOrientation.portraitUp,
-          DeviceOrientation.portraitDown,
-        ]);
-      } else if (_controller != null &&
-          !_controller!.value.isInitialized &&
-          !_isCameraInitializing) {
-        debugPrint(
-            "[PhotoCapturePage] Controller exists but not initialized, and not initializing. Attempting re-init.");
-        // This case might happen if a previous initialization failed partway.
-        SystemChrome.setPreferredOrientations([
-          DeviceOrientation.portraitUp,
-          DeviceOrientation.portraitDown,
-        ]);
-        if (_selectedCameraIndex != -1 &&
-            _selectedCameraIndex < _cameras.length) {
-          _initializeCamera(_cameras[_selectedCameraIndex]);
-        } else {
-          _findAndInitializeCamera();
-        }
-      }
-    }
-  }
-
-  // Switch between front and back camera
-  void _switchCamera() async {
-    if (_cameras.length < 2 || _isChangingCamera || _isCameraInitializing) {
-      debugPrint(
-        "[PhotoCapturePage] Switch camera blocked: Changing:$_isChangingCamera, Initializing:$_isCameraInitializing",
-      );
-      return;
-    }
-    debugPrint("[PhotoCapturePage] Attempting to switch camera...");
-    setState(() => _isChangingCamera = true);
-    final currentLensDirection = _cameras[_selectedCameraIndex].lensDirection;
-    int newCameraIndex = _cameras.indexWhere(
-      (cam) => cam.lensDirection != currentLensDirection,
-    );
-    if (newCameraIndex == -1) newCameraIndex = 0;
-    setState(() {
-      _selectedCameraIndex = newCameraIndex;
-    });
-    _initializeCamera(_cameras[newCameraIndex]);
-  }
-
-  // Capture photo with flip logic for front camera
-  Future<void> _takePicture() async {
-    if (_isTakingPicture ||
-        !_isCameraInitialized ||
-        _controller == null ||
-        !_controller!.value.isInitialized) return;
-
-    // _countdownTimer?.cancel();
-
-    setState(() => _isTakingPicture = true);
-    try {
-      final XFile imageFile = await _controller!.takePicture();
-      final Uint8List imageBytes = await imageFile.readAsBytes();
-      img.Image? capturedImage = img.decodeImage(imageBytes);
-      if (capturedImage == null) {
-        throw Exception("Failed to decode captured image.");
-      }
-      bool isFrontCamera = _cameras[_selectedCameraIndex].lensDirection ==
-          CameraLensDirection.front;
-      if (isFrontCamera) {
-        debugPrint(
-          "[PhotoCapturePage] Front camera detected. Flipping image horizontally.",
-        );
-        capturedImage = img.flipHorizontal(capturedImage);
-      }
-      final Uint8List processedBytes = Uint8List.fromList(
-        img.encodeJpg(capturedImage, quality: 90),
-      );
-      await _deleteTempFile();
-      if (!mounted) return;
-      setState(() {
-        _capturedImageBytes = processedBytes;
-        _isTakingPicture = false;
-      });
-
-      // SPACE
-    } catch (e) {
-      debugPrint("❌ [PhotoCapturePage] Error taking or processing picture: $e");
-
-      if (mounted) {
-        _showErrorSnackbar("Couldn't capture photo. Please try again.");
-        setState(() => _isTakingPicture = false);
-      }
-    }
-  }
-
-  // Upload photo to Firebase Storage
-  Future<void> _uploadPhoto() async {
-    if (_capturedImageBytes == null || _uploading || !mounted) return;
-    // _previewTimer?.cancel();
-    setState(() => _uploading = true);
-    final timestamp = DateTime.now().millisecondsSinceEpoch;
-    final storagePath = 'peeks/${widget.requestId}/$timestamp.jpg';
-
-    // Always target the real project bucket that exists (new Firebase default):
-    // gs://peekio-db.firebasestorage.app
-    final storageRef = FirebaseStorage.instanceFor(
-      bucket: 'gs://peekio-db.firebasestorage.app',
-    ).ref(storagePath);
-
-    final firestoreRef = FirebaseFirestore.instance
-        .collection('peek_requests')
-        .doc(widget.requestId);
-    try {
-      final bytes = _capturedImageBytes!;
-      debugPrint(
-        "[PhotoCapturePage] Upload starting: bucket=${storageRef.bucket}, "
-        "path=${storageRef.fullPath}, bytes=${bytes.length}",
-      );
-      final snap = await storageRef.putData(
-        bytes,
-        SettableMetadata(contentType: 'image/jpeg'),
-      );
-      debugPrint(
-        "[PhotoCapturePage] Upload finished: state=${snap.state}, "
-        "bytes=${snap.bytesTransferred}/${snap.totalBytes}",
-      );
-
-      // Use the uploaded object's ref and retry getDownloadURL briefly if needed.
-      String downloadUrl;
-      int attempts = 0;
-      while (true) {
-        try {
-          downloadUrl = await snap.ref.getDownloadURL();
-          break;
-        } on FirebaseException catch (e) {
-          attempts++;
-          debugPrint(
-              "[PhotoCapturePage] getDownloadURL attempt $attempts failed: code=${e.code}, message=${e.message}");
-          if (attempts >= 3) rethrow;
-          await Future.delayed(Duration(milliseconds: 400 * attempts));
-        }
-      }
-
-      Map<String, dynamic> peekData = {
-        'status': 'responded_with_image', // MODIFIED: More descriptive status
-        'storagePath': storagePath,
-        'imageUrl': downloadUrl,
-        'respondedAt': FieldValue.serverTimestamp(),
-        'senderId': _auth.currentUser?.uid,
-        'senderDisplayName': _senderDisplayName ?? "Anon",
-        if (_senderAvatarUrl != null && _senderAvatarUrl!.isNotEmpty)
-          'senderAvatarUrl': _senderAvatarUrl,
-      };
-
-      // Conditionally add sender's location
-      if (_senderSharesLocation) {
-        // Only check if the sender agreed to share.
-        String? cityRegion = await _getCurrentUserCity();
-        if (cityRegion != null && cityRegion.isNotEmpty) {
-          peekData['senderLocation'] = cityRegion;
-          debugPrint(
-              "[PhotoCapturePage] Adding senderLocation to Peek: $cityRegion (SenderSharesLocation: $_senderSharesLocation)");
-        } else {
-          debugPrint(
-              "[PhotoCapturePage] senderLocation is null or empty (returned by _getCurrentUserCity), not adding to Peek. (SenderSharesLocation: $_senderSharesLocation)");
-        }
-      } else {
-        debugPrint(
-            "[PhotoCapturePage] Sender has not consented to share location (SharesOwnLocation: $_senderSharesLocation). Not adding senderLocation.");
-      }
-
-      debugPrint(
-          "[PhotoCapturePage] Data to be saved to Firestore for Peek Request: $peekData");
-
-      await firestoreRef.update(peekData);
-
-      // Log successful peek send event
-      try {
-        // Optional: wrap analytics in its own try-catch
-        final imageSizeKb = (_capturedImageBytes!.lengthInBytes / 1024).round();
-        final cameraUsed =
-            _selectedCameraIndex != -1 && _selectedCameraIndex < _cameras.length
-                ? (_cameras[_selectedCameraIndex].lensDirection ==
-                        CameraLensDirection.front
-                    ? 'front'
-                    : 'back')
-                : 'unknown';
-
-        await _analytics.logEvent(
-          name: 'peek_sent',
-          parameters: {
-            'request_id_partial': widget.requestId.substring(0, 8),
-            'image_size_kb': imageSizeKb,
-            'camera_used': cameraUsed,
-            'location_shared':
-                peekData.containsKey('senderLocation').toString(),
-            'sender_info_shared': (peekData.containsKey('senderDisplayName') ||
-                    peekData.containsKey('senderAvatarUrl'))
-                .toString(),
-          },
-        );
-        debugPrint("[PhotoCapturePage] Logged peek_sent event.");
-      } catch (analyticsError) {
-        debugPrint("Error logging peek_sent event: $analyticsError");
-      }
-
-      if (!mounted) return;
-      // Navigate to the new full-screen confirmation page
-      context.go('/peek-sent-confirmation');
-    } catch (e) {
-      debugPrint("❌ [PhotoCapturePage] Error uploading photo: $e");
-      // Log peek send error event
-      try {
-        // Optional: wrap analytics in its own try-catch
-        await _analytics.logEvent(
-          name: 'peek_send_failed',
-          parameters: {
-            'request_id_partial': widget.requestId.substring(0, 8),
-            'error': e.toString().substring(
-                  0,
-                  99 < e.toString().length ? 99 : e.toString().length,
-                ),
-          },
-        );
-        debugPrint("[PhotoCapturePage] Logged peek_send_failed event.");
-      } catch (analyticsError) {
-        debugPrint("Error logging peek_send_failed event: $analyticsError");
-      }
-      if (mounted) {
-        setState(() => _uploading = false);
-        _showErrorSnackbar(
-          "Failed to send Peek. Check connection and try again.",
-        );
-        // _showErrorSnackbar("⚠️ Failed to send Peek: ${e.toString()}");
-      }
-    }
-  }
-
-  // --- _retakePicture (Keep As Is - already clears bytes) ---
-  void _retakePicture() {
-    if (_uploading) return;
-    // _previewTimer?.cancel();
-
-    setState(() {
-      _capturedImageBytes = null;
-      _isTakingPicture = false;
-    });
-    _deleteTempFile();
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.portraitUp,
-      DeviceOrientation.portraitDown,
-    ]);
-    if (_controller == null || !_controller!.value.isInitialized) {
-      if (_selectedCameraIndex != -1) {
-        _initializeCamera(_cameras[_selectedCameraIndex]);
-      } else {
-        _findAndInitializeCamera();
-      }
-    }
-  }
-
-  // --- _deleteTempFile (Keep As Is) ---
-  Future<void> _deleteTempFile() async {
-    // ... (Keep existing code) ...
-    if (_tempProcessedFile != null && await _tempProcessedFile!.exists()) {
-      try {
-        await _tempProcessedFile!.delete();
-        debugPrint(
-          "[PhotoCapturePage] Deleted temp file: ${_tempProcessedFile?.path}",
-        );
-      } catch (e) {
-        debugPrint("⚠️ Error deleting temp file: $e");
-      } finally {
-        _tempProcessedFile = null;
-      }
-    }
-  }
-
-  // --- _showErrorSnackbar (Keep As Is) ---
-  void _showErrorSnackbar(String message) {
-    // ... (Keep existing code) ...
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).removeCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.redAccent),
-    );
-  }
-
-  // --- _showErrorAndGoHome (Keep As Is) ---
-  void _showErrorAndGoHome(String message) {
-    // ... (Keep existing code) ...
-    if (!mounted) return;
-    _showErrorSnackbar(message);
-    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
-    Future.delayed(const Duration(milliseconds: 500), () {
-      if (mounted) {
-        context.go('/');
-      }
-    });
+    // Start the 30-second countdown manually
+    _countdownManager.startManualCountdown(durationSeconds: 30);
   }
 
   @override
   void dispose() {
     _pulseController.dispose();
-    _countdownTimer?.cancel();
-
-    WidgetsBinding.instance.removeObserver(this);
-    _controller?.dispose();
-    _deleteTempFile();
-    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
-    debugPrint("[PhotoCapturePage] Disposed.");
+    _cameraManager.dispose();
+    _captureLogic.dispose();
+    _countdownManager.dispose();
     super.dispose();
   }
 
-  // --- build (Modified AppBar, calls modified _buildCameraView) ---
   @override
   Widget build(BuildContext context) {
-    // State 1: Uploading (Keep As Is)
-    if (_uploading) {
-      /* ... uploading UI ... */
-      return const Scaffold(
-        backgroundColor: Colors.black,
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              PeekLoadingIndicator.medium(logoColor: Colors.white),
-              SizedBox(height: 20),
-              Text("Sending Peek...", style: TextStyle(color: Colors.white)),
-            ],
-          ),
-        ),
-      );
+    if (_isInitializing) {
+      return _buildLoadingScreen();
     }
 
-    // State 2: Image captured preview
-    if (_capturedImageBytes != null) {
-      return Scaffold(
-        backgroundColor: Colors.black,
-        appBar: AppBar(
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          automaticallyImplyLeading: false,
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.close),
-              onPressed: () {
-                // _previewTimer?.cancel();
-                ref
-                    .read(peekControllerProvider.notifier)
-                    .declinePeekByReceiver(widget.requestId);
-                context.go('/?show=peekCancelled');
-              },
-            ),
-          ],
-        ),
-        extendBodyBehindAppBar: true,
-        // ========== SPACE
-        // ========== SPACE
-        body: Stack(
-          alignment: Alignment.center,
-          fit: StackFit.expand,
-          children: [
-            Image.memory(
-              _capturedImageBytes!,
-              fit: BoxFit.cover,
-              errorBuilder: (c, e, s) {
-                debugPrint("❌ Error displaying preview image from bytes: $e");
-                return const Center(
-                  child: Icon(Icons.broken_image, color: Colors.red, size: 60),
-                );
-              },
-            ),
-
-            // ========== SPACE
-            // ========== SPACE
-            // if (_secondsRemaining != null)
-            //   Center(
-            //     child: ScaleTransition(
-            //       scale: _pulseAnimation,
-            //       child: Text(
-            //         '$_secondsRemaining',
-            //         style: TextStyle(
-            //           color: peekWhiteColor.withAlpha(150),
-            //           fontSize: 120, // Make the number much larger
-            //           fontWeight: FontWeight.w600,
-            //           // Add a shadow for better readability over the image
-            //           shadows: [
-            //             Shadow(
-            //               blurRadius: 10.0,
-            //               color: Colors.black54.withAlpha(50),
-            //               offset: const Offset(2.0, 2.0),
-            //             ),
-            //           ],
-            //         ),
-            //       ),
-            //     ),
-            //   ),
-
-            if (_secondsRemaining != null) _buildCountdownWidget(),
-          ],
-        ),
-
-        bottomNavigationBar: BottomAppBar(
-          color: Colors.black.withOpacity(0.5),
-          elevation: 0,
-          child: Padding(
-            padding:
-                const EdgeInsets.symmetric(vertical: 10.0, horizontal: 20.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                TextButton.icon(
-                  onPressed: _uploading ? null : _retakePicture,
-                  icon: const Icon(Icons.refresh_rounded),
-                  label: const Text('Retake'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: Colors.white,
-                    textStyle: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                TextButton.icon(
-                  onPressed: _uploading ? null : _uploadPhoto,
-                  icon: const Icon(Icons.send_rounded),
-                  label: const Text('Send'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: peekPrimaryColor,
-                    textStyle: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
+    if (_cameraManager.initializationError != null) {
+      return _buildErrorScreen();
     }
 
-    // State 3: Camera View
     return Scaffold(
-      backgroundColor: peekBackgroundColor,
-      appBar: AppBar(
-        // Remove back button if not desired
-        automaticallyImplyLeading: false,
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          // Camera preview
+          _buildCameraPreview(),
 
-        // Make AppBar transparent
-        backgroundColor: peekBackgroundColor,
-        // backgroundColor: Colors.transparent,
-        // No shadow
-        elevation: 0,
-        actions: [
-          // Close button moved to actions for standard placement
-          IconButton(
-            icon: const Icon(Icons.close),
-            tooltip: 'Cancel',
-            onPressed: () {
-              // Signal to the sender that the peek was cancelled by the receiver.
-              ref
-                  .read(peekControllerProvider.notifier)
-                  .declinePeekByReceiver(widget.requestId);
+          // Countdown overlay
+          if (_countdownManager.secondsRemaining != null)
+            _buildCountdownOverlay(),
 
-              SystemChrome.setPreferredOrientations(
-                DeviceOrientation.values,
-              ); // Unlock orientation
-              context.go('/'); // Navigate home
-            },
-            color: Colors.white, // Ensure icon is visible
-          ),
-          const SizedBox(width: 10), // Padding on the right
+          // Controls overlay
+          _buildControlsOverlay(),
+
+          // Upload overlay
+          if (_captureLogic.uploading) _buildUploadOverlay(),
         ],
-        // --- END MODIFICATION ---
       ),
-      // Make AppBar background extend behind the status bar
-      extendBodyBehindAppBar: true,
-      // Call the modified _buildCameraView
-      body: _buildCameraView(),
     );
   }
 
-  // NEW: A reusable widget for the pulsing countdown timer
-  Widget _buildCountdownWidget() {
-    return Center(
-      child: ScaleTransition(
-        scale: _pulseAnimation,
-        child: Text(
-          '$_secondsRemaining',
-          style: TextStyle(
-            color: peekWhiteColor.withAlpha(150),
-            fontSize: 120,
-            fontWeight: FontWeight.w600,
-            shadows: [
-              Shadow(
-                blurRadius: 10.0,
-                color: Colors.black54.withAlpha(50),
-                offset: const Offset(2.0, 2.0),
-              ),
-            ],
-          ),
+  /// Build loading screen
+  Widget _buildLoadingScreen() {
+    return const Scaffold(
+      backgroundColor: Colors.black,
+      body: Center(
+        child: PeekLoadingIndicator.medium(
+          logoColor: Colors.white,
+          loadingText: "Initializing camera...",
         ),
       ),
     );
   }
 
-  // --- *** MODIFIED: _buildCameraView (UI Changes for Bottom Bar) *** ---
-  Widget _buildCameraView() {
-    final controller = _controller;
-
-    // Error/Loading checks (Keep As Is)
-    if (_initializationError != null) {
-      /* ... error UI ... */
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(30.0),
-          child: Text(
-            'Camera Error:\n$_initializationError',
-            style: const TextStyle(color: peekErrorColor, fontSize: 16),
-            textAlign: TextAlign.center,
-          ),
+  /// Build error screen
+  Widget _buildErrorScreen() {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error, color: Colors.white, size: 64),
+            const SizedBox(height: 16),
+            Text(
+              _cameraManager.initializationError!,
+              style: const TextStyle(color: Colors.white),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () => context.go('/'),
+              child: const Text('Go Home'),
+            ),
+          ],
         ),
-      );
-    }
-    if (_isCameraInitializing ||
-        controller == null ||
-        !_isCameraInitialized ||
-        !controller.value.isInitialized) {
-      /* ... loading UI ... */
+      ),
+    );
+  }
+
+  /// Build camera preview
+  Widget _buildCameraPreview() {
+    if (!_cameraManager.isCameraInitialized ||
+        _cameraManager.controller == null) {
       return const Center(
         child: PeekLoadingIndicator.medium(logoColor: Colors.white),
       );
     }
 
-    // Build Camera Preview (Keep As Is - using FittedBox)
+    // Use FittedBox with proper dimensions like the original
     Widget cameraPreviewWidget;
     try {
       cameraPreviewWidget = FittedBox(
         fit: BoxFit.cover,
         child: SizedBox(
-          width: controller.value.previewSize?.height ?? 100,
-          height: controller.value.previewSize?.width ?? 100,
-          child: CameraPreview(controller),
+          width: _cameraManager.controller!.value.previewSize?.height ?? 100,
+          height: _cameraManager.controller!.value.previewSize?.width ?? 100,
+          child: CameraPreview(_cameraManager.controller!),
         ),
       );
     } catch (e) {
@@ -1222,127 +432,180 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
       );
     }
 
-    // --- Build UI with Stack: Preview + Bottom Controls ---
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        // Camera Preview (fills the stack)
-        Center(child: cameraPreviewWidget),
-        if (_secondsRemaining != null) _buildCountdownWidget(),
+    return Positioned.fill(child: Center(child: cameraPreviewWidget));
+  }
 
-        // Countdown Timer UI
-        // if (_secondsRemaining != null)
-        //   Center(
-        //     child: ScaleTransition(
-        //       scale: _pulseAnimation,
-        //       child: Text(
-        //         '$_secondsRemaining',
-        //         style: TextStyle(
-        //           color: peekWhiteColor.withAlpha(150),
-        //           fontSize: 120, // Make the number much larger
-        //           fontWeight: FontWeight.w600,
-        //           // Add a shadow for better readability over the image
-        //           shadows: [
-        //             Shadow(
-        //               blurRadius: 10.0,
-        //               color: Colors.black54.withAlpha(50),
-        //               offset: const Offset(2.0, 2.0),
-        //             ),
-        //           ],
-        //         ),
-        //       ),
-        //     ),
-        //   ),
-        // ),
-
-        // --- MODIFIED: Bottom Control Bar ---
-        Positioned(
-          bottom: 0,
-          left: 0,
-          right: 0,
-          child: Container(
-            // Semi-transparent background
-            // color: Colors.black.withOpacity(0.5),
-            color: peekBackgroundColor,
-            // Padding includes safe area
-            padding: EdgeInsets.only(
-              top: 15.0,
-              bottom: MediaQuery.of(context).padding.bottom +
-                  25.0, // More bottom padding
-              left: 20.0,
-              right: 20.0,
-            ),
-            child: Row(
-              mainAxisAlignment:
-                  MainAxisAlignment.spaceBetween, // Space items out
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                // Placeholder on left for balance (can be gallery icon later)
-                const SizedBox(
-                  width: 60.0,
-                  height: 40.0,
-                ), // Match approx size of right icon button
-                // Center Shutter Button (Keep As Is)
-                GestureDetector(
-                  onTap: _isTakingPicture ? null : _takePicture,
-                  child: Container(
-                    width: 70, // Slightly smaller shutter
-                    height: 70,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: Colors.white.withOpacity(
-                          _isTakingPicture ? 0.3 : 0.9,
-                        ),
-                        width: 4,
-                      ),
-                    ), // Thicker border
-                    child: Center(
-                      child: Container(
-                        width: 56,
-                        height: 56,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Colors.white.withOpacity(
-                            _isTakingPicture ? 0.5 : 1.0,
-                          ),
-                        ),
-                      ),
-                    ),
+  /// Build countdown overlay
+  Widget _buildCountdownOverlay() {
+    return Positioned.fill(
+      child: Container(
+        // Show gradient background only when photo is taken (SEND button visible)
+        decoration: _captureLogic.capturedImageBytes != null
+            ? BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withOpacity(0.9),
+                    Colors.black.withOpacity(0.6),
+                    Colors.black.withOpacity(0.4),
+                  ],
+                ),
+              )
+            : null,
+        // No background during countdown, gradient only after photo capture
+        child: Center(
+          child: AnimatedBuilder(
+            animation: _pulseAnimation,
+            builder: (context, child) {
+              return Transform.scale(
+                scale: _pulseAnimation.value,
+                child: Text(
+                  '${_countdownManager.secondsRemaining}',
+                  style: const TextStyle(
+                    fontSize: 60,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
                   ),
                 ),
-
-                // Right-aligned Switch Camera Button
-                if (_cameras.length > 1) // Only show if multiple cameras exist
-                  IconButton(
-                    iconSize: 30.0, // Adjust size as needed
-                    padding:
-                        EdgeInsets.zero, // Remove default padding if needed
-                    constraints:
-                        const BoxConstraints(), // Remove default constraints
-                    tooltip: 'Switch Camera',
-                    icon: const Icon(
-                      Icons.flip_camera_ios_outlined,
-                    ), // Apple-style icon
-                    color: Colors.white, // Ensure visibility
-                    onPressed: _isChangingCamera || _isCameraInitializing
-                        ? null
-                        : _switchCamera, // Disable logic
-                  )
-                else // Show placeholder if only one camera
-                  const SizedBox(
-                    width: 60.0,
-                    height: 40.0,
-                  ), // Match approx size
-              ],
-            ),
+              );
+            },
           ),
         ),
-
-        // --- END MODIFIED Bottom Control Bar ---
-      ],
+      ),
     );
-  } // End _buildCameraView
+  }
 
-  // --- *** END OF MODIFIED _buildCameraView *** ---
-} // End _PhotoCapturePageState
+  /// Build controls overlay
+  Widget _buildControlsOverlay() {
+    return Positioned(
+      bottom: 0,
+      left: 0,
+      right: 0,
+      child: Container(
+        padding: const EdgeInsets.only(
+          left: 24,
+          right: 24,
+          top: 24,
+          bottom: 79, // 24 + 35 + 20 = 79px total bottom padding
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Main capture/upload button - centered with consistent positioning
+            Center(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                curve: Curves.easeInOut,
+                width: 80,
+                height: 80,
+                transform: Matrix4.identity()
+                  ..scale(_isButtonPressed ? 0.95 : 1.0),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: _captureLogic.capturedImageBytes != null
+                      ? peekPrimaryColor
+                      : Colors.white,
+                  border: Border.all(color: Colors.white, width: 4),
+                ),
+                child: GestureDetector(
+                  onTap: _isProcessingAction ? null : _handleCapturePress,
+                  onTapDown: (_) => setState(() => _isButtonPressed = true),
+                  onTapUp: (_) => setState(() => _isButtonPressed = false),
+                  onTapCancel: () => setState(() => _isButtonPressed = false),
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 300),
+                    transitionBuilder:
+                        (Widget child, Animation<double> animation) {
+                      return ScaleTransition(
+                        scale: animation,
+                        child: FadeTransition(
+                          opacity: animation,
+                          child: child,
+                        ),
+                      );
+                    },
+                    child: _isProcessingAction
+                        ? const SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor:
+                                  AlwaysStoppedAnimation<Color>(Colors.white),
+                            ),
+                          )
+                        : Icon(
+                            _captureLogic.capturedImageBytes != null
+                                ? Icons.send_rounded // ✅ Consistent send icon
+                                : Icons.camera_alt,
+                            color: _captureLogic.capturedImageBytes != null
+                                ? Colors
+                                    .white // ✅ Consistent white color for send
+                                : Colors.black,
+                            size: 32,
+                            key: ValueKey(
+                                _captureLogic.capturedImageBytes != null),
+                          ),
+                  ),
+                ),
+              ),
+            ),
+
+            // Retake button - always present but hidden when not needed
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOut,
+              height: _captureLogic.capturedImageBytes != null ? 56 : 0,
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 300),
+                opacity: _captureLogic.capturedImageBytes != null ? 1.0 : 0.0,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 16),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        onPressed: _isProcessingAction ? null : _handleRetake,
+                        icon: _isProcessingAction
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                      Colors.white),
+                                ),
+                              )
+                            : const Icon(
+                                Icons.refresh,
+                                color: Colors.white,
+                                size: 32,
+                              ),
+                      ),
+                      const Spacer(), // ✅ Push retake button to left
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Build upload overlay
+  Widget _buildUploadOverlay() {
+    return Positioned.fill(
+      child: Container(
+        color: Colors.black.withOpacity(0.8),
+        child: const Center(
+          child: PeekLoadingIndicator.medium(
+            logoColor: Colors.white,
+            loadingText: "Sending Peek...",
+          ),
+        ),
+      ),
+    );
+  }
+}
