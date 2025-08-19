@@ -225,7 +225,8 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
   /// Handle upload success
   void _handleUploadSuccess(String downloadUrl) {
     debugPrint("Upload successful: $downloadUrl");
-    context.go('/peek-sent-confirmation?requestId=${widget.requestId}');
+    // Navigate directly to home instead of the 3-second confirmation page
+    context.go('/');
   }
 
   /// Handle errors

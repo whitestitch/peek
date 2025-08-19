@@ -32,7 +32,6 @@ import '../features/auth/upgrade_account.dart';
 import '../features/premium/pages/premium_page.dart';
 import '../features/menu/privacy_page.dart';
 import '../features/peek/reaction_screen.dart';
-import '../features/peek/peek_sent_confirmation_page.dart';
 import 'package:peek/main.dart';
 
 // Helper provider to ensure sign-in is only triggered once.
@@ -51,7 +50,6 @@ const List<String> routesWithoutShell = [
   '/peek-accepted',
   '/peek-declined',
   '/peek-timed-out',
-  '/peek-sent-confirmation',
   '/splash',
   '/peek-image',
   '/peek-reaction',
@@ -269,11 +267,6 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/peek-timed-out',
         name: 'peek-timed-out',
         builder: (context, state) => const PeekTimedOutPage(),
-      ),
-      GoRoute(
-        path: '/peek-sent-confirmation',
-        name: 'peekSentConfirmation',
-        builder: (context, state) => const PeekSentConfirmationPage(),
       ),
       GoRoute(
         path: '/splash',
