@@ -230,7 +230,8 @@ class _AppShellState extends ConsumerState<AppShell>
               child: material.Center(
                 child: material.Container(
                   width: 320,
-                  height: 280,
+                  height:
+                      320, // Increased from 280 to accommodate the icon above title
                   margin: const material.EdgeInsets.all(32),
                   decoration: material.BoxDecoration(
                     color: peekBackgroundColor,
@@ -240,17 +241,33 @@ class _AppShellState extends ConsumerState<AppShell>
                   child: material.Column(
                     mainAxisAlignment: material.MainAxisAlignment.center,
                     children: [
-                      // Title (no emoji, just text like existing dialogs)
-                      material.Text(
-                        _currentReactionType == 'like'
-                            ? "A positive reaction!"
-                            : "Not their favorite!",
-                        style: const material.TextStyle(
-                          fontSize: 24,
-                          fontWeight: material.FontWeight.bold,
-                          color: peekWhiteColor,
-                        ),
-                        textAlign: material.TextAlign.center,
+                      // Title with icon above
+                      material.Column(
+                        children: [
+                          // Icon above title
+                          material.Icon(
+                            _currentReactionType == 'like'
+                                ? material.Icons.favorite
+                                : material.Icons.heart_broken,
+                            size: 48,
+                            color: _currentReactionType == 'like'
+                                ? peekPrimaryColor
+                                : peekErrorColor,
+                          ),
+                          const material.SizedBox(height: 16),
+                          // Title text
+                          material.Text(
+                            _currentReactionType == 'like'
+                                ? "A positive reaction!"
+                                : "Not their favorite!",
+                            style: const material.TextStyle(
+                              fontSize: 24,
+                              fontWeight: material.FontWeight.bold,
+                              color: peekWhiteColor,
+                            ),
+                            textAlign: material.TextAlign.center,
+                          ),
+                        ],
                       ),
 
                       const material.SizedBox(height: 8),
