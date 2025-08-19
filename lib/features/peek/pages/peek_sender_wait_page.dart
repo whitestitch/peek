@@ -11,6 +11,8 @@ import 'package:peek/features/peek/providers/peek_providers.dart';
 import 'package:peek/theme/colors.dart';
 import 'dart:async';
 import 'package:camera/camera.dart';
+import 'package:flutter/foundation.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 
 class PeekSenderWaitPage extends ConsumerStatefulWidget {
   final String requestId;
@@ -163,7 +165,7 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
       final now = DateTime.now();
       final remaining = _captureExpirationTime!.difference(now).inSeconds;
 
-      // Add 3-second buffer to Get Ready countdown to prevent race conditions
+      // Add 1-second buffer to Get Ready countdown to prevent race conditions
       // This ensures Get Ready finishes after Photo Capture countdown starts
       final bufferedRemaining = remaining + 1;
 
@@ -171,7 +173,7 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
         _secondsRemaining = bufferedRemaining > 0 ? bufferedRemaining : 0;
       });
       debugPrint(
-          "[PeekSenderWaitPage] Immediate countdown started with Firestore sync: ${_secondsRemaining}s (original: ${remaining}s + 3s buffer)");
+          "[PeekSenderWaitPage] Immediate countdown started with Firestore sync: ${_secondsRemaining}s (original: ${remaining}s + 1s buffer)");
 
       // Start the live countdown timer
       _startLiveCountdown();
@@ -233,8 +235,8 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
       final now = DateTime.now();
       final remaining = _captureExpirationTime!.difference(now).inSeconds;
 
-      // Add 3-second buffer to Get Ready countdown
-      final bufferedRemaining = remaining + 3;
+      // Add 1-second buffer to Get Ready countdown to prevent race conditions
+      final bufferedRemaining = remaining + 1;
 
       if (bufferedRemaining <= 0) {
         // Time expired (with buffer)
@@ -248,7 +250,7 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
           _secondsRemaining = bufferedRemaining;
         });
         debugPrint(
-            "[PeekSenderWaitPage] Live countdown update: ${bufferedRemaining}s remaining (original: ${remaining}s + 3s buffer)");
+            "[PeekSenderWaitPage] Live countdown update: ${bufferedRemaining}s remaining (original: ${remaining}s + 1s buffer)");
       }
     });
   }
@@ -319,6 +321,40 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
             "[PeekSenderWaitPage] Photo sent, starting post-send countdown");
         _startPostSendCountdown();
         break;
+      case 'cancelled_by_receiver':
+        // Receiver declined/cancelled the peek request
+        debugPrint(
+            "[PeekSenderWaitPage] Peek cancelled by receiver. Stopping countdown and navigating home...");
+
+        // Stop all timers
+        _countdownTimer?.cancel();
+        _postSendTimer?.cancel();
+
+        // Navigate directly to home with cancellation parameters
+        if (!_navigated && mounted) {
+          _navigated = true;
+          debugPrint(
+              "[PeekSenderWaitPage] Navigating to home with receiver cancellation...");
+          context.go('/?show=peekCancelled&reason=receiver_cancelled');
+        }
+        break;
+      case 'cancelled_by_sender':
+        // Sender cancelled the peek request
+        debugPrint(
+            "[PeekSenderWaitPage] Peek cancelled by sender. Stopping countdown and navigating home...");
+
+        // Stop all timers
+        _countdownTimer?.cancel();
+        _postSendTimer?.cancel();
+
+        // Navigate directly to home with cancellation parameters
+        if (!_navigated && mounted) {
+          _navigated = true;
+          debugPrint(
+              "[PeekSenderWaitPage] Navigating to home with sender cancellation...");
+          context.go('/?show=peekCancelled&reason=sender_cancelled');
+        }
+        break;
       case 'expired':
         // Request expired, handle timeout
         if (!_navigated) {
@@ -341,11 +377,45 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
     });
   }
 
-  void _handleCancelPeek() {
-    ref
-        .read(peekControllerProvider.notifier)
-        .cancelPeekBySender(widget.requestId);
-    _navigation.navigateToHomeWithCancellation(context);
+  void _handleCancelPeek() async {
+    debugPrint(
+        "[PeekSenderWaitPage] Cancel button tapped. Attempting to cancel peek as sender...");
+
+    try {
+      // Use Cloud Function to cancel the peek request with admin privileges
+      final functions = FirebaseFunctions.instanceFor(region: "us-central1");
+      final callable = functions.httpsCallable('cancelPeekRequest');
+
+      final result = await callable.call({
+        'requestId': widget.requestId,
+        'reason': 'sender_cancelled',
+        'debug': kDebugMode,
+      });
+
+      final responseData = result.data as Map<String, dynamic>;
+      if (responseData['success'] == true) {
+        debugPrint(
+            "[PeekSenderWaitPage] Peek cancelled successfully via Cloud Function. Waiting for central handler...");
+
+        // The cancellation event will be handled centrally by main.dart
+        // No need to navigate manually - the cancellation provider will handle it
+        debugPrint(
+            "[PeekSenderWaitPage] Cancellation initiated, waiting for central handler...");
+      } else {
+        throw Exception('Cloud Function returned success: false');
+      }
+    } catch (e) {
+      debugPrint(
+          "[PeekSenderWaitPage] Error cancelling peek via Cloud Function: $e");
+      debugPrint("[PeekSenderWaitPage] Using fallback approach...");
+
+      // Fallback: Even if Cloud Function fails, navigate home
+      if (mounted) {
+        debugPrint(
+            "[PeekSenderWaitPage] Fallback navigation due to Cloud Function error...");
+        _navigation.navigateToHome(context);
+      }
+    }
   }
 
   @override

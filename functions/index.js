@@ -512,3 +512,96 @@ exports.onReactionCreated = onDocumentCreated(
       return null;
     },
 );
+
+// Cloud Function to cancel/decline peek requests with admin privileges
+exports.cancelPeekRequest = onCall(
+    {
+      region: "us-central1",
+      timeoutSeconds: 30,
+      enforceAppCheck: false,
+    },
+    async (request) => {
+      logger.info("🚀 cancelPeekRequest called");
+
+      // Manual App Check verification
+      if (!request.app && request.data.debug !== true) {
+        logger.error("🚨 Manual App Check failed for cancelPeekRequest");
+        throw new HttpsError(
+            "unauthenticated",
+            "The function must be called from a verified app.",
+        );
+      }
+
+      logger.info("✅ Manual App Check passed for cancelPeekRequest");
+
+      if (!request.auth || !request.auth.uid) {
+        throw new HttpsError(
+            "unauthenticated",
+            "User must be authenticated to cancel peek requests.",
+        );
+      }
+
+      const {requestId, reason} = request.data;
+      if (!requestId) {
+        throw new HttpsError(
+            "invalid-argument",
+            "requestId is required.",
+        );
+      }
+
+      try {
+        const peekRef = db.collection("peek_requests").doc(requestId);
+        const peekSnap = await peekRef.get();
+
+        if (!peekSnap.exists) {
+          throw new HttpsError(
+              "not-found",
+              "Peek request not found.",
+          );
+        }
+
+        const userId = request.auth.uid;
+
+        // Determine the cancellation reason and update accordingly
+        let statusUpdate;
+        if (reason === "receiver_cancelled") {
+          statusUpdate = {
+            "status": "cancelled_by_receiver",
+            "declinedAt": admin.firestore.FieldValue.serverTimestamp(),
+            "cancelledBy": userId,
+          };
+        } else if (reason === "sender_cancelled") {
+          statusUpdate = {
+            "status": "cancelled_by_sender",
+            "cancelledAt": admin.firestore.FieldValue.serverTimestamp(),
+            "cancelledBy": userId,
+          };
+        } else {
+          statusUpdate = {
+            "status": "cancelled",
+            "cancelledAt": admin.firestore.FieldValue.serverTimestamp(),
+            "cancelledBy": userId,
+          };
+        }
+
+        await peekRef.update(statusUpdate);
+
+        logger.info(
+            `✅ Peek request ${requestId} cancelled successfully by ${userId} ` +
+            `with reason: ${reason}`);
+
+        return {
+          success: true,
+          message: "Peek request cancelled successfully",
+          requestId: requestId,
+          status: statusUpdate.status,
+        };
+      } catch (error) {
+        logger.error(`❌ Error cancelling peek request ${requestId}: ${error}`);
+        throw new HttpsError(
+            "internal",
+            "Failed to cancel peek request.",
+        );
+      }
+    },
+);

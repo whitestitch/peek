@@ -19,6 +19,7 @@ import 'package:peek/core/widgets/peek_loading_indicator.dart';
 import 'package:rive/rive.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:peek/main.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 
 class HomePage extends ConsumerStatefulWidget {
   const HomePage({super.key});
@@ -29,6 +30,9 @@ class HomePage extends ConsumerStatefulWidget {
 class _HomePageState extends ConsumerState<HomePage> {
   Timer? _cooldownTimer;
   int? _secondsRemaining;
+
+  // Track which cancellation panels have already been shown to prevent duplicates
+  final Set<String> _shownCancellationPanels = <String>{};
 
   @override
   void initState() {
@@ -41,84 +45,158 @@ class _HomePageState extends ConsumerState<HomePage> {
     });
   }
 
-  void _showPeekCancelledSheet(String title, String message) {
-    // Get the context from the global key for safety during navigation
-    final material.BuildContext? scaffoldContext =
-        rootNavigatorKey.currentContext;
-    if (scaffoldContext == null) {
-      material
-          .debugPrint("❌ Cannot show cancelled sheet: root context is null.");
+  void _showPeekCancelledSheet(String reason) {
+    // Create a unique key for this cancellation to prevent duplicates
+    final cancellationKey =
+        '${reason}_${DateTime.now().millisecondsSinceEpoch}';
+
+    // Check if we've already shown a cancellation panel recently
+    if (_shownCancellationPanels.contains(reason)) {
+      print("⚠️ Cancellation panel already shown for reason: $reason");
       return;
     }
 
-    material.showModalBottomSheet(
-      context: scaffoldContext,
-      backgroundColor: material.Colors.transparent,
-      isScrollControlled: true,
-      isDismissible: true,
-      builder: (ctx) {
-        // Auto-close after 5 seconds
-        Future.delayed(const Duration(seconds: 5), () {
-          if (ctx.mounted) {
-            material.Navigator.of(ctx).pop();
-          }
-        });
-        return material.Stack(
-          alignment: material.Alignment.topCenter,
-          children: [
-            // The main content container with rounded corners
-            material.Container(
-              height: material.MediaQuery.of(context).size.height * 0.4,
-              width: double.infinity,
-              decoration: const material.BoxDecoration(
-                color: peekBackgroundColor,
-                borderRadius: material.BorderRadius.vertical(
-                  top: material.Radius.circular(24),
-                ),
-              ),
-              padding: const material.EdgeInsets.all(24.0),
-              child: material.Column(
-                mainAxisAlignment: material.MainAxisAlignment.center,
+    // Mark this cancellation as shown
+    _shownCancellationPanels.add(reason);
+
+    // Clean up old entries after 5 seconds to prevent memory leaks
+    Future.delayed(const Duration(seconds: 5), () {
+      _shownCancellationPanels.remove(reason);
+    });
+
+    final scaffoldContext = material.Scaffold.of(context).context;
+    if (scaffoldContext == null) {
+      print("❌ Cannot show cancelled sheet: root context is null.");
+      return;
+    }
+
+    // Check if we're in the middle of a navigation transition
+    if (!mounted) {
+      print("❌ Cannot show cancelled sheet: page not mounted.");
+      return;
+    }
+
+    // Determine title and message based on reason
+    String title;
+    String message;
+
+    if (reason == 'receiver_cancelled') {
+      title = "Peek Cancelled!";
+      message = "The receiver cancelled the peek request.";
+    } else if (reason == 'sender_cancelled') {
+      title = "Peek Stopped";
+      message = "The sender stopped the peek request.";
+    } else {
+      title = "Peek Cancelled";
+      message = "The peek request was cancelled.";
+    }
+
+    // Add a small delay to ensure navigation is complete
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (!mounted) return;
+
+      material.showModalBottomSheet(
+        context: scaffoldContext,
+        backgroundColor: material.Colors.transparent,
+        isScrollControlled: true,
+        isDismissible: true,
+        builder: (ctx) {
+          return material.StatefulBuilder(
+            builder: (context, setState) {
+              // Track if the sheet has been dismissed
+              bool isSheetDismissed = false;
+
+              // Auto-close after 5 seconds
+              Timer? autoCloseTimer;
+              autoCloseTimer = Timer(const Duration(seconds: 5), () {
+                if (ctx.mounted && !isSheetDismissed) {
+                  try {
+                    // Check if the context is still valid before trying to pop
+                    if (material.Navigator.of(ctx).canPop()) {
+                      material.Navigator.of(ctx).pop();
+                    } else {
+                      // If we can't pop, just cancel the timer
+                      autoCloseTimer?.cancel();
+                    }
+                  } catch (e) {
+                    // If there's an error, just log it and don't crash
+                    print("❌ Error auto-closing cancelled sheet: $e");
+                    // Cancel the timer to prevent further attempts
+                    autoCloseTimer?.cancel();
+                  }
+                }
+              });
+
+              return material.Stack(
+                alignment: material.Alignment.topCenter,
                 children: [
-                  const material.Icon(
-                    material.Icons.cancel_outlined,
-                    size: 60,
-                    color: material.Colors.white70,
-                  ),
-                  const material.SizedBox(height: 20),
-                  material.Text(
-                    title,
-                    style: const material.TextStyle(
-                        fontSize: 24,
-                        fontWeight: material.FontWeight.bold,
-                        color: material.Colors.white),
-                  ),
-                  const material.SizedBox(height: 8),
-                  material.Text(
-                    message,
-                    textAlign: material.TextAlign.center,
-                    style: const material.TextStyle(
-                        fontSize: 16, color: material.Colors.white70),
-                  ),
-                  const material.SizedBox(height: 32),
-                  material.SizedBox(
+                  // The main content container with rounded corners
+                  material.Container(
+                    height: material.MediaQuery.of(context).size.height * 0.4,
                     width: double.infinity,
-                    child: material.ElevatedButton(
-                      style: material.ElevatedButton.styleFrom(
-                        backgroundColor: peekSecondaryColor,
-                        foregroundColor: peekSurfaceColor,
+                    decoration: const material.BoxDecoration(
+                      color: peekBackgroundColor,
+                      borderRadius: material.BorderRadius.vertical(
+                        top: material.Radius.circular(24),
                       ),
-                      onPressed: () => material.Navigator.of(ctx).pop(),
-                      child: const material.Text('OK'),
                     ),
-                  )
+                    padding: const material.EdgeInsets.all(24.0),
+                    child: material.Column(
+                      mainAxisAlignment: material.MainAxisAlignment.center,
+                      children: [
+                        const material.Icon(
+                          material.Icons.cancel_outlined,
+                          size: 60,
+                          color: material.Colors.white70,
+                        ),
+                        const material.SizedBox(height: 20),
+                        material.Text(
+                          title,
+                          style: const material.TextStyle(
+                              fontSize: 24,
+                              fontWeight: material.FontWeight.bold,
+                              color: material.Colors.white),
+                        ),
+                        const material.SizedBox(height: 8),
+                        material.Text(
+                          message,
+                          textAlign: material.TextAlign.center,
+                          style: const material.TextStyle(
+                              fontSize: 16, color: material.Colors.white70),
+                        ),
+                        const material.SizedBox(height: 32),
+                        material.SizedBox(
+                          width: double.infinity,
+                          child: material.ElevatedButton(
+                            style: material.ElevatedButton.styleFrom(
+                              backgroundColor: peekSecondaryColor,
+                              foregroundColor: peekSurfaceColor,
+                            ),
+                            onPressed: () {
+                              // Cancel the auto-close timer
+                              autoCloseTimer?.cancel();
+                              setState(() {
+                                isSheetDismissed = true;
+                              });
+
+                              // Use the sheet context to dismiss itself properly
+                              if (ctx.mounted) {
+                                material.Navigator.of(ctx).pop();
+                              }
+                            },
+                            child: const material.Text('OK'),
+                          ),
+                        )
+                      ],
+                    ),
+                  ),
                 ],
-              ),
-            ),
-          ],
-        );
-      },
-    );
+              );
+            },
+          );
+        },
+      );
+    });
   }
 
   Future<void> _checkPromoModal() async {
@@ -207,21 +285,16 @@ class _HomePageState extends ConsumerState<HomePage> {
   @override
   material.Widget build(material.BuildContext context) {
     final goRouterState = GoRouterState.of(context);
+
+    // Handle cancellation events from centralized handler
     if (goRouterState.uri.queryParameters['show'] == 'peekCancelled') {
-      // Determine which message to show based on the 'reason' parameter.
       final reason = goRouterState.uri.queryParameters['reason'];
-
-      final title =
-          reason == 'sender_cancelled' ? "Peek Stopped" : "Peek Cancelled";
-
-      final message = reason == 'sender_cancelled'
-          ? "You've stopped a peek."
-          : "The other user was not available to Peek.";
 
       material.WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
+          // Clear the URL parameters and show the cancellation panel
           context.go('/');
-          _showPeekCancelledSheet(title, message);
+          _showPeekCancelledSheet(reason ?? 'cancelled');
         }
       });
     }

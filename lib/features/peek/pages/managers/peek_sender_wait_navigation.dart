@@ -23,7 +23,8 @@ class PeekSenderWaitNavigation {
     context.go('/');
   }
 
-  void navigateToHomeWithCancellation(BuildContext context) {
-    context.go('/?show=peekCancelled');
+  void navigateToHomeWithCancellation(BuildContext context,
+      {String reason = 'sender_cancelled'}) {
+    context.go('/?show=peekCancelled&reason=$reason');
   }
 }

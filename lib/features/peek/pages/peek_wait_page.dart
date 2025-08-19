@@ -314,17 +314,23 @@ class _PeekWaitPageState extends ConsumerState<PeekWaitPage> {
 
     try {
       // Call the controller to update the status to 'cancelled_by_sender'
-      // This will be picked up by the other user's listener.
+      // This will be picked up by the other user's listener and trigger cancellation panel
       ref
           .read(peekControllerProvider.notifier)
           .cancelPeekBySender(widget.requestId);
+
+      // Navigate directly to home with cancellation parameters
+      if (mounted) {
+        material.debugPrint(
+            "[PeekWaitPage] Navigating to home with sender cancellation...");
+        context.go('/?show=peekCancelled&reason=sender_cancelled');
+      }
     } catch (e) {
       material.debugPrint("⚠️ [PeekWaitPage] Error calling cancelPeek: $e");
-    }
-
-    // Navigate to the home page and trigger the slide panel.
-    if (mounted) {
-      context.go('/?show=peekCancelled&reason=sender_cancelled');
+      // Fallback navigation if cancellation fails
+      if (mounted) {
+        context.go('/');
+      }
     }
   }
 

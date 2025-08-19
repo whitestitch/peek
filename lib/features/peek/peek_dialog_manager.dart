@@ -291,10 +291,8 @@ class PeekDialogManager {
         _currentRequestId = null;
       }
 
-      // Navigate if request was cancelled
-      if (doc.exists && doc.data()?['status'] == 'cancelled_by_sender') {
-        navigatorKey.currentContext?.go('/?show=peekCancelled');
-      }
+      // Note: Cancellation panels are now handled by navigation parameters
+      // No need to trigger additional navigation here
     } catch (e) {
       debugPrint('❌ Error handling request status change: $e');
     }
@@ -309,33 +307,12 @@ class PeekDialogManager {
       _expirationTimer?.cancel();
 
       debugPrint(
-          '⏰ [PeekDialogManager] Starting shared expiration timer for request: $requestId');
+          '⏰ [PeekDialogManager] Starting backup expiration timer for request: $requestId');
 
-      // Use shared timer provider for synchronization with sender wait page
-      // This ensures both sender and receiver use the same timer source
-      try {
-        ref.listen(peekRequestExpirationProvider(requestId), (previous, next) {
-          debugPrint(
-              '⏰ [PeekDialogManager] Shared timer listener triggered: $next');
-          if (next.hasValue && next.value == true) {
-            // Request has expired, handle dialog expiration
-            debugPrint(
-                '🚨 [PeekDialogManager] Shared timer detected expiration for request: $requestId');
-            if (_currentRequestId == requestId &&
-                ref.read(activePeekRequestDialogProvider) == requestId) {
-              _handleDialogExpiration(requestId);
-            }
-          }
-        });
-        debugPrint(
-            '⏰ [PeekDialogManager] Shared timer listener attached successfully');
-      } catch (e) {
-        debugPrint(
-            '❌ [PeekDialogManager] Error attaching shared timer listener: $e');
-      }
-
-      // Keep backup timer as safety net (65 seconds)
-      _expirationTimer = Timer(const Duration(seconds: 65), () {
+      // Note: Shared timer listener removed due to ref.listen constraints
+      // Backup timer will handle expiration reliably
+      // Keep backup timer as safety net (60 seconds - exactly matching peek request timer)
+      _expirationTimer = Timer(const Duration(seconds: 60), () {
         debugPrint(
             '⏰ [PeekDialogManager] Backup timer fired for request: $requestId');
         if (_currentRequestId == requestId &&
@@ -359,24 +336,51 @@ class PeekDialogManager {
     debugPrint(
         '🚨 [PeekDialogManager] _handleDialogExpiration called for request: $requestId');
 
-    // Close the dialog if it's still open
-    if (navigatorKey.currentContext != null &&
-        Navigator.of(navigatorKey.currentContext!).canPop()) {
-      debugPrint('✅ [PeekDialogManager] Closing dialog via Navigator.pop()');
-      Navigator.of(navigatorKey.currentContext!).pop();
-    } else {
+    // Prevent multiple expiration handlers from running simultaneously
+    if (_currentRequestId != requestId) {
       debugPrint(
-          '⚠️ [PeekDialogManager] Cannot close dialog - context null or cannot pop');
+          '⚠️ [PeekDialogManager] Expiration already handled for request: $requestId');
+      return;
     }
 
-    // Clear the active dialog provider
+    // Check if dialog is still active before proceeding
+    final activeDialogId = ref.read(activePeekRequestDialogProvider);
+    if (activeDialogId != requestId) {
+      debugPrint(
+          '⚠️ [PeekDialogManager] Dialog no longer active for request: $requestId');
+      return;
+    }
+
+    // Clear the active dialog provider first to prevent conflicts
     debugPrint(
         '🧹 [PeekDialogManager] Clearing activePeekRequestDialogProvider');
     ref.read(activePeekRequestDialogProvider.notifier).state = null;
 
-    // Show "Time Up!" slide panel instead of navigating to timeout page
-    debugPrint('🎭 [PeekDialogManager] Showing Time Up slide panel');
-    _showTimeUpSlidePanel();
+    // Close the dialog if it's still open - use a more robust approach
+    if (navigatorKey.currentContext != null) {
+      try {
+        // Check if we can pop and if there's actually a dialog to close
+        if (Navigator.of(navigatorKey.currentContext!).canPop()) {
+          debugPrint(
+              '✅ [PeekDialogManager] Closing dialog via Navigator.pop()');
+          Navigator.of(navigatorKey.currentContext!).pop();
+        } else {
+          debugPrint(
+              '⚠️ [PeekDialogManager] Cannot pop - no dialog in navigation stack');
+        }
+      } catch (e) {
+        debugPrint('❌ [PeekDialogManager] Error closing dialog: $e');
+      }
+    } else {
+      debugPrint('⚠️ [PeekDialogManager] Navigator context is null');
+    }
+
+    // Add a small delay to ensure dialog is fully closed before showing panel
+    Future.delayed(const Duration(milliseconds: 100), () {
+      // Show "Time Up!" slide panel instead of navigating to timeout page
+      debugPrint('🎭 [PeekDialogManager] Showing Time Up slide panel');
+      _showTimeUpSlidePanel();
+    });
 
     // Clean up timer state
     debugPrint('🧹 [PeekDialogManager] Cleaning up timer state');
