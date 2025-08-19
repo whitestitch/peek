@@ -2,6 +2,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:peek/features/peek/controllers/peek_controller.dart';
 
 class PeekResponseHandler {
   final _auth = FirebaseAuth.instance;
@@ -11,6 +13,7 @@ class PeekResponseHandler {
     required bool accept,
     required Function(String) onSuccess,
     required Function(String) onError,
+    required PeekController peekController,
   }) async {
     final docRef = request.reference;
     final requestId = request.id;
@@ -29,6 +32,12 @@ class PeekResponseHandler {
         });
         debugPrint(
             '[PeekResponseHandler] Request $requestId accepted, status updated.');
+
+        // Start the 30-second capture countdown
+        await peekController.startCaptureCountdown(requestId);
+        debugPrint(
+            '[PeekResponseHandler] Capture countdown started for request $requestId');
+
         onSuccess(requestId);
       } else {
         await docRef.update({

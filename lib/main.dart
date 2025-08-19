@@ -57,12 +57,14 @@ class _PeekAppState extends ConsumerState<PeekApp> {
       navigatorKey: rootNavigatorKey,
       ref: ref,
     );
+    _dialogManager.initialize(); // Initialize the dialog manager
   }
 
   @override
   void dispose() {
     _lifecycleManager.dispose();
     _iapManager.dispose();
+    _dialogManager.dispose();
     super.dispose();
   }
 
@@ -71,10 +73,13 @@ class _PeekAppState extends ConsumerState<PeekApp> {
     final router = ref.watch(routerProvider);
 
     // Listen for peek request changes and handle dialogs
+    // Handle requests immediately - dialog manager will handle context checks
     ref.listen<AsyncValue<List<QueryDocumentSnapshot<Map<String, dynamic>>>>>(
       pendingPeekRequestsProvider,
-      (previous, next) async {
-        await next.whenData((requests) async {
+      (previous, next) {
+        next.whenData((requests) {
+          debugPrint(
+              '📋 [PeekApp] Handling ${requests.length} pending requests');
           _dialogManager.handlePendingRequests(requests);
         });
       },

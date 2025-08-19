@@ -58,16 +58,26 @@ class PeekSenderWaitTimerManager {
     final now = DateTime.now();
     final initialRemaining = deadline.difference(now).inSeconds;
     final remaining = initialRemaining > 0 ? initialRemaining : 0;
+
+    debugPrint(
+        "[PeekSenderWaitTimerManager] Starting countdown with deadline: $deadline");
+    debugPrint(
+        "[PeekSenderWaitTimerManager] Initial remaining seconds: $remaining");
+
     onCountdownUpdate(remaining);
 
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       final now = DateTime.now();
-      final remaining = (deadline.difference(now).inMilliseconds / 1000).ceil();
+      final remaining = deadline.difference(now).inSeconds;
 
-      if (remaining < 0) {
+      if (remaining <= 0) {
         timer.cancel();
+        debugPrint(
+            "[PeekSenderWaitTimerManager] Countdown finished, calling timeout");
         onTimeout();
       } else {
+        debugPrint(
+            "[PeekSenderWaitTimerManager] Countdown update: ${remaining}s remaining");
         onCountdownUpdate(remaining);
       }
     });
@@ -94,7 +104,7 @@ class PeekSenderWaitTimerManager {
   }
 
   void startWatchdogTimer() {
-    _watchdogTimer = Timer(const Duration(seconds: 35), () {
+    _watchdogTimer = Timer(const Duration(seconds: 70), () {
       debugPrint(
           "[PeekSenderWaitTimerManager] Watchdog timer fired. Forcing timeout.");
       onTimeout();

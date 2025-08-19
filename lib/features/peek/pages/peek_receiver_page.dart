@@ -1,22 +1,24 @@
 // lib/features/peek/pages/peek_receiver_page.dart
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:peek/features/peek/controllers/peek_controller.dart';
+import 'package:peek/features/peek/pages/managers/peek_request_listener.dart';
+import 'package:peek/features/peek/pages/managers/peek_response_handler.dart';
+import 'package:peek/features/peek/pages/managers/peek_receiver_ui.dart';
 import 'package:peek/theme/colors.dart';
-import 'managers/peek_request_listener.dart';
-import 'managers/peek_response_handler.dart';
-import 'managers/peek_receiver_ui.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
-class PeekReceiverPage extends StatefulWidget {
+class PeekReceiverPage extends ConsumerStatefulWidget {
   static String pageBackgroundPath = 'assets/images/onboarding_bg_02.jpg';
 
   const PeekReceiverPage({super.key});
 
   @override
-  State<PeekReceiverPage> createState() => _PeekReceiverPageState();
+  ConsumerState<PeekReceiverPage> createState() => _PeekReceiverPageState();
 }
 
-class _PeekReceiverPageState extends State<PeekReceiverPage> {
+class _PeekReceiverPageState extends ConsumerState<PeekReceiverPage> {
   final _requestListener = PeekRequestListener();
   final _responseHandler = PeekResponseHandler();
   final _uiBuilder = PeekReceiverUI();
@@ -54,6 +56,8 @@ class _PeekReceiverPageState extends State<PeekReceiverPage> {
     setState(() => _isProcessing = true);
 
     try {
+      final peekController = ref.read(peekControllerProvider.notifier);
+
       await _responseHandler.respondToRequest(
         request: _currentRequest!,
         accept: accept,
@@ -74,6 +78,7 @@ class _PeekReceiverPageState extends State<PeekReceiverPage> {
             ),
           );
         },
+        peekController: peekController,
       );
     } finally {
       if (mounted) {

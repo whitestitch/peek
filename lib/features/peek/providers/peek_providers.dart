@@ -107,7 +107,9 @@ final hasPendingRequestsProvider = Provider<bool>((ref) {
 
 // 8. Provider for FCM token management
 final fcmTokenProvider = StreamProvider.autoDispose<String?>((ref) {
-  final userId = FirebaseAuth.instance.currentUser?.uid;
+  final authState = ref.watch(peekAuthUidProvider);
+  final userId = authState.value;
+
   if (userId == null) {
     debugPrint(
         "[fcmTokenProvider] No authenticated user. Returning null stream.");
@@ -123,6 +125,60 @@ final fcmTokenProvider = StreamProvider.autoDispose<String?>((ref) {
     if (doc.exists) {
       final data = doc.data();
       return data?['fcmToken'] as String?;
+    }
+    return null;
+  });
+});
+
+// 9. Shared timer provider for peek request countdown synchronization
+final peekRequestExpirationTimeProvider =
+    StreamProvider.family<DateTime?, String>((ref, requestId) {
+  return FirebaseFirestore.instance
+      .collection('peek_requests')
+      .doc(requestId)
+      .snapshots()
+      .map((snapshot) {
+    if (snapshot.exists && snapshot.data() != null) {
+      final expiresAt = snapshot.data()!['expiresAt'] as Timestamp?;
+      return expiresAt?.toDate();
+    }
+    return null;
+  });
+});
+
+// 10. Provider for peek request expiration status
+final peekRequestExpirationProvider =
+    StreamProvider.family<bool, String>((ref, requestId) {
+  return FirebaseFirestore.instance
+      .collection('peek_requests')
+      .doc(requestId)
+      .snapshots()
+      .map((snapshot) {
+    if (snapshot.exists && snapshot.data() != null) {
+      final expiresAt = snapshot.data()!['expiresAt'] as Timestamp?;
+      if (expiresAt != null) {
+        final now = DateTime.now();
+        return expiresAt.toDate().isBefore(now);
+      }
+    }
+    return false;
+  });
+});
+
+// 11. Provider for photo capture expiration time (30 seconds)
+final peekCaptureExpirationTimeProvider =
+    StreamProvider.family<DateTime?, String>((ref, requestId) {
+  return FirebaseFirestore.instance
+      .collection('peek_requests')
+      .doc(requestId)
+      .snapshots()
+      .map((snapshot) {
+    if (snapshot.exists && snapshot.data() != null) {
+      final captureExpiresAt =
+          snapshot.data()!['captureExpiresAt'] as Timestamp?;
+      if (captureExpiresAt != null) {
+        return captureExpiresAt.toDate();
+      }
     }
     return null;
   });

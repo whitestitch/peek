@@ -67,12 +67,18 @@ class CountdownManager {
     _secondsRemaining = initialRemaining > 0 ? initialRemaining : 0;
     onCountdownUpdate?.call(_secondsRemaining!);
 
+    debugPrint(
+        "[CountdownManager] Starting countdown with deadline: $deadline");
+    debugPrint(
+        "[CountdownManager] Initial remaining seconds: ${_secondsRemaining}s");
+
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       final now = DateTime.now();
-      final remaining = (deadline.difference(now).inMilliseconds / 1000).ceil();
+      final remaining = deadline.difference(now).inSeconds;
 
-      if (remaining < 0) {
+      if (remaining <= 0) {
         timer.cancel();
+        debugPrint("[CountdownManager] Countdown finished, calling timeout");
         _handleTimeout();
       } else {
         _secondsRemaining = remaining;

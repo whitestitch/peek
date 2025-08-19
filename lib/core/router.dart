@@ -61,27 +61,6 @@ const List<String> routesWithoutShell = [
   '/info',
 ];
 
-// Legacy routes without bottom navigation
-const List<String> routesWithoutBottomNav = [
-  '/terms',
-  '/onboarding',
-  '/receive',
-  '/capture',
-  '/peek-accepted',
-  '/peek-declined',
-  '/peek-timed-out',
-  '/peek-sent-confirmation',
-  '/splash',
-  '/peek-image',
-  '/peek-reaction',
-  '/wait',
-  '/peek-feedback',
-  '/upgrade',
-  '/premium',
-  '/privacy',
-  '/info',
-];
-
 // Shell navigator key
 final shellNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'shell');
 

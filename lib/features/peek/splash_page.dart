@@ -1,23 +1,16 @@
 // lib/features/peek/splash_page.dart
 
 import 'dart:async';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-// import 'package:firebase_core/firebase_core.dart'; // Not needed if only using default instance
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:go_router/go_router.dart';
 import 'package:peek/core/firestore_service.dart';
 import 'package:peek/core/widgets/peek_loading_indicator.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// SplashPage:
-///   - Fetches/validates image URL if not provided.
-///   - Runs a 3-second countdown.
-///   - Navigates to PeekImageView with necessary data.
+/// SplashPage handles the countdown before showing a peek image
 class SplashPage extends ConsumerStatefulWidget {
   final String requestId;
-  final String? initialImageUrl; // URL can be passed directly
+  final String? initialImageUrl;
 
   const SplashPage({super.key, required this.requestId, this.initialImageUrl});
 

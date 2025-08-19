@@ -1,13 +1,12 @@
-// lib/core/widgets/app_shell.dart
-import 'package:flutter/material.dart' as material; // Using alias
+import 'package:flutter/material.dart' as material;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:peek/core/router.dart';
 import 'package:peek/features/peek/providers/peek_providers.dart';
-import 'package:peek/features/menu/drawer_menu.dart'; // Your existing drawer
+import 'package:peek/features/menu/drawer_menu.dart';
+import 'package:peek/theme/colors.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:peek/main.dart';
-import 'package:peek/theme/colors.dart'; // Your theme colors
-import 'package:cloud_firestore/cloud_firestore.dart'; // Added for Timestamp
 
 class AppShell extends ConsumerStatefulWidget {
   final GoRouterState routerState; // Current router state
@@ -355,7 +354,7 @@ class _AppShellState extends ConsumerState<AppShell>
     final String currentPath =
         widget.routerState.uri.toString().split('?').first;
     final bool showAppBar = !routesInShellWithoutAppBar.contains(currentPath);
-    final bool showBottomNav = !routesWithoutBottomNav.contains(currentPath);
+    final bool showBottomNav = !routesWithoutShell.contains(currentPath);
 
     const String homeBackgroundPath = 'assets/images/onboarding_bg_02.jpg';
 
