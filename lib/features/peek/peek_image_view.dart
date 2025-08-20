@@ -9,7 +9,6 @@ import 'package:peek/features/peek/image_view/image_display_manager.dart';
 import 'package:peek/features/peek/image_view/view_timer_manager.dart';
 import 'package:peek/features/peek/image_view/user_permissions_manager.dart';
 import 'package:peek/features/peek/image_view/analytics_manager.dart';
-import 'package:peek/features/peek/image_view/moderation_manager.dart';
 import 'package:peek/theme/colors.dart';
 
 @immutable
@@ -35,7 +34,7 @@ class _PeekImageViewState extends ConsumerState<PeekImageView> {
   late final ViewTimerManager _timerManager;
   late final UserPermissionsManager _permissionsManager;
   late final AnalyticsManager _analyticsManager;
-  late final ModerationManager _moderationManager;
+  // late final ModerationManager _moderationManager; // REMOVED: No longer needed
 
   // State
   bool _isInitialized = false;
@@ -90,13 +89,13 @@ class _PeekImageViewState extends ConsumerState<PeekImageView> {
       onError: _handleError,
     );
 
-    _moderationManager = ModerationManager(
-      requestId: widget.requestId,
-      onActionStarted: () => setState(() {}),
-      onActionCompleted: () => setState(() {}),
-      onError: _handleError,
-      onSuccess: _handleSuccess,
-    );
+    // _moderationManager = ModerationManager( // REMOVED: No longer needed
+    //   requestId: widget.requestId,
+    //   onActionStarted: () => setState(() {}),
+    //   onActionCompleted: () => setState(() {}),
+    //   onError: _handleError,
+    //   onSuccess: _handleSuccess,
+    // );
   }
 
   /// Load all necessary data
@@ -136,7 +135,7 @@ class _PeekImageViewState extends ConsumerState<PeekImageView> {
 
       debugPrint("[PeekImageView] Fetched peek data - senderId: $senderId");
 
-      _moderationManager.updateSenderId(senderId);
+      // _moderationManager.updateSenderId(senderId); // REMOVED: No longer needed
 
       // Fetch sender information if available
       if (senderId != null) {
@@ -273,7 +272,7 @@ class _PeekImageViewState extends ConsumerState<PeekImageView> {
     _timerManager.dispose();
     _permissionsManager.dispose();
     _analyticsManager.dispose();
-    _moderationManager.dispose();
+    // _moderationManager.dispose(); // REMOVED: No longer needed
     super.dispose();
   }
 
@@ -300,8 +299,8 @@ class _PeekImageViewState extends ConsumerState<PeekImageView> {
           _buildBottomControls(),
 
           // Loading overlay for actions
-          if (_moderationManager.isProcessingAction)
-            _buildActionLoadingOverlay(),
+          // if (_moderationManager.isProcessingAction) // REMOVED: No longer needed
+          //   _buildActionLoadingOverlay(),
         ],
       ),
     );
@@ -364,16 +363,9 @@ class _PeekImageViewState extends ConsumerState<PeekImageView> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Report button (3 dots) - aligned left
-          CircleAvatar(
-            radius: 20,
-            backgroundColor: Colors.black.withOpacity(0.4),
-            child: IconButton(
-              onPressed: () => _showMoreOptions(context),
-              icon: const Icon(Icons.more_vert, color: Colors.white, size: 22),
-              padding: EdgeInsets.zero,
-            ),
-          ),
+          // Moderation removed - only available in Reaction Screen where users have time
+          // Left side empty (moderation moved to Reaction Screen)
+          const SizedBox(width: 40), // Balance the layout
 
           // Sender name - centered
           if (_permissionsManager.hasSenderInfo())
@@ -474,43 +466,6 @@ class _PeekImageViewState extends ConsumerState<PeekImageView> {
         color: Colors.black54,
         child: const Center(
           child: CircularProgressIndicator(color: Colors.white),
-        ),
-      ),
-    );
-  }
-
-  /// Show more options menu
-  void _showMoreOptions(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.grey[900],
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.report, color: Colors.orange),
-              title: const Text('Report Content',
-                  style: TextStyle(color: Colors.white)),
-              onTap: () {
-                Navigator.pop(context);
-                _moderationManager.showReportDialog(context);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.block, color: Colors.red),
-              title: const Text('Block User',
-                  style: TextStyle(color: Colors.white)),
-              onTap: () {
-                Navigator.pop(context);
-                _moderationManager.showBlockDialog(context);
-              },
-            ),
-          ],
         ),
       ),
     );
