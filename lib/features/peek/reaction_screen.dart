@@ -537,8 +537,8 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
                                 borderRadius: BorderRadius.circular(30),
                               ),
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 34,
-                                vertical: 16,
+                                horizontal: 16,
+                                vertical: 18,
                               ),
                               elevation: 8,
                               shadowColor: Colors.black.withOpacity(0.2),
@@ -546,8 +546,8 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
                             child: const Icon(
                               // Icons.heart_broken,
                               Icons.thumb_down,
-                              size: 24,
-                              color: peekWhiteColor,
+                              size: 26,
+                              color: peekBackgroundColor,
                               // color: peekBackgroundColor,
                             ),
                           ),
@@ -560,7 +560,9 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
                             style: ElevatedButton.styleFrom(
                               backgroundColor: peekPrimaryColor,
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 34, vertical: 16),
+                                horizontal: 16,
+                                vertical: 18,
+                              ),
                               elevation: 8,
                               shadowColor: Colors.black.withOpacity(0.2),
                               shape: RoundedRectangleBorder(
@@ -568,8 +570,8 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
                               ),
                             ),
                             child: const Icon(
-                              Icons.favorite_rounded,
-                              size: 24,
+                              Icons.favorite,
+                              size: 26,
                               color: peekBackgroundColor,
                             ),
                           ),
