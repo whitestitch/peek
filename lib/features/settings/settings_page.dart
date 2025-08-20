@@ -486,7 +486,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             onTap: () => _launchUrlHelper(
               Uri(
                 scheme: 'mailto',
-                path: 'support@peekapp.example.com',
+                path: 'support@peekio.app',
                 queryParameters: {'subject': 'Peek App Support Request'},
               ),
             ),

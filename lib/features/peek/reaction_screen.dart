@@ -40,7 +40,7 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
   );
 
   bool _isSubmitting = false;
-  bool _isProcessingAction = false;
+  bool _isProcessingAction = false; // Restored for moderation actions
   bool _reactionSubmitted = false;
 
   @override
@@ -114,6 +114,7 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
   }
 
   // Methods relocated and adapted from PeekImageView
+  // RESTORED: Working moderation methods using FirestoreService
   Future<void> _reportThisPeek() async {
     if (widget.originalSenderUid.isEmpty) {
       debugPrint(
@@ -167,7 +168,6 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text("Peek reported. Thank you.")));
-          // Decide if navigation should happen here or if user stays to react
         }
       } catch (e) {
         debugPrint("❌ Error reporting Peek: $e");
@@ -231,8 +231,6 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text("Sender blocked successfully.")));
-          // After blocking, typically navigate away, e.g., to home.
-          // This might happen after reaction as well, ensure flow is logical.
           context.go('/');
         }
       } catch (e) {
@@ -378,7 +376,7 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
               mainAxisAlignment: MainAxisAlignment
                   .spaceBetween, // Pushes content to top and bottom
               children: <Widget>[
-                // Top Row for Skip (X) and Report/Block (...)
+                // Top Row for Report/Block (...) and Skip (X)
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -397,7 +395,6 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
                             _blockThisSender();
                           }
                         },
-                        // Navigate home immediately
                         itemBuilder: (BuildContext context) =>
                             <PopupMenuEntry<String>>[
                           const PopupMenuItem<String>(
@@ -423,6 +420,7 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
                         ],
                       ),
                     ),
+
                     // Skip Button (X top-right)
                     CircleAvatar(
                       radius: 20,
