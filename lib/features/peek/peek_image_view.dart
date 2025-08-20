@@ -4,11 +4,13 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import 'package:peek/features/peek/image_view/image_display_manager.dart';
 import 'package:peek/features/peek/image_view/view_timer_manager.dart';
 import 'package:peek/features/peek/image_view/user_permissions_manager.dart';
 import 'package:peek/features/peek/image_view/analytics_manager.dart';
+// ModerationManager import removed - no longer needed for report/block actions
 import 'package:peek/theme/colors.dart';
 
 @immutable
@@ -34,7 +36,7 @@ class _PeekImageViewState extends ConsumerState<PeekImageView> {
   late final ViewTimerManager _timerManager;
   late final UserPermissionsManager _permissionsManager;
   late final AnalyticsManager _analyticsManager;
-  // late final ModerationManager _moderationManager; // REMOVED: No longer needed
+  // ModerationManager removed - no longer needed for report/block actions
 
   // State
   bool _isInitialized = false;
@@ -89,13 +91,7 @@ class _PeekImageViewState extends ConsumerState<PeekImageView> {
       onError: _handleError,
     );
 
-    // _moderationManager = ModerationManager( // REMOVED: No longer needed
-    //   requestId: widget.requestId,
-    //   onActionStarted: () => setState(() {}),
-    //   onActionCompleted: () => setState(() {}),
-    //   onError: _handleError,
-    //   onSuccess: _handleSuccess,
-    // );
+    // ModerationManager initialization removed - no longer needed
   }
 
   /// Load all necessary data
@@ -130,32 +126,61 @@ class _PeekImageViewState extends ConsumerState<PeekImageView> {
       }
 
       final data = doc.data()!;
-      final senderId = data['senderUid']
-          as String?; // Changed from 'senderId' to 'senderUid'
+      // FIX: Use 'senderId' field which contains the actual photo sender's UID
+      // 'senderUid' field is corrupted and contains the reporter's UID
+      String? senderId = data['senderId'] as String?;
 
-      debugPrint("[PeekImageView] Fetched peek data - senderId: $senderId");
+      // FALLBACK: If senderId is null or corrupted (same as current user), try other fields
+      if (senderId == null || senderId.isEmpty) {
+        debugPrint(
+            "[PeekImageView] senderId is null/empty, trying fallback fields...");
 
-      // _moderationManager.updateSenderId(senderId); // REMOVED: No longer needed
+        // Try to find the actual sender from other fields
+        final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+        final senderUid = data['senderUid'] as String?;
+        final requesterUid = data['requesterUid'] as String?;
 
-      // Fetch sender information if available
-      if (senderId != null) {
-        final senderDoc = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(senderId)
-            .get();
-
-        if (senderDoc.exists) {
-          final senderData = senderDoc.data()!;
-          _permissionsManager.updateSenderInfo(
-            displayName: senderData['displayName'] as String?,
-            avatarUrl: senderData['avatarUrl'] as String?,
-            senderId: senderId,
-          );
+        // The actual sender should NOT be the current user (reporter)
+        if (senderUid != null && senderUid != currentUserId) {
+          senderId = senderUid;
+          debugPrint("[PeekImageView] Using fallback senderUid: $senderId");
+        } else if (requesterUid != null && requesterUid != currentUserId) {
+          senderId = requesterUid;
+          debugPrint("[PeekImageView] Using fallback requesterUid: $senderId");
+        } else {
+          debugPrint(
+              "[PeekImageView] ⚠️ Could not determine correct sender ID");
         }
+      }
+
+      debugPrint("[PeekImageView] Final senderId for moderation: $senderId");
+      debugPrint("[PeekImageView] DEBUG - Full peek data: $data");
+
+      // ModerationManager.updateSenderId removed - no longer needed
+      debugPrint("[PeekImageView] ✅ Sender ID identified: $senderId");
+
+      // Use sender information from peek data instead of fetching from users collection
+      // This avoids permission issues and uses data we already have
+      if (senderId != null) {
+        final senderDisplayName = data['senderDisplayName'] as String?;
+        _permissionsManager.updateSenderInfo(
+          displayName: senderDisplayName,
+          avatarUrl: null, // Not available in peek data
+          senderId: senderId,
+        );
+
+        debugPrint(
+            "[PeekImageView] ✅ Sender info set from peek data: $senderDisplayName");
       }
     } catch (e) {
       debugPrint("Error fetching peek data: $e");
-      _handleError("Failed to load peek information");
+      // Don't show error to user - this is non-critical data
+      // Just log it and continue with basic functionality
+      debugPrint(
+          "[PeekImageView] ⚠️ Non-critical error, continuing with basic functionality");
+
+      // No fallback sender info available
+      debugPrint("[PeekImageView] ⚠️ No fallback sender info available");
     }
   }
 
@@ -227,6 +252,10 @@ class _PeekImageViewState extends ConsumerState<PeekImageView> {
       // Fallback if sender ID couldn't be found
       debugPrint(
           "[PeekImageView] OriginalSenderId is null or empty. Navigating to home.");
+
+      // No fallback available - go to home
+      debugPrint(
+          "[PeekImageView] 🚨 No fallback sender ID available, going to home");
       context.go('/');
     }
   }
@@ -272,7 +301,7 @@ class _PeekImageViewState extends ConsumerState<PeekImageView> {
     _timerManager.dispose();
     _permissionsManager.dispose();
     _analyticsManager.dispose();
-    // _moderationManager.dispose(); // REMOVED: No longer needed
+    // ModerationManager.dispose() removed - no longer needed
     super.dispose();
   }
 
@@ -298,9 +327,7 @@ class _PeekImageViewState extends ConsumerState<PeekImageView> {
           // Bottom controls
           _buildBottomControls(),
 
-          // Loading overlay for actions
-          // if (_moderationManager.isProcessingAction) // REMOVED: No longer needed
-          //   _buildActionLoadingOverlay(),
+          // Loading overlay for actions removed - no longer needed
         ],
       ),
     );
@@ -363,9 +390,8 @@ class _PeekImageViewState extends ConsumerState<PeekImageView> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Moderation removed - only available in Reaction Screen where users have time
-          // Left side empty (moderation moved to Reaction Screen)
-          const SizedBox(width: 40), // Balance the layout
+          // Left side - empty for balance
+          const SizedBox(width: 40),
 
           // Sender name - centered
           if (_permissionsManager.hasSenderInfo())
@@ -459,15 +485,8 @@ class _PeekImageViewState extends ConsumerState<PeekImageView> {
     );
   }
 
-  /// Build action loading overlay
-  Widget _buildActionLoadingOverlay() {
-    return Positioned.fill(
-      child: Container(
-        color: Colors.black54,
-        child: const Center(
-          child: CircularProgressIndicator(color: Colors.white),
-        ),
-      ),
-    );
-  }
+  // Action loading overlay removed - no longer needed
+
+  // Report/Block functionality removed - users should report from Reaction Screen
+  // This prevents duplicate functionality and ensures users have time to complete actions
 }

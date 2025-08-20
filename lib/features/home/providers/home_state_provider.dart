@@ -22,6 +22,9 @@ class HomeState {
   final String buttonText;
   final String subtitleText;
   final DateTime? cooldownEndTime;
+  final bool isRestricted;
+  final DateTime? restrictionEndTime;
+  final String? restrictionReason;
 
   const HomeState({
     required this.isPremium,
@@ -29,6 +32,9 @@ class HomeState {
     required this.buttonText,
     required this.subtitleText,
     this.cooldownEndTime,
+    this.isRestricted = false,
+    this.restrictionEndTime,
+    this.restrictionReason,
   });
 }
 
@@ -78,12 +84,43 @@ class HomeStateNotifier extends AutoDisposeAsyncNotifier<HomeState> {
     final isPremium = (data['isPremium'] as bool? ?? false) ||
         (data['isSubscription'] as bool? ?? false);
 
+    // 🔧 NEW: Check if user is restricted
+    final reputation = data['reputation'] as Map<String, dynamic>? ?? {};
+    final userStatus = reputation['status'] as String? ?? 'normal';
+    final isRestricted = userStatus == 'restricted';
+    final restrictionReason =
+        reputation['restrictionReason'] as String? ?? 'inappropriate content';
+
+    // 🔧 NEW: Get restriction end time for countdown
+    DateTime? restrictionEndTime;
+    if (isRestricted) {
+      final restrictionEndTimestamp =
+          reputation['restrictionEndTime'] as Timestamp?;
+      if (restrictionEndTimestamp != null) {
+        restrictionEndTime = restrictionEndTimestamp.toDate();
+      }
+    }
+
+    // If user is restricted, return restricted state
+    if (isRestricted) {
+      return HomeState(
+        isPremium: isPremium,
+        isButtonEnabled: false,
+        buttonText: 'Banned',
+        subtitleText: 'You are banned for inappropriate content',
+        isRestricted: true,
+        restrictionReason: restrictionReason,
+        restrictionEndTime: restrictionEndTime,
+      );
+    }
+
     if (isPremium) {
       return const HomeState(
         isPremium: true,
         isButtonEnabled: true,
         buttonText: 'Start Peeking',
         subtitleText: 'Unlimited peeks available!',
+        isRestricted: false,
       );
     }
 
@@ -104,6 +141,7 @@ class HomeStateNotifier extends AutoDisposeAsyncNotifier<HomeState> {
           buttonText: '...', // The UI will show the countdown
           subtitleText: 'Please wait for cooldown.',
           cooldownEndTime: cooldownEnd, // Pass the end time
+          isRestricted: false,
         );
       }
     }
@@ -120,7 +158,8 @@ class HomeStateNotifier extends AutoDisposeAsyncNotifier<HomeState> {
           isPremium: false,
           isButtonEnabled: false,
           buttonText: 'Limit Reached',
-          subtitleText: '🚫 Daily peek limit reached!');
+          subtitleText: '🚫 Daily peek limit reached!',
+          isRestricted: false);
     }
 
     final remainingPeeks = dailyLimit - dailyCount;
@@ -129,7 +168,8 @@ class HomeStateNotifier extends AutoDisposeAsyncNotifier<HomeState> {
         isButtonEnabled: true,
         buttonText: 'Start Peeking',
         subtitleText:
-            'You have $remainingPeeks peek${remainingPeeks == 1 ? '' : 's'} left today.');
+            'You have $remainingPeeks peek${remainingPeeks == 1 ? '' : 's'} left today.',
+        isRestricted: false);
   }
 
   Future<void> attemptStartPeeking(material.BuildContext context) async {
@@ -197,6 +237,7 @@ class HomeStateNotifier extends AutoDisposeAsyncNotifier<HomeState> {
                 '...', // This text will be immediately replaced by the countdown timer in the UI
             subtitleText: 'Please wait for cooldown.',
             cooldownEndTime: DateTime.now().add(cooldown),
+            isRestricted: false,
           ),
         );
 

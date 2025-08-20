@@ -377,6 +377,11 @@ class FirestoreService {
       });
       debugPrint(
           "[FirestoreService] Report added successfully for peek: $peekRequestId by $reporterId");
+
+      // 🔧 RESTORED: Update user reputation after report
+      debugPrint(
+          "[FirestoreService] 🔧 About to update reputation for user: $reportedSenderId");
+      await _updateUserReputationAfterReport(reportedSenderId, reason);
     } catch (e) {
       debugPrint("[FirestoreService] Error adding report: $e");
       throw Exception("Failed to submit report. Please try again.");
@@ -405,6 +410,284 @@ class FirestoreService {
       debugPrint(
           "[FirestoreService] Error blocking user $userIdToBlock for $byUserId: $e");
       throw Exception("Failed to block sender. Please try again.");
+    }
+  }
+
+  /// 🔧 RESTORED: Checks if a user can send peeks based on their reputation status
+  Future<bool> canUserSendPeeks(String userId) async {
+    try {
+      final userDoc = await _db.collection('users').doc(userId).get();
+      if (!userDoc.exists) {
+        debugPrint(
+            "[FirestoreService] User document not found for peek check: $userId");
+        return true; // Allow if no document found
+      }
+
+      final userData = userDoc.data()!;
+      final status = (userData['reputation']?['status'] as String?) ?? 'normal';
+
+      if (status == 'restricted') {
+        debugPrint(
+            "[FirestoreService] User $userId cannot send peeks - status: $status");
+        return false;
+      }
+
+      debugPrint(
+          "[FirestoreService] User $userId can send peeks - status: $status");
+      return true;
+    } catch (e) {
+      debugPrint("[FirestoreService] Error checking user peek permission: $e");
+      return true; // Allow if check fails
+    }
+  }
+
+  /// 🔧 RESTORED: Updates user reputation after receiving a report and implements auto-flagging
+  Future<void> _updateUserReputationAfterReport(
+      String userId, String reason) async {
+    try {
+      debugPrint(
+          "[FirestoreService] 🔍 DEBUG - _updateUserReputationAfterReport called with:");
+      debugPrint("[FirestoreService]   - userId: $userId");
+      debugPrint("[FirestoreService]   - reason: $reason");
+
+      // 🔧 CRITICAL FIX: Ensure we have an authenticated user
+      final currentUser = _auth.currentUser;
+      if (currentUser == null) {
+        debugPrint(
+            "[FirestoreService] ❌ ERROR: No authenticated user found for reputation update");
+        return;
+      }
+
+      debugPrint(
+          "[FirestoreService] 🔐 Authenticated user: ${currentUser.uid}");
+
+      final userDocRef = _db.collection('users').doc(userId);
+      debugPrint(
+          "[FirestoreService] 🔧 About to update user document: users/$userId");
+
+      // Get current user data to check existing reputation
+      final userDoc = await userDocRef.get();
+      if (!userDoc.exists) {
+        debugPrint(
+            "[FirestoreService] User document not found for reputation update: $userId");
+        return;
+      }
+
+      final userData = userDoc.data()!;
+      final currentReportCount =
+          (userData['reputation']?['reportCount'] as int?) ?? 0;
+      final currentStatus =
+          (userData['reputation']?['status'] as String?) ?? 'normal';
+
+      // Calculate new values
+      final newReportCount = currentReportCount + 1;
+      final reportReasons =
+          List<String>.from(userData['reputation']?['reportReasons'] ?? []);
+      reportReasons.add(reason);
+
+      // Determine new status based on report count
+      String newStatus = currentStatus;
+
+      // 🔧 CRITICAL FIX: Handle Firestore Timestamp objects properly
+      DateTime? flaggedAt;
+      if (userData['reputation']?['flaggedAt'] != null) {
+        final timestamp = userData['reputation']?['flaggedAt'] as Timestamp;
+        flaggedAt = timestamp.toDate();
+      }
+
+      DateTime? restrictedAt;
+      if (userData['reputation']?['restrictedAt'] != null) {
+        final timestamp = userData['reputation']?['restrictedAt'] as Timestamp;
+        restrictedAt = timestamp.toDate();
+      }
+
+      DateTime? lastModerationAction = DateTime.now();
+
+      // 🔧 NEW: Progressive restriction system
+      if (newReportCount >= 10 && currentStatus != 'restricted') {
+        // 10+ reports = 30 days restriction
+        newStatus = 'restricted';
+        restrictedAt = DateTime.now();
+        final restrictionEndTime = DateTime.now().add(const Duration(days: 30));
+        debugPrint(
+            "[FirestoreService] User $userId automatically restricted for 30 days after 10+ reports");
+      } else if (newReportCount >= 7 && currentStatus != 'restricted') {
+        // 7+ reports = 7 days restriction
+        newStatus = 'restricted';
+        restrictedAt = DateTime.now();
+        final restrictionEndTime = DateTime.now().add(const Duration(days: 7));
+        debugPrint(
+            "[FirestoreService] User $userId automatically restricted for 7 days after 7+ reports");
+      } else if (newReportCount >= 5 && currentStatus != 'restricted') {
+        // 5+ reports = 24 hours restriction
+        newStatus = 'restricted';
+        restrictedAt = DateTime.now();
+        final restrictionEndTime =
+            DateTime.now().add(const Duration(hours: 24));
+        debugPrint(
+            "[FirestoreService] User $userId automatically restricted for 24 hours after 5+ reports");
+      } else if (newReportCount >= 3 && currentStatus == 'normal') {
+        newStatus = 'flagged';
+        flaggedAt = DateTime.now();
+        debugPrint(
+            "[FirestoreService] User $userId automatically flagged after 3 reports");
+      }
+
+      // Update user reputation
+      debugPrint("[FirestoreService] 🔧 Updating user document: users/$userId");
+      debugPrint(
+          "[FirestoreService]   - Current reportCount: $currentReportCount");
+      debugPrint("[FirestoreService]   - New reportCount: $newReportCount");
+      debugPrint("[FirestoreService]   - Current status: $currentStatus");
+      debugPrint("[FirestoreService]   - New status: $newStatus");
+
+      // 🔧 CRITICAL FIX: Add more debug info before the update
+      debugPrint(
+          "[FirestoreService] 🔐 About to make Firestore update with auth context: ${currentUser.uid}");
+      debugPrint("[FirestoreService] 🔧 Firestore instance: ${_db.app.name}");
+
+      // 🔧 NEW: Calculate restriction end time based on report count
+      DateTime? restrictionEndTime;
+      if (newStatus == 'restricted') {
+        if (newReportCount >= 10) {
+          restrictionEndTime = DateTime.now().add(const Duration(days: 30));
+        } else if (newReportCount >= 7) {
+          restrictionEndTime = DateTime.now().add(const Duration(days: 7));
+        } else if (newReportCount >= 5) {
+          restrictionEndTime = DateTime.now().add(const Duration(hours: 24));
+        }
+      }
+
+      await userDocRef.update({
+        'reputation': {
+          'reportCount': newReportCount,
+          'reportReasons': reportReasons,
+          'status': newStatus,
+          'flaggedAt': flaggedAt,
+          'restrictedAt': restrictedAt,
+          'restrictionEndTime': restrictionEndTime,
+          'lastModerationAction': lastModerationAction,
+        },
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      debugPrint(
+          "[FirestoreService] ✅ User $userId reputation updated: reportCount=$newReportCount, status=$newStatus");
+
+      // If user is restricted, automatically remove their recent content
+      if (newStatus == 'restricted') {
+        await _removeUserContent(userId);
+      }
+    } catch (e) {
+      debugPrint("[FirestoreService] Error updating user reputation: $e");
+      // Don't throw here - we don't want report creation to fail if reputation update fails
+    }
+  }
+
+  /// 🔧 RESTORED: Removes user content when they are restricted
+  Future<void> _removeUserContent(String userId) async {
+    try {
+      // Find and mark recent peek requests as removed
+      final recentPeekRequests = await _db
+          .collection('peek_requests')
+          .where('senderUid', isEqualTo: userId)
+          .where('status',
+              whereIn: ['pending_acceptance', 'accepted', 'capturing']).get();
+
+      for (final doc in recentPeekRequests.docs) {
+        await doc.reference.update({
+          'status': 'removed_due_to_violation',
+          'removedAt': FieldValue.serverTimestamp(),
+          'removalReason': 'User restricted due to multiple reports',
+        });
+      }
+
+      debugPrint(
+          "[FirestoreService] Removed ${recentPeekRequests.docs.length} peek requests for restricted user $userId");
+    } catch (e) {
+      debugPrint("[FirestoreService] Error removing user content: $e");
+    }
+  }
+
+  /// 🔧 NEW: Gets user restriction details for UI display
+  Future<Map<String, dynamic>?> getUserRestrictionDetails(String userId) async {
+    try {
+      final userDoc = await _db.collection('users').doc(userId).get();
+      if (!userDoc.exists) {
+        return null;
+      }
+
+      final userData = userDoc.data()!;
+      final reputation = userData['reputation'] as Map<String, dynamic>? ?? {};
+      final status = reputation['status'] as String? ?? 'normal';
+
+      if (status != 'restricted') {
+        return null;
+      }
+
+      return {
+        'status': status,
+        'restrictionReason':
+            reputation['restrictionReason'] ?? 'inappropriate content',
+        'restrictedAt': reputation['restrictedAt'],
+        'restrictionEndTime': reputation['restrictionEndTime'],
+        'reportCount': reputation['reportCount'] ?? 0,
+      };
+    } catch (e) {
+      debugPrint(
+          "[FirestoreService] Error getting user restriction details: $e");
+      return null;
+    }
+  }
+
+  /// 🔧 NEW: Fix existing restricted users by adding missing restrictionEndTime
+  Future<void> fixExistingRestrictedUsers() async {
+    try {
+      debugPrint(
+          "[FirestoreService] 🔧 Starting migration for existing restricted users...");
+
+      // Find all users with status = 'restricted' but no restrictionEndTime
+      final restrictedUsers = await _db
+          .collection('users')
+          .where('reputation.status', isEqualTo: 'restricted')
+          .get();
+
+      int fixedCount = 0;
+      for (final doc in restrictedUsers.docs) {
+        final userData = doc.data();
+        final reputation =
+            userData['reputation'] as Map<String, dynamic>? ?? {};
+
+        // Check if restrictionEndTime is missing
+        if (reputation['restrictionEndTime'] == null) {
+          final reportCount = reputation['reportCount'] as int? ?? 5;
+          DateTime restrictionEndTime;
+
+          // Calculate end time based on report count
+          if (reportCount >= 10) {
+            restrictionEndTime = DateTime.now().add(const Duration(days: 30));
+          } else if (reportCount >= 7) {
+            restrictionEndTime = DateTime.now().add(const Duration(days: 7));
+          } else {
+            restrictionEndTime = DateTime.now().add(const Duration(hours: 24));
+          }
+
+          // Update the user document
+          await doc.reference.update({
+            'reputation.restrictionEndTime': restrictionEndTime,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+
+          fixedCount++;
+          debugPrint(
+              "[FirestoreService] ✅ Fixed user ${doc.id} with end time: $restrictionEndTime");
+        }
+      }
+
+      debugPrint(
+          "[FirestoreService] 🎯 Migration complete! Fixed $fixedCount users.");
+    } catch (e) {
+      debugPrint("[FirestoreService] ❌ Error during migration: $e");
     }
   }
 }

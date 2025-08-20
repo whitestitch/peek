@@ -139,16 +139,30 @@ exports.initiatePeekRequest = onCall(
 
           if (recipientDoc.exists) {
             const recipientData = recipientDoc.data();
+
+            // 🔧 NEW: Check if recipient is banned/restricted
+            const reputation = recipientData.reputation || {};
+            const recipientStatus = reputation.status || "normal";
+
+            // 🔧 FIX: Only block 'restricted' users, not 'flagged' users
+            if (recipientStatus === "restricted") {
+              logger.info(
+                  `Recipient ${potentialRecipientUid} is ${recipientStatus} ` +
+                  `(banned). Attempt ${attempt + 1}. Finding another.`,
+              );
+              continue;
+            }
+
+            // Check if recipient has blocked the sender
             const blockedSenderIds = (
             recipientData && recipientData.blockedSenderIds) ?
             recipientData.blockedSenderIds : [];
 
             if (blockedSenderIds.includes(senderUid)) {
               logger.info(
-                  `Recipient
-                  ${potentialRecipientUid} blocked sender ${senderUid}.`,
-                  `Attempt
-                  ${attempt + 1}. Finding another.`,
+                  `Recipient ${potentialRecipientUid}
+                  blocked sender ${senderUid}. ` +
+                  `Attempt ${attempt + 1}. Finding another.`,
               );
               continue;
             } else {
@@ -164,12 +178,16 @@ exports.initiatePeekRequest = onCall(
 
         if (!recipientUid) {
           logger.error(
-              `Failed to find non-blocking recipient for sender ${senderUid} ` +
-          `after ${MAX_RECIPIENT_FIND_ATTEMPTS} attempts.`,
+              `Failed to find eligible recipient for sender ${senderUid} ` +
+              `after ${MAX_RECIPIENT_FIND_ATTEMPTS} attempts. ` +
+              `All users are either banned (restricted) or have blocked ` +
+              `the sender.`,
           );
           throw new HttpsError(
               "not-found",
-              "Could not find a Peek recipient at this time. Please try again.",
+              "No eligible Peek recipients available at this time. " +
+              "All users are either restricted or have blocked you. " +
+              "Please try again later.",
           );
         }
 

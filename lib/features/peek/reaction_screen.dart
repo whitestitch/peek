@@ -40,12 +40,20 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
   );
 
   bool _isSubmitting = false;
-  bool _isProcessingAction = false; // Restored for moderation actions
+  bool _isProcessingAction = false;
   bool _reactionSubmitted = false;
 
   @override
   void initState() {
     super.initState();
+
+    // DEBUG: Log the UIDs being passed to ReactionScreen
+    debugPrint("[ReactionScreen] 🔍 INIT - RequestId: ${widget.requestId}");
+    debugPrint(
+        "[ReactionScreen] 🔍 INIT - OriginalSenderUid: ${widget.originalSenderUid}");
+    debugPrint(
+        "[ReactionScreen] 🔍 INIT - Current user: ${FirebaseAuth.instance.currentUser?.uid}");
+
     _fetchPeekData(); // NEW: Call the fetch method on init
   }
 
@@ -114,7 +122,6 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
   }
 
   // Methods relocated and adapted from PeekImageView
-  // RESTORED: Working moderation methods using FirestoreService
   Future<void> _reportThisPeek() async {
     if (widget.originalSenderUid.isEmpty) {
       debugPrint(
@@ -158,6 +165,16 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
         final reporterId = FirebaseAuth.instance.currentUser?.uid;
         if (reporterId == null) throw Exception("Reporter not logged in");
 
+        // CRITICAL FIX: Prevent self-reporting by validating sender ID
+        if (widget.originalSenderUid == reporterId) {
+          throw Exception(
+              "Cannot report yourself. This indicates a data corruption issue where the sender and reporter are the same user.");
+        }
+
+        debugPrint("[ReactionScreen] Reporting user: $reporterId");
+        debugPrint(
+            "[ReactionScreen] Reported sender: ${widget.originalSenderUid}");
+
         await firestoreService.addReport(
           peekRequestId: widget.requestId,
           reportedImageUrl: _selfFetchedImageUrl ?? '',
@@ -168,6 +185,7 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text("Peek reported. Thank you.")));
+          // Decide if navigation should happen here or if user stays to react
         }
       } catch (e) {
         debugPrint("❌ Error reporting Peek: $e");
@@ -225,12 +243,24 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
           throw Exception("Current user not logged in");
         }
 
+        // CRITICAL FIX: Prevent self-blocking by validating sender ID
+        if (widget.originalSenderUid == currentUserId) {
+          throw Exception(
+              "Cannot block yourself. This indicates a data corruption issue where the sender and blocker are the same user.");
+        }
+
+        debugPrint("[ReactionScreen] Blocking user: $currentUserId");
+        debugPrint(
+            "[ReactionScreen] Blocked sender: ${widget.originalSenderUid}");
+
         await firestoreService.blockUser(
             byUserId: currentUserId, userIdToBlock: widget.originalSenderUid);
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text("Sender blocked successfully.")));
+          // After blocking, typically navigate away, e.g., to home.
+          // This might happen after reaction as well, ensure flow is logical.
           context.go('/');
         }
       } catch (e) {
@@ -376,7 +406,7 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
               mainAxisAlignment: MainAxisAlignment
                   .spaceBetween, // Pushes content to top and bottom
               children: <Widget>[
-                // Top Row for Report/Block (...) and Skip (X)
+                // Top Row for Skip (X) and Report/Block (...)
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -395,6 +425,7 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
                             _blockThisSender();
                           }
                         },
+                        // Navigate home immediately
                         itemBuilder: (BuildContext context) =>
                             <PopupMenuEntry<String>>[
                           const PopupMenuItem<String>(
@@ -420,7 +451,6 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
                         ],
                       ),
                     ),
-
                     // Skip Button (X top-right)
                     CircleAvatar(
                       radius: 20,

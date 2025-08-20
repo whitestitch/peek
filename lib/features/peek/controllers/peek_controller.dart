@@ -13,6 +13,7 @@ import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
 
 // userDataProvider import
 import 'package:peek/core/providers.dart';
+import 'package:peek/core/firestore_service.dart';
 
 // import 'package:flutter/foundation.dart';
 // import 'package:peek/features/home/home_page.dart';
@@ -70,6 +71,24 @@ class PeekController extends StateNotifier<PeekControllerState> {
     if (currentUser == null) {
       state = state.copyWith(isLoading: false, error: "User not logged in.");
       return null;
+    }
+
+    // Check if user can send peeks based on reputation
+    try {
+      final firestoreService = _ref.read(firestoreServiceProvider);
+      final canSendPeeks =
+          await firestoreService.canUserSendPeeks(currentUser.uid);
+
+      if (!canSendPeeks) {
+        state = state.copyWith(
+            isLoading: false,
+            error:
+                "Your account has been restricted due to community guidelines violations. Please contact support.");
+        return null;
+      }
+    } catch (e) {
+      debugPrint("[PeekController] Error checking user reputation: $e");
+      // Continue with peek request if reputation check fails
     }
 
     try {
