@@ -435,7 +435,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                           : subtitleTextInBuild,
                       textAlign: material.TextAlign.center,
                       style: material.TextStyle(
-                        fontSize: 16,
+                        fontSize: 17,
                         fontWeight: material.FontWeight.w600,
                         color: isRestricted
                             ? peekErrorColor
@@ -614,7 +614,9 @@ class _HomePageState extends ConsumerState<HomePage> {
                       child: material.OutlinedButton.icon(
                         style: material.OutlinedButton.styleFrom(
                           padding: const material.EdgeInsets.symmetric(
-                              horizontal: 24, vertical: 18),
+                            horizontal: 24,
+                            vertical: 18,
+                          ),
                         ),
                         onPressed:
                             isLoading ? null : () => context.go('/premium'),
@@ -682,8 +684,9 @@ class _HomePageState extends ConsumerState<HomePage> {
           const material.Text(
             'Welcome Back!',
             style: material.TextStyle(
-              fontSize: 32,
-              fontWeight: material.FontWeight.bold,
+              fontSize: 34,
+              fontWeight: material.FontWeight.w600,
+              letterSpacing: 0.5,
               color: peekWhiteColor,
             ),
           ),
@@ -716,7 +719,11 @@ class _HomePageState extends ConsumerState<HomePage> {
           padding: const material.EdgeInsets.only(top: 10.0),
           child: material.Text(
             subtitleText,
-            style: material.Theme.of(context).textTheme.bodyMedium,
+            style: material.TextStyle(
+              color: peekWhiteColor.withValues(alpha: 1),
+              fontSize: 17,
+              fontWeight: material.FontWeight.w400,
+            ),
           ),
         ),
       ],
