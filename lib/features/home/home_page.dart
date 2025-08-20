@@ -5,7 +5,7 @@ import 'package:flutter/material.dart' as material;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:peek/features/peek/reaction_screen.dart';
+
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:peek/shared/upgrade_prompt_dialog.dart';
 
@@ -14,12 +14,10 @@ import 'package:peek/features/peek/controllers/peek_controller.dart';
 import 'package:peek/features/home/providers/home_state_provider.dart';
 import 'package:peek/core/firestore_service.dart';
 
-import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:peek/theme/colors.dart';
 import 'package:peek/core/widgets/peek_loading_indicator.dart';
 import 'package:rive/rive.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:peek/main.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
 
 class HomePage extends ConsumerStatefulWidget {
@@ -255,10 +253,6 @@ class _HomePageState extends ConsumerState<HomePage> {
 
   Future<void> _attemptStartPeeking() async {
     ref.read(homeStateProvider.notifier).attemptStartPeeking(context);
-  }
-
-  Future<void> _debugResetLimits() async {
-    ref.read(homeStateProvider.notifier).debugResetLimits();
   }
 
   @override
@@ -636,30 +630,6 @@ class _HomePageState extends ConsumerState<HomePage> {
                       ),
                     ),
                   // Development helper
-
-                  if (kDebugMode && !isRestricted)
-                    material.Padding(
-                      padding: const material.EdgeInsets.only(top: 10),
-                      child: material.TextButton.icon(
-                        icon: const material.Icon(
-                            material.Icons.bug_report_outlined),
-                        label: const material.Text('DEV: Test Reaction Screen'),
-                        style: material.TextButton.styleFrom(
-                          foregroundColor: material.Colors.yellow.shade700,
-                        ),
-                        onPressed: () {
-                          // Navigate directly to the ReactionScreen with dummy data
-                          material.Navigator.of(context).push(
-                            material.MaterialPageRoute(
-                              builder: (context) => const ReactionScreen(
-                                requestId: 'test-request-id',
-                                originalSenderUid: 'test-sender-uid',
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
 
                   // -------------  Space
                   // const material.SizedBox(height: 20),
