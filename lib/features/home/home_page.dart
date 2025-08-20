@@ -12,6 +12,7 @@ import 'package:peek/shared/upgrade_prompt_dialog.dart';
 import 'package:peek/core/feature_flags.dart';
 import 'package:peek/features/peek/controllers/peek_controller.dart';
 import 'package:peek/features/home/providers/home_state_provider.dart';
+import 'package:peek/core/firestore_service.dart';
 
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:peek/theme/colors.dart';
@@ -29,7 +30,10 @@ class HomePage extends ConsumerStatefulWidget {
 
 class _HomePageState extends ConsumerState<HomePage> {
   Timer? _cooldownTimer;
+  Timer? _restrictionTimer;
+  bool _restrictionTimerActive = false; // 🔧 NEW: Prevent multiple timers
   int? _secondsRemaining;
+  int _restrictionUpdateCounter = 0; // 🔧 NEW: Force UI updates
 
   // Track which cancellation panels have already been shown to prevent duplicates
   final Set<String> _shownCancellationPanels = <String>{};
@@ -41,8 +45,22 @@ class _HomePageState extends ConsumerState<HomePage> {
       if (mounted) {
         _checkPromoModal();
         // _checkIfPeekWasCancelled();
+        // 🔧 NEW: Fix existing restricted users on app start
+        _fixExistingRestrictedUsers();
       }
     });
+  }
+
+  /// 🔧 NEW: Fix existing restricted users by adding missing restrictionEndTime
+  Future<void> _fixExistingRestrictedUsers() async {
+    try {
+      final firestoreService = ref.read(firestoreServiceProvider);
+      await firestoreService.fixExistingRestrictedUsers();
+      // Refresh the home state after migration
+      ref.invalidate(homeStateProvider);
+    } catch (e) {
+      debugPrint("[HomePage] ❌ Error fixing restricted users: $e");
+    }
   }
 
   void _showPeekCancelledSheet(String reason) {
@@ -246,6 +264,8 @@ class _HomePageState extends ConsumerState<HomePage> {
   @override
   void dispose() {
     _cooldownTimer?.cancel();
+    _restrictionTimer?.cancel();
+    _restrictionTimerActive = false; // 🔧 NEW: Reset timer flag
     super.dispose();
   }
 
@@ -282,6 +302,85 @@ class _HomePageState extends ConsumerState<HomePage> {
     }
   }
 
+  /// 🔧 NEW: Get restriction countdown text
+  String _getRestrictionCountdown() {
+    final homeState = ref.read(homeStateProvider).value;
+
+    if (homeState?.restrictionEndTime == null) {
+      return '24:00:00';
+    }
+
+    final now = DateTime.now();
+    final endTime = homeState!.restrictionEndTime!;
+
+    if (now.isAfter(endTime)) {
+      return 'LIFTED';
+    }
+
+    final difference = endTime.difference(now);
+    final days = difference.inDays;
+    final hours = difference.inHours % 24;
+    final minutes = difference.inMinutes % 60;
+
+    String result;
+    if (days > 0) {
+      result = '${days}d ${hours}h ${minutes}m';
+    } else if (hours > 0) {
+      result = '${hours}h ${minutes}m';
+    } else {
+      result = '${minutes}m';
+    }
+
+    return result;
+  }
+
+  /// 🔧 NEW: Manage restriction countdown timer
+  void _manageRestrictionTimer(DateTime? restrictionEndTime) {
+    // 🔧 FIX: Prevent multiple timers from being created
+    if (_restrictionTimerActive && _restrictionTimer != null) {
+      return;
+    }
+
+    // 🔧 FIX: Always cancel existing timer first
+    _restrictionTimer?.cancel();
+    _restrictionTimer = null;
+    _restrictionTimerActive = false;
+
+    if (restrictionEndTime == null) {
+      return;
+    }
+
+    _restrictionTimerActive = true;
+
+    // 🔧 FIX: Update every 30 seconds for smoother countdown
+    _restrictionTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        _restrictionTimerActive = false;
+        return;
+      }
+
+      final now = DateTime.now();
+      if (now.isAfter(restrictionEndTime)) {
+        timer.cancel();
+        _restrictionTimer = null;
+        _restrictionTimerActive = false;
+        setState(() {});
+        ref.invalidate(homeStateProvider); // Refresh the state
+      } else {
+        setState(() {
+          // 🔧 FIX: Force UI rebuild with new countdown
+          _restrictionUpdateCounter++; // This will force the UI to rebuild
+        }); // Update countdown display every 30 seconds
+      }
+    });
+
+    // 🔧 NEW: Update immediately for better UX
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
   @override
   material.Widget build(material.BuildContext context) {
     final goRouterState = GoRouterState.of(context);
@@ -307,6 +406,7 @@ class _HomePageState extends ConsumerState<HomePage> {
         error: (e, _) => _buildErrorUI('Error loading user data.'),
         data: (state) {
           _manageCooldownTimer(state.cooldownEndTime);
+          _manageRestrictionTimer(state.restrictionEndTime);
 
           // Bridge state to local variables for UI clarity
           final isLoading = ref.watch(peekControllerProvider).isLoading;
@@ -314,6 +414,8 @@ class _HomePageState extends ConsumerState<HomePage> {
           final startButtonText = state.buttonText;
           final subtitleTextInBuild = state.subtitleText;
           final isPremiumForUI = state.isPremium;
+          final isRestricted = state.isRestricted;
+          final restrictionReason = state.restrictionReason;
 
           final bool isCooldownActive = state.cooldownEndTime != null;
 
@@ -328,23 +430,28 @@ class _HomePageState extends ConsumerState<HomePage> {
                 mainAxisSize: material.MainAxisSize.min,
                 children: [
                   _buildWelcomeArea(context, isPremiumForUI),
+
                   const material.SizedBox(height: 20),
                   material.Container(
                     height: 20,
                     alignment: material.Alignment.center,
                     child: material.Text(
-                      subtitleTextInBuild,
+                      isRestricted
+                          ? 'You are banned for inappropriate content'
+                          : subtitleTextInBuild,
                       textAlign: material.TextAlign.center,
                       style: material.TextStyle(
                         fontSize: 16,
                         fontWeight: material.FontWeight.w600,
-                        color: isPremiumForUI
-                            ? material.Colors.green.shade600
-                            : material.Theme.of(context)
-                                .textTheme
-                                .titleMedium
-                                ?.color
-                                ?.withOpacity(0.9),
+                        color: isRestricted
+                            ? peekErrorColor
+                            : isPremiumForUI
+                                ? material.Colors.green.shade600
+                                : material.Theme.of(context)
+                                    .textTheme
+                                    .titleMedium
+                                    ?.color
+                                    ?.withOpacity(0.9),
                       ),
                     ),
                   ),
@@ -374,48 +481,57 @@ class _HomePageState extends ConsumerState<HomePage> {
                               alignment: material.Alignment.center,
                               shape: const material.CircleBorder(),
                               padding: material.EdgeInsets.zero,
-                              backgroundColor: isButtonEnabled
-                                  ? peekSecondaryColor.withOpacity(0.1)
-                                  : peekSurfaceColor.withOpacity(0.5),
+                              backgroundColor: isRestricted
+                                  ? material.Colors.red.shade100
+                                  : isButtonEnabled
+                                      ? peekSecondaryColor.withOpacity(0.1)
+                                      : peekSurfaceColor.withOpacity(0.5),
                             ),
                             child: isLoading
                                 ? const PeekLoadingIndicator.small(
                                     logoColor: material.Colors.white)
-                                : isCooldownActive && _secondsRemaining != null
-                                    ? material.Text(
-                                        '$_secondsRemaining',
-                                        key: const material.ValueKey(
-                                            'cooldown_timer'),
-                                        style: const material.TextStyle(
-                                          fontSize: 34,
-                                          fontWeight: material.FontWeight.w600,
-                                        ),
+                                : isRestricted
+                                    ? const material.Icon(
+                                        material.Icons.block,
+                                        color: material.Colors.red,
+                                        size: 64,
                                       )
-                                    : startButtonText == 'Limit Reached'
+                                    : isCooldownActive &&
+                                            _secondsRemaining != null
                                         ? material.Text(
-                                            startButtonText,
+                                            '$_secondsRemaining',
+                                            key: const material.ValueKey(
+                                                'cooldown_timer'),
                                             style: const material.TextStyle(
-                                              fontSize: 22,
+                                              fontSize: 34,
                                               fontWeight:
                                                   material.FontWeight.w600,
                                             ),
                                           )
-                                        : material.Padding(
-                                            padding:
-                                                const material.EdgeInsets.all(
-                                                    15),
-                                            child: SvgPicture.asset(
-                                              'assets/images/peekio_eye.svg',
-                                              // height: 200,
-                                              // ignore: deprecated_member_use
-                                              // color: peekPrimaryColor,
-                                              // colorFilter:
-                                              //     const material.ColorFilter.mode(
-                                              //   material.Colors.white,
-                                              //   material.BlendMode.srcIn,
-                                              // ),
-                                            ),
-                                          ),
+                                        : startButtonText == 'Limit Reached'
+                                            ? material.Text(
+                                                startButtonText,
+                                                style: const material.TextStyle(
+                                                  fontSize: 22,
+                                                  fontWeight:
+                                                      material.FontWeight.w600,
+                                                ),
+                                              )
+                                            : material.Padding(
+                                                padding: const material
+                                                    .EdgeInsets.all(15),
+                                                child: SvgPicture.asset(
+                                                  'assets/images/peekio_eye.svg',
+                                                  // height: 200,
+                                                  // ignore: deprecated_member_use
+                                                  // color: peekPrimaryColor,
+                                                  // colorFilter:
+                                                  //     const material.ColorFilter.mode(
+                                                  //   material.Colors.white,
+                                                  //   material.BlendMode.srcIn,
+                                                  // ),
+                                                ),
+                                              ),
                           ),
                         ),
                       ],
@@ -424,7 +540,79 @@ class _HomePageState extends ConsumerState<HomePage> {
 
                   const material.SizedBox(height: 20),
 
-                  if (!isPremiumForUI)
+                  // 🔧 NEW: Show restriction info when user is banned
+
+                  if (isRestricted)
+                    material.Container(
+                      width: double.infinity,
+                      padding: const material.EdgeInsets.all(16),
+                      margin: const material.EdgeInsets.only(top: 20),
+                      decoration: material.BoxDecoration(
+                        color: material.Colors.red.shade50,
+                        borderRadius: material.BorderRadius.circular(12),
+                        border: material.Border.all(
+                          color: material.Colors.red.shade200,
+                          width: 1,
+                        ),
+                      ),
+                      child: material.Column(
+                        children: [
+                          material.Row(
+                            mainAxisAlignment:
+                                material.MainAxisAlignment.center,
+                            children: [
+                              const material.Icon(
+                                material.Icons.warning_amber_rounded,
+                                color: material.Colors.red,
+                                size: 20,
+                              ),
+                              const material.SizedBox(width: 8),
+                              material.Text(
+                                'Account Suspended',
+                                style: material.TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: material.FontWeight.w600,
+                                  color: material.Colors.red.shade700,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const material.SizedBox(height: 8),
+                          material.Text(
+                            'Account suspended due to violations',
+                            textAlign: material.TextAlign.center,
+                            style: material.TextStyle(
+                              fontSize: 14,
+                              color: material.Colors.red.shade600,
+                            ),
+                          ),
+                          const material.SizedBox(height: 12),
+                          // 🔧 NEW: Countdown timer instead of contact support
+                          material.Container(
+                            padding: const material.EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 8,
+                            ),
+                            decoration: material.BoxDecoration(
+                              color: material.Colors.red.shade100,
+                              borderRadius: material.BorderRadius.circular(20),
+                            ),
+                            child: material.Text(
+                              'Restriction lifts in: ${_getRestrictionCountdown()}',
+                              style: material.TextStyle(
+                                fontSize: 14,
+                                fontWeight: material.FontWeight.w600,
+                                color: material.Colors.red.shade800,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                  const material.SizedBox(height: 20),
+
+                  if (!isPremiumForUI && !isRestricted)
                     material.SizedBox(
                       width: double.infinity,
                       // SPACE
@@ -449,7 +637,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                     ),
                   // Development helper
 
-                  if (kDebugMode)
+                  if (kDebugMode && !isRestricted)
                     material.Padding(
                       padding: const material.EdgeInsets.only(top: 10),
                       child: material.TextButton.icon(
