@@ -125,7 +125,7 @@ class HomeStateNotifier extends AutoDisposeAsyncNotifier<HomeState> {
     }
 
     const dailyLimit = 3;
-    const cooldown = Duration(seconds: 5);
+    const cooldown = Duration(seconds: 60);
     final now = DateTime.now();
 
     final lastPeekTime =
@@ -173,30 +173,6 @@ class HomeStateNotifier extends AutoDisposeAsyncNotifier<HomeState> {
   }
 
   Future<void> attemptStartPeeking(material.BuildContext context) async {
-    // DEBUG
-    // DEBUG
-    // DEBUG
-    // THE FOLLOWING BLOCK IS BEING DELETED TO ALLOW ANONYMOUS USERS TO PROCEED.
-    /*
-    final currentUser = FirebaseAuth.instance.currentUser;
-    if (currentUser != null && currentUser.isAnonymous) {
-      debugPrint(
-          "[HomeState] Anonymous user attempted to peek. Showing upgrade prompt.");
-      await material.showDialog(
-        context: context,
-        builder: (_) => const UpgradePromptDialog(
-          // Using a specific reason for anonymous users.
-          reason: UpgradeReason.anonymous,
-        ),
-      );
-      return; // Stop execution here for anonymous users.
-    }
-    */
-
-    // END DEBUG
-    // END DEBUG
-    // END DEBUG
-
     final userDoc = ref.read(userDocumentProvider).value;
 
     if (userDoc == null) {
@@ -227,7 +203,7 @@ class HomeStateNotifier extends AutoDisposeAsyncNotifier<HomeState> {
         // OPTIMISTIC UI UPDATE: Immediately set the state to cooldown
         // to prevent a flicker of the old state upon returning to this page.
         const cooldown =
-            Duration(seconds: 5); // Ensure this matches the provider's logic
+            Duration(seconds: 60); // Ensure this matches the provider's logic
         state = AsyncValue.data(
           HomeState(
             isPremium:
