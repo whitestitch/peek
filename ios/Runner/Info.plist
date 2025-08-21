@@ -1,97 +1,102 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
-<dict>
-	<key>CADisableMinimumFrameDurationOnPhone</key>
-	<true/>
-	<key>CFBundleDevelopmentRegion</key>
-	<string>$(DEVELOPMENT_LANGUAGE)</string>
-	<key>CFBundleDisplayName</key>
-	<string>Peekio</string>
-	<key>CFBundleExecutable</key>
-	<string>$(EXECUTABLE_NAME)</string>
-	<key>CFBundleIdentifier</key>
-	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
-	<key>CFBundleInfoDictionaryVersion</key>
-	<string>6.0</string>
-	<key>CFBundleName</key>
-	<string>peek</string>
-	<key>CFBundlePackageType</key>
-	<string>APPL</string>
-	<key>CFBundleShortVersionString</key>
-	<string>$(FLUTTER_BUILD_NAME)</string>
-	<key>CFBundleSignature</key>
-	<string>????</string>
-	<key>CFBundleURLTypes</key>
-	<array>
+	<dict>
+		<key>CADisableMinimumFrameDurationOnPhone</key>
+		<true/>
+		<key>CFBundleDevelopmentRegion</key>
+		<string>$(DEVELOPMENT_LANGUAGE)</string>
+		<key>CFBundleDisplayName</key>
+		<string>Peekio</string>
+		<key>CFBundleExecutable</key>
+		<string>$(EXECUTABLE_NAME)</string>
+		<key>CFBundleIdentifier</key>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+		<key>CFBundleInfoDictionaryVersion</key>
+		<string>6.0</string>
+		<key>CFBundleName</key>
+		<string>peek</string>
+		<key>CFBundlePackageType</key>
+		<string>APPL</string>
+		<key>CFBundleShortVersionString</key>
+		<string>$(FLUTTER_BUILD_NAME)</string>
+		<key>CFBundleSignature</key>
+		<string>????</string>
+		<key>CFBundleURLTypes</key>
+		<array>
+			<dict>
+				<key>CFBundleTypeRole</key>
+				<string>Editor</string>
+				<key>CFBundleURLSchemes</key>
+				<array>
+					<string>google-458153260208-o07aepatsq9sjdltm0re07fk8eoq868e.apps.googleusercontent.com</string>
+				</array>
+			</dict>
+		</array>
+		<key>CFBundleVersion</key>
+		<string>$(FLUTTER_BUILD_NUMBER)</string>
+		<key>FirebaseAppDelegateProxyEnabled</key>
+		<false/>
+		<key>LSRequiresIPhoneOS</key>
+		<true/>
+		<key>NSAppTransportSecurity</key>
 		<dict>
-			<key>CFBundleTypeRole</key>
-			<string>Editor</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>458153260208-o07aepatsq9sjdltm0re07fk8eoq868e.apps.googleusercontent.com</string>
-			</array>
+			<key>NSAllowsArbitraryLoads</key>
+			<true/>
+			<key>NSAllowsLocalNetworking</key>
+			<true/>
 		</dict>
-	</array>
-	<key>CFBundleVersion</key>
-	<string>$(FLUTTER_BUILD_NUMBER)</string>
-	<key>FirebaseAppDelegateProxyEnabled</key>
-	<false/>
-	<key>LSRequiresIPhoneOS</key>
-	<true/>
-	<key>NSAppTransportSecurity</key>
-	<dict>
-		<key>NSAllowsArbitraryLoads</key>
+		<key>NSBonjourServices</key>
+		<array>
+			<string>_google._tcp</string>
+			<string>_dartobservatory._tcp</string>
+		</array>
+		<key>NSCameraUsageDescription</key>
+		<string>We need camera access so you can take a Peek photo.</string>
+		<key>NSLocalNetworkUsageDescription</key>
+		<string>Peekio needs to connect to services on your local network for development features like Firebase Emulators and debugging.</string>
+		<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+		<string>Peek uses your location—even when the app is in the background—to share your general area (city/region) with others when you send a Peek, if you enable this feature.</string>
+		<key>NSLocationWhenInUseUsageDescription</key>
+		<string>Peek uses your location to show where Peeks are approximately sent from.</string>
+		<key>NSMicrophoneUsageDescription</key>
+		<string>Peek needs microphone access to capture audio along with photos (optional, but required by camera package).</string>
+		<key>NSPhotoLibraryUsageDescription</key>
+		<string>Used for uploading your Peek image.</string>
+		<key>UIApplicationSupportsIndirectInputEvents</key>
 		<true/>
-		<key>NSAllowsLocalNetworking</key>
+		<key>UIBackgroundModes</key>
+		<array>
+			<string>fetch</string>
+			<string>remote-notification</string>
+		</array>
+		<key>FirebaseMessagingAutoInitEnabled</key>
 		<true/>
+		<key>UIUserNotificationSettings</key>
+		<dict>
+			<key>UIUserNotificationTypesAlert</key>
+			<true/>
+			<key>UIUserNotificationTypesBadge</key>
+			<true/>
+			<key>UIUserNotificationTypesSound</key>
+			<true/>
+		</dict>
+		<key>UILaunchStoryboardName</key>
+		<string>LaunchScreen</string>
+		<key>UIMainStoryboardFile</key>
+		<string>Main</string>
+		<key>UISupportedInterfaceOrientations</key>
+		<array>
+			<string>UIInterfaceOrientationPortrait</string>
+		</array>
+		<key>UISupportedInterfaceOrientations~ipad</key>
+		<array>
+			<string>UIInterfaceOrientationPortrait</string>
+			<string>UIInterfaceOrientationPortraitUpsideDown</string>
+			<string>UIInterfaceOrientationLandscapeLeft</string>
+			<string>UIInterfaceOrientationLandscapeRight</string>
+		</array>
+		<key>UIStatusBarHidden</key>
+		<false/>
 	</dict>
-	<key>NSBonjourServices</key>
-	<array>
-		<string>_google._tcp</string>
-		<string>_dartobservatory._tcp</string>
-	</array>
-	<key>NSCameraUsageDescription</key>
-	<string>We need camera access so you can take a Peek photo.</string>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>Peekio needs to connect to services on your local network for development features like Firebase Emulators and debugging.</string>
-	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>Peek uses your location—even when the app is in the background—to share your general area (city/region) with others when you send a Peek, if you enable this feature.</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Peek uses your location to show where Peeks are approximately sent from.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Peek needs microphone access to capture audio along with photos (optional, but required by camera package).</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Used for uploading your Peek image.</string>
-	<key>UIApplicationSupportsIndirectInputEvents</key>
-	<true/>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>fetch</string>
-		<string>remote-notification</string>
-	</array>
-	<key>FirebaseMessagingAutoInitEnabled</key>
-	<true/>
-	<key>UIUserNotificationSettings</key>
-	<dict>
-		<key>UIUserNotificationTypesAlert</key>
-		<true/>
-		<key>UIUserNotificationTypesBadge</key>
-		<true/>
-		<key>UIUserNotificationTypesSound</key>
-		<true/>
-	</dict>
-	<key>UILaunchStoryboardName</key>
-	<string>LaunchScreen</string>
-	<key>UIMainStoryboardFile</key>
-	<string>Main</string>
-	<key>UISupportedInterfaceOrientations</key>
-	<array>
-		<string>UIInterfaceOrientationPortrait</string>
-	</array>
-	<key>UISupportedInterfaceOrientations~ipad</key>
-	<array>
-		<string>UIInterfaceOrientationPortrait</string>
-	</array>
-</dict>
 </plist>

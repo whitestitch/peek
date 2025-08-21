@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:peek/theme/colors.dart';
 import 'package:peek/features/peek/providers/peek_providers.dart';
+import 'package:peek/core/providers/session_providers.dart';
 import 'package:peek/core/router.dart';
 import 'dart:async';
 
@@ -14,6 +14,9 @@ class PeekDialogManager {
   Timer? _expirationTimer;
   String? _currentRequestId;
   bool _isInitialized = false; // Track initialization status
+
+  // 🔒 NEW: Track active dialog context for proper cleanup
+  BuildContext? _activeDialogContext;
 
   PeekDialogManager({
     required this.navigatorKey,
@@ -26,15 +29,48 @@ class PeekDialogManager {
     debugPrint('🎭 [PeekDialogManager] Initialized and ready to show dialogs');
   }
 
+  /// 🔒 NEW: Dismiss active dialog if any
+  void dismissActiveDialog() {
+    if (_activeDialogContext != null && _activeDialogContext!.mounted) {
+      debugPrint(
+          '🎭 [PeekDialogManager] Dismissing active dialog due to navigation');
+      Navigator.of(_activeDialogContext!, rootNavigator: true).pop();
+      _activeDialogContext = null;
+    }
+
+    // Clear provider and cancel timer
+    ref.read(activePeekRequestDialogProvider.notifier).state = null;
+    _expirationTimer?.cancel();
+    _currentRequestId = null;
+  }
+
   /// Show peek request dialog
-  void showPeekRequestDialog(
-      QueryDocumentSnapshot<Map<String, dynamic>> requestDoc) {
+  Future<void> showPeekRequestDialog(
+      QueryDocumentSnapshot<Map<String, dynamic>> requestDoc) async {
     debugPrint('🎭 [PeekDialogManager] showPeekRequestDialog ENTRY');
 
     // Only process requests after initialization
     if (!_isInitialized) {
       debugPrint('⚠️ [PeekDialogManager] Not yet initialized, skipping dialog');
       return;
+    }
+
+    // 🔒 NEW: Check if user is in an active session
+    // 🔒 ENHANCED: Force refresh session state before checking
+    final sessionManager = ref.read(sessionManagerProvider);
+    if (sessionManager.isInSession) {
+      // 🔒 NEW: Double-check by verifying peek request status
+      await sessionManager.checkPeekRequestStatus();
+
+      // Re-check after potential cleanup
+      if (sessionManager.isInSession) {
+        debugPrint(
+            '🔒 [PeekDialogManager] User is in active session, blocking new peek request');
+        return;
+      } else {
+        debugPrint(
+            '🔒 [PeekDialogManager] Session was stale, now cleaned up - allowing peek request');
+      }
     }
 
     final requestId = requestDoc.id;
@@ -102,80 +138,94 @@ class PeekDialogManager {
     debugPrint('🎭 [PeekDialogManager] Context mounted: ${context.mounted}');
     debugPrint('🎭 [PeekDialogManager] About to call showDialog');
 
-    // Show dialog immediately - no post-frame callback complexity
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      barrierColor: Colors.black54,
-      useSafeArea: true,
-      useRootNavigator: true,
-      builder: (BuildContext dialogContext) {
-        debugPrint('🎭 [PeekDialogManager] Dialog builder called');
-        return AlertDialog(
-          title: const Text(
-            'New Peek Request!',
-            style: TextStyle(
-              fontWeight: FontWeight.w600,
-              color: peekWhiteColor,
-              letterSpacing: 0.5,
-              fontSize: 26,
-            ),
-          ),
-          content: Text(
-            'Someone wants to share a peek with you. Accept?',
-            style: TextStyle(
-              color: peekWhiteColor.withValues(alpha: 1),
-              height: 1.55,
-              fontSize: 17,
-              fontWeight: FontWeight.w400,
-            ),
-          ),
-          actionsAlignment: MainAxisAlignment.spaceBetween,
-          actions: <Widget>[
-            TextButton(
-              style: TextButton.styleFrom(
-                foregroundColor: peekOnBackgroundColor.withValues(alpha: 0.7),
-                textStyle: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              onPressed: () {
-                debugPrint('🎭 [PeekDialogManager] Decline button pressed');
-                Navigator.of(dialogContext).pop();
-                _declinePeekRequest(requestId);
-              },
-              child: const Text('Decline'),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(30),
-                ),
-              ),
-              onPressed: () {
-                debugPrint('🎭 [PeekDialogManager] Accept button pressed');
-                Navigator.of(dialogContext).pop();
-                _acceptPeekRequest(requestId);
-              },
-              child: const Text('Accept'),
-            ),
-          ],
-        );
-      },
-    ).then((_) {
-      debugPrint('🎭 [PeekDialogManager] Dialog closed');
-      // Clear provider when dialog closes
-      final activeDialogId = ref.read(activePeekRequestDialogProvider);
-      if (activeDialogId == requestId) {
-        ref.read(activePeekRequestDialogProvider.notifier).state = null;
-      }
+    // 🔒 FIX: Store dialog context for proper cleanup
+    _activeDialogContext = context;
 
-      // Cancel expiration timer when dialog is manually closed
-      if (_currentRequestId == requestId) {
-        _expirationTimer?.cancel();
-        _currentRequestId = null;
+    // 🔒 FIX: Use post-frame callback to ensure context is stable
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_currentRequestId == requestId && context.mounted) {
+        // Show dialog immediately - no post-frame callback complexity
+        // ignore: use_build_context_synchronously
+        showDialog<void>(
+          context: context,
+          barrierDismissible: false,
+          barrierColor: Colors.black54,
+          useSafeArea: true,
+          useRootNavigator: true,
+          builder: (BuildContext dialogContext) {
+            debugPrint('🎭 [PeekDialogManager] Dialog builder called');
+            return AlertDialog(
+              title: const Text(
+                'New Peek Request!',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: peekWhiteColor,
+                  letterSpacing: 0.5,
+                  fontSize: 26,
+                ),
+              ),
+              content: Text(
+                'Someone wants to share a peek with you. Accept?',
+                style: TextStyle(
+                  color: peekWhiteColor.withValues(alpha: 1),
+                  height: 1.55,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w400,
+                ),
+              ),
+              actionsAlignment: MainAxisAlignment.spaceBetween,
+              actions: <Widget>[
+                TextButton(
+                  style: TextButton.styleFrom(
+                    foregroundColor:
+                        peekOnBackgroundColor.withValues(alpha: 0.7),
+                    textStyle: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  onPressed: () {
+                    debugPrint('🎭 [PeekDialogManager] Decline button pressed');
+                    Navigator.of(dialogContext).pop();
+                    _declinePeekRequest(requestId);
+                  },
+                  child: const Text('Decline'),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(30),
+                    ),
+                  ),
+                  onPressed: () {
+                    debugPrint('🎭 [PeekDialogManager] Accept button pressed');
+                    Navigator.of(dialogContext).pop();
+                    _acceptPeekRequest(requestId);
+                  },
+                  child: const Text('Accept'),
+                ),
+              ],
+            );
+          },
+        ).then((_) {
+          debugPrint('🎭 [PeekDialogManager] Dialog closed');
+
+          // 🔒 FIX: Clear stored dialog context
+          _activeDialogContext = null;
+
+          // Clear provider when dialog closes
+          final activeDialogId = ref.read(activePeekRequestDialogProvider);
+          if (activeDialogId == requestId) {
+            ref.read(activePeekRequestDialogProvider.notifier).state = null;
+          }
+
+          // Cancel expiration timer when dialog is manually closed
+          if (_currentRequestId == requestId) {
+            _expirationTimer?.cancel();
+            _currentRequestId = null;
+          }
+        });
       }
     });
 
@@ -185,6 +235,22 @@ class PeekDialogManager {
   /// Accept peek request
   Future<void> _acceptPeekRequest(String requestId) async {
     try {
+      // 🔒 NEW: Start session when accepting peek request
+      final sessionManager = ref.read(sessionManagerProvider);
+      await sessionManager.startSession(requestId, 'waiting_response');
+
+      // Update session state providers
+      ref.read(sessionStateProvider.notifier).state =
+          sessionManager.currentState;
+      ref.read(sessionRequestIdProvider.notifier).state =
+          sessionManager.currentRequestId;
+      ref.read(isInSessionProvider.notifier).state = sessionManager.isInSession;
+      ref.read(canReceivePeeksProvider.notifier).state =
+          sessionManager.canReceivePeekRequests();
+
+      debugPrint(
+          '🔒 [PeekDialogManager] Session started for accepted request: $requestId');
+
       await FirebaseFirestore.instance
           .collection('peek_requests')
           .doc(requestId)
@@ -232,8 +298,8 @@ class PeekDialogManager {
   }
 
   /// Handle dialog visibility based on pending requests
-  void handlePendingRequests(
-      List<QueryDocumentSnapshot<Map<String, dynamic>>> requests) {
+  Future<void> handlePendingRequests(
+      List<QueryDocumentSnapshot<Map<String, dynamic>>> requests) async {
     final requestIds = requests.map((req) => req.id).toSet();
     final activeDialogId = ref.read(activePeekRequestDialogProvider);
 
@@ -263,7 +329,7 @@ class PeekDialogManager {
     if (ref.read(activePeekRequestDialogProvider) == null) {
       final firstNewId = newlyAdded.first;
       final firstDoc = requests.firstWhere((r) => r.id == firstNewId);
-      showPeekRequestDialog(firstDoc);
+      await showPeekRequestDialog(firstDoc);
     }
 
     // Update cache after handling
@@ -273,11 +339,6 @@ class PeekDialogManager {
   /// Handle request status change (cancelled, expired, etc.)
   Future<void> _handleRequestStatusChange(String requestId) async {
     try {
-      final doc = await FirebaseFirestore.instance
-          .collection('peek_requests')
-          .doc(requestId)
-          .get();
-
       // Close active dialog
       if (navigatorKey.currentContext != null &&
           Navigator.of(navigatorKey.currentContext!).canPop()) {
@@ -457,7 +518,8 @@ class PeekDialogManager {
 
   /// Dispose resources
   void dispose() {
+    debugPrint('🎭 [PeekDialogManager] Disposing dialog manager');
     _expirationTimer?.cancel();
-    _currentRequestId = null;
+    dismissActiveDialog();
   }
 }

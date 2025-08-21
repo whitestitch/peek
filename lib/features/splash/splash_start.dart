@@ -4,6 +4,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:peek/theme/colors.dart';
+import 'package:peek/core/widgets/peekio_logo.dart'; // 🔒 FIX: Import reusable widgets
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
@@ -73,14 +74,11 @@ class _SplashStartPageState extends State<SplashStartPage>
               ),
               RotationTransition(
                 turns: _rotationController,
-                child: SvgPicture.asset(
-                  'assets/images/peekio_eye.svg',
-                  width: 60,
-                  height: 60,
-                  colorFilter: const ColorFilter.mode(
-                    peekWhiteColor,
-                    BlendMode.srcIn,
-                  ),
+                child: PeekioEye(
+                  size:
+                      60, // 🔒 FIX: Use reusable widget with proper aspect ratio
+                  color: peekWhiteColor,
+                  fit: BoxFit.contain,
                 ),
               ),
             ],

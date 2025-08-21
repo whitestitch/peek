@@ -68,9 +68,11 @@ class AboutPage extends StatelessWidget {
               child: SvgPicture.asset(
                 'assets/images/peekio_logo.svg',
                 height: 50,
+                width:
+                    (320 / 177) * 50, // 🔒 FIX: Preserve aspect ratio (~90.4)
                 // ignore: deprecated_member_use
                 color: peekWhiteColor,
-                fit: BoxFit.cover,
+                fit: BoxFit.contain, // 🔒 FIX: Change from cover to contain
                 //     errorBuilder: (context, error, stackTrace) {
                 //   return const Icon(Icons.error_outline,
                 //       size: 40, color: Colors.redAccent);

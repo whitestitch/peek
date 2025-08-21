@@ -47,6 +47,9 @@ class DrawerMenu extends ConsumerWidget {
                     SvgPicture.asset(
                       'assets/images/peekio_logo.svg',
                       height: 28,
+                      width: (320 / 177) *
+                          28, // 🔒 FIX: Preserve aspect ratio (~50.6)
+                      fit: BoxFit.contain, // 🔒 FIX: Ensure proper fit
                       colorFilter: const ColorFilter.mode(
                         peekWhiteColor, // Match text color
                         BlendMode.srcIn,

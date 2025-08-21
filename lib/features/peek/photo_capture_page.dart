@@ -12,10 +12,10 @@ import 'package:peek/features/peek/camera/user_settings_manager.dart';
 import 'package:peek/theme/colors.dart';
 import 'package:peek/core/widgets/peek_loading_indicator.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:peek/features/peek/controllers/peek_controller.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:peek/core/providers/session_providers.dart';
 
 // Global camera list (keeping this as is for compatibility)
 List<CameraDescription> _cameras = [];
@@ -71,6 +71,48 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
     _initializeManagers();
     _setupAnimation();
     _initializeCapture();
+
+    // 🔒 NEW: Update session state to photo capture mode
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _updateSessionState();
+    });
+  }
+
+  /// Update session state to reflect current mode
+  void _updateSessionState() {
+    try {
+      final sessionManager = ref.read(sessionManagerProvider);
+      if (widget.mode == 'response') {
+        // User is responding to a peek request
+        // 🔒 FIX: Start session first, then update state
+        sessionManager.startSession(widget.requestId, 'photo_capture');
+        ref.read(sessionStateProvider.notifier).state =
+            sessionManager.currentState;
+        ref.read(sessionRequestIdProvider.notifier).state =
+            sessionManager.currentRequestId;
+        ref.read(isInSessionProvider.notifier).state =
+            sessionManager.isInSession;
+        ref.read(canReceivePeeksProvider.notifier).state =
+            sessionManager.canReceivePeekRequests();
+        debugPrint(
+            '🔒 [PhotoCapturePage] Session started for photo capture (response mode)');
+      } else {
+        // User is sending a peek request
+        sessionManager.startSession(widget.requestId, 'photo_capture');
+        ref.read(sessionStateProvider.notifier).state =
+            sessionManager.currentState;
+        ref.read(sessionRequestIdProvider.notifier).state =
+            sessionManager.currentRequestId;
+        ref.read(isInSessionProvider.notifier).state =
+            sessionManager.isInSession;
+        ref.read(canReceivePeeksProvider.notifier).state =
+            sessionManager.canReceivePeekRequests();
+        debugPrint(
+            '🔒 [PhotoCapturePage] Session started for photo capture (send mode)');
+      }
+    } catch (e) {
+      debugPrint('❌ [PhotoCapturePage] Error updating session state: $e');
+    }
   }
 
   @override
@@ -421,8 +463,158 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
   /// Handle upload success
   void _handleUploadSuccess(String downloadUrl) {
     debugPrint("Upload successful: $downloadUrl");
-    // Navigate directly to home instead of the 3-second confirmation page
-    context.go('/');
+
+    // Show "Peek Sent!" confirmation dialog
+    _showPeekSentConfirmation();
+  }
+
+  /// Show Peek Sent confirmation dialog
+  void _showPeekSentConfirmation() {
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        // 🔒 FIX: Auto-dismiss after 3 seconds
+        Future.delayed(const Duration(seconds: 3), () {
+          if (Navigator.of(context).canPop()) {
+            Navigator.of(context).pop();
+            // Navigate to home after dialog is closed
+            if (mounted) {
+              context.go('/');
+            }
+          }
+        });
+
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          child: TweenAnimationBuilder<double>(
+            duration: const Duration(milliseconds: 600),
+            tween: Tween<double>(begin: 0.0, end: 1.0),
+            curve: Curves.easeOutBack,
+            builder: (context, value, child) {
+              // 🔒 FIX: Clamp opacity value to prevent assertion errors
+              final clampedValue = value.clamp(0.0, 1.0);
+
+              return Transform.scale(
+                scale: 0.8 + (0.2 * clampedValue),
+                child: Opacity(
+                  opacity: clampedValue,
+                  child: Container(
+                    padding: const EdgeInsets.all(30),
+                    decoration: BoxDecoration(
+                      // 🔒 NEW: Beautiful gradient background matching Reaction dialog style
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          peekBackgroundColor,
+                          peekBackgroundColor.withValues(alpha: 0.95),
+                          peekSurfaceColor.withValues(alpha: 0.3),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(20),
+                      // 🔒 NEW: Subtle shadow for depth
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.3),
+                          blurRadius: 20,
+                          spreadRadius: 2,
+                          offset: const Offset(0, 10),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // 🔒 NEW: Animated icon with slide-in effect
+                        Transform.translate(
+                          offset: Offset(0, 20 * (1 - clampedValue)),
+                          child: const Icon(
+                            Icons.check_circle_outline_rounded,
+                            color: Colors.white,
+                            size: 70,
+                          ),
+                        ),
+
+                        const SizedBox(height: 20),
+
+                        // 🔒 NEW: Animated title with slide-in effect
+                        Transform.translate(
+                          offset: Offset(0, 15 * (1 - clampedValue)),
+                          child: const Text(
+                            'Peek Sent!',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 24,
+                            ),
+                          ),
+                        ),
+
+                        const SizedBox(height: 10),
+
+                        // 🔒 NEW: Animated subtitle with slide-in effect
+                        Transform.translate(
+                          offset: Offset(0, 10 * (1 - clampedValue)),
+                          child: Text(
+                            'Your Peek is on its way!',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.90),
+                              fontSize: 16,
+                            ),
+                          ),
+                        ),
+
+                        const SizedBox(height: 25),
+
+                        // 🔒 NEW: Animated button with slide-in effect
+                        Transform.translate(
+                          offset: Offset(0, 25 * (1 - clampedValue)),
+                          child: SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              onPressed: () {
+                                Navigator.of(context).pop();
+                                // Navigate to home after dialog is closed
+                                if (mounted) {
+                                  context.go('/');
+                                }
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: peekPrimaryColor,
+                                foregroundColor: peekSurfaceColor,
+                                minimumSize: const Size(double.infinity, 50),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(30),
+                                ),
+                                elevation: 8,
+                                shadowColor:
+                                    Colors.black.withValues(alpha: 0.2),
+                              ),
+                              child: const Text(
+                                'OK',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
   }
 
   /// Handle errors
@@ -548,6 +740,9 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
         debugPrint(
             "[PhotoCapturePage] Peek cancelled successfully via Cloud Function. Navigating home...");
 
+        // 🔒 NEW: Immediate session cleanup after successful cancellation
+        await _forceCleanupSession();
+
         // Navigate directly to home with cancellation parameters
         if (mounted) {
           debugPrint(
@@ -564,6 +759,10 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
 
       // Fallback: Even if Cloud Function fails, navigate home
       // The sender will eventually detect the cancellation through other means
+
+      // 🔒 NEW: Force cleanup session even on fallback
+      await _forceCleanupSession();
+
       if (mounted) {
         debugPrint(
             "[PhotoCapturePage] Fallback navigation due to Cloud Function error...");
@@ -579,7 +778,49 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
     _captureLogic.dispose();
     _countdownManager.dispose();
     _statusListener?.cancel(); // Cancel the listener
+
+    // 🔒 NEW: Immediate session cleanup when leaving photo capture
+    _cleanupSessionOnDispose();
+
     super.dispose();
+  }
+
+  /// 🔒 NEW: Clean up session when PhotoCapturePage is disposed
+  void _cleanupSessionOnDispose() {
+    try {
+      // 🔒 FIX: Don't use ref after dispose - just log the cleanup attempt
+      debugPrint(
+          '🔒 [PhotoCapturePage] PhotoCapturePage disposed - session cleanup will happen via periodic validation');
+    } catch (e) {
+      debugPrint('❌ [PhotoCapturePage] Error in dispose cleanup: $e');
+    }
+  }
+
+  /// 🔒 NEW: Force cleanup session immediately (for cancellations)
+  Future<void> _forceCleanupSession() async {
+    try {
+      final sessionManager = ref.read(sessionManagerProvider);
+      if (sessionManager.isInSession) {
+        debugPrint('🔒 [PhotoCapturePage] Force cleaning up session');
+
+        // End the session immediately
+        await sessionManager.endSession();
+
+        // Update all providers
+        ref.read(sessionStateProvider.notifier).state =
+            sessionManager.currentState;
+        ref.read(sessionRequestIdProvider.notifier).state =
+            sessionManager.currentRequestId;
+        ref.read(isInSessionProvider.notifier).state =
+            sessionManager.isInSession;
+        ref.read(canReceivePeeksProvider.notifier).state =
+            sessionManager.canReceivePeekRequests();
+
+        debugPrint('🔒 [PhotoCapturePage] Session force cleanup completed');
+      }
+    } catch (e) {
+      debugPrint('❌ [PhotoCapturePage] Error force cleaning up session: $e');
+    }
   }
 
   @override

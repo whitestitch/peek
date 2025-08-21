@@ -1,5 +1,5 @@
 # === Keep existing lines ===
-secrets/.
+secrets/
 .git/
 
 # === Add these new lines ===
@@ -29,5 +29,21 @@ firestore-debug.log
 .idea/
 .vscode/
 
-# Sensitive files (add any others specific to your project)
-# .env
+# Sensitive files and secrets
+secrets/
+*.json
+!pubspec.lock.json
+!package-lock.json
+!firebase_options.dart
+.env
+.env.local
+.env.production
+service-account.json
+google-services.json
+GoogleService-Info.plist
+
+# Firebase
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log

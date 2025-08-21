@@ -13,6 +13,7 @@ import 'package:go_router/go_router.dart';
 import 'package:peek/theme/colors.dart';
 import 'package:peek/core/firestore_service.dart';
 import 'package:peek/core/widgets/peek_loading_indicator.dart';
+import 'package:peek/core/providers/session_providers.dart';
 
 class ReactionScreen extends ConsumerStatefulWidget {
   final String requestId;
@@ -55,6 +56,76 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
         "[ReactionScreen] 🔍 INIT - Current user: ${FirebaseAuth.instance.currentUser?.uid}");
 
     _fetchPeekData(); // NEW: Call the fetch method on init
+
+    // 🔒 NEW: Update session state to reaction mode
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _updateSessionState();
+    });
+  }
+
+  /// Update session state to reflect current mode
+  void _updateSessionState() {
+    try {
+      final sessionManager = ref.read(sessionManagerProvider);
+
+      // 🔒 FIX: Check if session exists before updating
+      if (!sessionManager.isInSession) {
+        debugPrint(
+            '🔒 [ReactionScreen] No active session, starting new session for reaction');
+        sessionManager.startSession(widget.requestId, 'reaction');
+      } else {
+        debugPrint('🔒 [ReactionScreen] Updating existing session to reaction');
+        sessionManager.updateSessionState('reaction');
+      }
+
+      // Update providers
+      ref.read(sessionStateProvider.notifier).state =
+          sessionManager.currentState;
+      ref.read(sessionRequestIdProvider.notifier).state =
+          sessionManager.currentRequestId;
+      ref.read(isInSessionProvider.notifier).state = sessionManager.isInSession;
+      ref.read(canReceivePeeksProvider.notifier).state =
+          sessionManager.canReceivePeekRequests();
+
+      debugPrint('🔒 [ReactionScreen] Session state updated to reaction');
+    } catch (e) {
+      debugPrint('❌ [ReactionScreen] Error updating session state: $e');
+    }
+  }
+
+  /// End the current peek session
+  Future<void> _endSession() async {
+    try {
+      final sessionManager = ref.read(sessionManagerProvider);
+      await sessionManager.endSession();
+
+      // Update session state providers
+      ref.read(sessionStateProvider.notifier).state =
+          sessionManager.currentState;
+      ref.read(sessionRequestIdProvider.notifier).state =
+          sessionManager.currentRequestId;
+      ref.read(isInSessionProvider.notifier).state = sessionManager.isInSession;
+      ref.read(canReceivePeeksProvider.notifier).state =
+          sessionManager.canReceivePeekRequests();
+
+      debugPrint('🔒 [ReactionScreen] Session ended successfully');
+    } catch (e) {
+      debugPrint('❌ [ReactionScreen] Error ending session: $e');
+    }
+  }
+
+  @override
+  void dispose() {
+    // 🔒 NEW: Extra safety - ensure session is cleaned up on dispose
+    try {
+      if (mounted) {
+        debugPrint('🔒 [ReactionScreen] Disposing - ensuring session cleanup');
+        _endSession();
+      }
+    } catch (e) {
+      debugPrint('❌ [ReactionScreen] Error in dispose cleanup: $e');
+    }
+    super.dispose();
   }
 
   // NEW: Method to fetch peek data and generate a fresh URL
@@ -259,6 +330,10 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text("Sender blocked successfully.")));
+
+          // 🔒 NEW: End session before navigating away
+          await _endSession();
+
           // After blocking, typically navigate away, e.g., to home.
           // This might happen after reaction as well, ensure flow is logical.
           context.go('/');
@@ -310,6 +385,10 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
         if (mounted) {
           debugPrint(
               "[ReactionScreen] Delay finished. Navigating to home ('/').");
+
+          // 🔒 NEW: End session before navigating home
+          await _endSession();
+
           context.go('/');
         }
       }
@@ -461,7 +540,11 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
                             size: 24, color: Colors.white),
                         onPressed: (_isSubmitting || _isProcessingAction)
                             ? null
-                            : () => context.go('/'),
+                            : () async {
+                                // 🔒 NEW: End session before navigating home
+                                await _endSession();
+                                context.go('/');
+                              },
                       ),
                     ),
                   ],

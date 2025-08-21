@@ -38,7 +38,7 @@ class PeekLoadingIndicator extends StatefulWidget {
   /// Small variant for buttons and inline loading
   const PeekLoadingIndicator.small({
     super.key,
-    this.size = 24.0,
+    this.size = 42.0, // 🔧 INCREASED: From 24.0 to 32.0 for better visibility
     this.showProgressCircle = false,
     this.progressColor,
     this.logoColor,

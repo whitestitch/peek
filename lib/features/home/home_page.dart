@@ -1,24 +1,21 @@
 // lib/features/home/home_page.dart
-// lib/features/home/home_page.dart
 import 'dart:async';
 import 'package:flutter/material.dart' as material;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:peek/shared/upgrade_prompt_dialog.dart';
-
 import 'package:peek/core/feature_flags.dart';
 import 'package:peek/features/peek/controllers/peek_controller.dart';
 import 'package:peek/features/home/providers/home_state_provider.dart';
 import 'package:peek/core/firestore_service.dart';
-
 import 'package:peek/theme/colors.dart';
 import 'package:peek/core/widgets/peek_loading_indicator.dart';
 import 'package:rive/rive.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/material.dart';
 
 class HomePage extends ConsumerStatefulWidget {
   const HomePage({super.key});
@@ -31,7 +28,6 @@ class _HomePageState extends ConsumerState<HomePage> {
   Timer? _restrictionTimer;
   bool _restrictionTimerActive = false; // 🔧 NEW: Prevent multiple timers
   int? _secondsRemaining;
-  int _restrictionUpdateCounter = 0; // 🔧 NEW: Force UI updates
 
   // Track which cancellation panels have already been shown to prevent duplicates
   final Set<String> _shownCancellationPanels = <String>{};
@@ -62,10 +58,6 @@ class _HomePageState extends ConsumerState<HomePage> {
   }
 
   void _showPeekCancelledSheet(String reason) {
-    // Create a unique key for this cancellation to prevent duplicates
-    final cancellationKey =
-        '${reason}_${DateTime.now().millisecondsSinceEpoch}';
-
     // Check if we've already shown a cancellation panel recently
     if (_shownCancellationPanels.contains(reason)) {
       print("⚠️ Cancellation panel already shown for reason: $reason");
@@ -362,10 +354,7 @@ class _HomePageState extends ConsumerState<HomePage> {
         setState(() {});
         ref.invalidate(homeStateProvider); // Refresh the state
       } else {
-        setState(() {
-          // 🔧 FIX: Force UI rebuild with new countdown
-          _restrictionUpdateCounter++; // This will force the UI to rebuild
-        }); // Update countdown display every 30 seconds
+        setState(() {}); // Update countdown display every 30 seconds
       }
     });
 
@@ -409,7 +398,6 @@ class _HomePageState extends ConsumerState<HomePage> {
           final subtitleTextInBuild = state.subtitleText;
           final isPremiumForUI = state.isPremium;
           final isRestricted = state.isRestricted;
-          final restrictionReason = state.restrictionReason;
 
           final bool isCooldownActive = state.cooldownEndTime != null;
 
@@ -417,15 +405,17 @@ class _HomePageState extends ConsumerState<HomePage> {
             child: material.Padding(
               padding: const material.EdgeInsets.symmetric(
                 horizontal: 24.0,
-                vertical: 80.0,
+                vertical: 40.0,
               ),
               child: material.Column(
                 mainAxisAlignment: material.MainAxisAlignment.center,
                 mainAxisSize: material.MainAxisSize.min,
                 children: [
+                  // 🔧 Add top margin to center content better on screen
+                  const material.SizedBox(height: 20),
                   _buildWelcomeArea(context, isPremiumForUI),
 
-                  const material.SizedBox(height: 20),
+                  const material.SizedBox(height: 30),
                   material.Container(
                     height: 20,
                     alignment: material.Alignment.center,
@@ -449,7 +439,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                       ),
                     ),
                   ),
-                  const material.SizedBox(height: 10),
+                  const material.SizedBox(height: 30),
                   material.SizedBox(
                     width: 450,
                     height: 350,
@@ -482,7 +472,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                                       : peekSurfaceColor.withOpacity(0.5),
                             ),
                             child: isLoading
-                                ? const PeekLoadingIndicator.small(
+                                ? const PeekLoadingIndicator.medium(
                                     logoColor: material.Colors.white)
                                 : isRestricted
                                     ? const material.Icon(
@@ -532,7 +522,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                     ),
                   ),
 
-                  const material.SizedBox(height: 20),
+                  const material.SizedBox(height: 30),
 
                   // 🔧 NEW: Show restriction info when user is banned
 
@@ -604,7 +594,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                       ),
                     ),
 
-                  const material.SizedBox(height: 20),
+                  const material.SizedBox(height: 30),
 
                   if (!isPremiumForUI && !isRestricted)
                     material.SizedBox(
@@ -624,27 +614,8 @@ class _HomePageState extends ConsumerState<HomePage> {
                           material.Icons.star_purple500_outlined,
                         ),
                         label: const material.Text('Upgrade to Premium'),
-
-                        // style: material.ElevatedButton.styleFrom(
-                        //   backgroundColor: peekPrimaryColor,
-                        //   foregroundColor: material.Colors.black87,
-                        // ),
                       ),
                     ),
-                  // Development helper
-
-                  // -------------  Space
-                  // const material.SizedBox(height: 20),
-                  // material.SizedBox(
-                  //   width: double.infinity,
-                  //   child: material.OutlinedButton.icon(
-                  //     onPressed:
-                  //         isLoading ? null : () => context.go('/onboarding'),
-                  //     icon: const material.Icon(material.Icons.slideshow),
-                  //     label: const material.Text('View Tutorial'),
-                  //   ),
-                  // ),
-                  // -------------  Space
                 ],
               ),
             ),

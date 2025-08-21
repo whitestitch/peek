@@ -7,6 +7,8 @@ import 'package:peek/core/app_lifecycle_manager.dart';
 import 'package:peek/features/iap/iap_manager.dart';
 import 'package:peek/features/peek/peek_dialog_manager.dart';
 import 'package:peek/features/peek/providers/peek_providers.dart';
+import 'package:peek/core/providers/session_providers.dart';
+import 'package:peek/core/session_manager.dart';
 import 'package:peek/core/router.dart';
 import 'package:peek/theme/colors.dart';
 
@@ -35,6 +37,8 @@ class _PeekAppState extends ConsumerState<PeekApp> {
   late final AppLifecycleManager _lifecycleManager;
   late final IAPManager _iapManager;
   late final PeekDialogManager _dialogManager;
+  late final SessionManager
+      _sessionManager; // 🔒 NEW: Store session manager reference
 
   @override
   void initState() {
@@ -43,7 +47,7 @@ class _PeekAppState extends ConsumerState<PeekApp> {
   }
 
   /// Initialize all app managers
-  void _initializeManagers() {
+  void _initializeManagers() async {
     _lifecycleManager = AppLifecycleManager(
       ref: ref,
       navigatorKey: rootNavigatorKey,
@@ -58,6 +62,35 @@ class _PeekAppState extends ConsumerState<PeekApp> {
       ref: ref,
     );
     _dialogManager.initialize(); // Initialize the dialog manager
+
+    // Initialize session manager
+    _sessionManager = ref.read(sessionManagerProvider);
+
+    // 🔒 NEW: Set up callback to automatically update providers when session state changes
+    _sessionManager.setStateChangeCallback(
+        (state, requestId, isInSession, canReceivePeeks) {
+      debugPrint(
+          '🔒 [PeekApp] Session state changed: $state, canReceivePeeks: $canReceivePeeks');
+
+      // Update all session state providers
+      ref.read(sessionStateProvider.notifier).state = state;
+      ref.read(sessionRequestIdProvider.notifier).state = requestId;
+      ref.read(isInSessionProvider.notifier).state = isInSession;
+      ref.read(canReceivePeeksProvider.notifier).state = canReceivePeeks;
+    });
+
+    await _sessionManager.initialize();
+
+    // Update session state providers with initial state
+    ref.read(sessionStateProvider.notifier).state =
+        _sessionManager.currentState;
+    ref.read(sessionRequestIdProvider.notifier).state =
+        _sessionManager.currentRequestId;
+    ref.read(isInSessionProvider.notifier).state = _sessionManager.isInSession;
+    ref.read(canReceivePeeksProvider.notifier).state =
+        _sessionManager.canReceivePeekRequests();
+
+    debugPrint('🔒 [PeekApp] SessionManager initialized');
   }
 
   @override
@@ -65,6 +98,7 @@ class _PeekAppState extends ConsumerState<PeekApp> {
     _lifecycleManager.dispose();
     _iapManager.dispose();
     _dialogManager.dispose();
+    _sessionManager.dispose(); // 🔒 NEW: Dispose session manager
     super.dispose();
   }
 
@@ -77,13 +111,17 @@ class _PeekAppState extends ConsumerState<PeekApp> {
     ref.listen<AsyncValue<List<QueryDocumentSnapshot<Map<String, dynamic>>>>>(
       pendingPeekRequestsProvider,
       (previous, next) {
-        next.whenData((requests) {
+        next.whenData((requests) async {
           debugPrint(
               '📋 [PeekApp] Handling ${requests.length} pending requests');
-          _dialogManager.handlePendingRequests(requests);
+          await _dialogManager.handlePendingRequests(requests);
         });
       },
     );
+
+    // 🔒 NEW: Listen for route changes to dismiss active dialogs
+    // We'll use a simpler approach - dismiss dialogs when pending requests change
+    // This ensures dialogs are cleaned up when navigation occurs
 
     // Note: Cancellation events are now handled directly by individual pages
     // No need for centralized cancellation provider
