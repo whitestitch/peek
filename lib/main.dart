@@ -119,6 +119,10 @@ class _PeekAppState extends ConsumerState<PeekApp> {
       },
     );
 
+    // 🔒 NEW: Listen for route changes to dismiss active dialogs
+    // We'll use a simpler approach - dismiss dialogs when pending requests change
+    // This ensures dialogs are cleaned up when navigation occurs
+
     // Note: Cancellation events are now handled directly by individual pages
     // No need for centralized cancellation provider
 

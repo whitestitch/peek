@@ -12,7 +12,6 @@ import 'package:peek/features/peek/camera/user_settings_manager.dart';
 import 'package:peek/theme/colors.dart';
 import 'package:peek/core/widgets/peek_loading_indicator.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:peek/features/peek/controllers/peek_controller.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -477,87 +476,141 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
       context: context,
       barrierDismissible: false,
       builder: (BuildContext context) {
+        // 🔒 FIX: Auto-dismiss after 3 seconds
+        Future.delayed(const Duration(seconds: 3), () {
+          if (Navigator.of(context).canPop()) {
+            Navigator.of(context).pop();
+            // Navigate to home after dialog is closed
+            if (mounted) {
+              context.go('/');
+            }
+          }
+        });
+
         return Dialog(
           backgroundColor: Colors.transparent,
-          child: Container(
-            padding: const EdgeInsets.all(30),
-            decoration: BoxDecoration(
-              color: peekBackgroundColor,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Success icon
-                Container(
-                  width: 80,
-                  height: 80,
-                  decoration: BoxDecoration(
-                    color: peekPrimaryColor.withOpacity(0.2),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.check_circle_outline,
-                    size: 50,
-                    color: peekPrimaryColor,
-                  ),
-                ),
+          child: TweenAnimationBuilder<double>(
+            duration: const Duration(milliseconds: 600),
+            tween: Tween<double>(begin: 0.0, end: 1.0),
+            curve: Curves.easeOutBack,
+            builder: (context, value, child) {
+              // 🔒 FIX: Clamp opacity value to prevent assertion errors
+              final clampedValue = value.clamp(0.0, 1.0);
 
-                const SizedBox(height: 20),
-
-                // Title
-                const Text(
-                  'Peek Sent!',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-
-                const SizedBox(height: 10),
-
-                // Subtitle
-                const Text(
-                  'Your Peek is on its way!',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.white70,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-
-                const SizedBox(height: 25),
-
-                // OK button
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      Navigator.of(context).pop();
-                      // Navigate to home after dialog is closed
-                      context.go('/');
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: peekPrimaryColor,
-                      foregroundColor: peekSurfaceColor,
-                      minimumSize: const Size(double.infinity, 50),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(30),
+              return Transform.scale(
+                scale: 0.8 + (0.2 * clampedValue),
+                child: Opacity(
+                  opacity: clampedValue,
+                  child: Container(
+                    padding: const EdgeInsets.all(30),
+                    decoration: BoxDecoration(
+                      // 🔒 NEW: Beautiful gradient background matching Reaction dialog style
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          peekBackgroundColor,
+                          peekBackgroundColor.withValues(alpha: 0.95),
+                          peekSurfaceColor.withValues(alpha: 0.3),
+                        ],
                       ),
+                      borderRadius: BorderRadius.circular(20),
+                      // 🔒 NEW: Subtle shadow for depth
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.3),
+                          blurRadius: 20,
+                          spreadRadius: 2,
+                          offset: const Offset(0, 10),
+                        ),
+                      ],
                     ),
-                    child: const Text(
-                      'OK',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // 🔒 NEW: Animated icon with slide-in effect
+                        Transform.translate(
+                          offset: Offset(0, 20 * (1 - clampedValue)),
+                          child: const Icon(
+                            Icons.check_circle_outline_rounded,
+                            color: Colors.white,
+                            size: 70,
+                          ),
+                        ),
+
+                        const SizedBox(height: 20),
+
+                        // 🔒 NEW: Animated title with slide-in effect
+                        Transform.translate(
+                          offset: Offset(0, 15 * (1 - clampedValue)),
+                          child: const Text(
+                            'Peek Sent!',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 24,
+                            ),
+                          ),
+                        ),
+
+                        const SizedBox(height: 10),
+
+                        // 🔒 NEW: Animated subtitle with slide-in effect
+                        Transform.translate(
+                          offset: Offset(0, 10 * (1 - clampedValue)),
+                          child: Text(
+                            'Your Peek is on its way!',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.90),
+                              fontSize: 16,
+                            ),
+                          ),
+                        ),
+
+                        const SizedBox(height: 25),
+
+                        // 🔒 NEW: Animated button with slide-in effect
+                        Transform.translate(
+                          offset: Offset(0, 25 * (1 - clampedValue)),
+                          child: SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              onPressed: () {
+                                Navigator.of(context).pop();
+                                // Navigate to home after dialog is closed
+                                if (mounted) {
+                                  context.go('/');
+                                }
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: peekPrimaryColor,
+                                foregroundColor: peekSurfaceColor,
+                                minimumSize: const Size(double.infinity, 50),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(30),
+                                ),
+                                elevation: 8,
+                                shadowColor:
+                                    Colors.black.withValues(alpha: 0.2),
+                              ),
+                              child: const Text(
+                                'OK',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
-              ],
-            ),
+              );
+            },
           ),
         );
       },
