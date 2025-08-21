@@ -1,36 +1,21 @@
 // lib/features/home/home_page.dart
-// lib/features/home/home_page.dart
 import 'dart:async';
 import 'package:flutter/material.dart' as material;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:peek/shared/upgrade_prompt_dialog.dart';
-
 import 'package:peek/core/feature_flags.dart';
 import 'package:peek/features/peek/controllers/peek_controller.dart';
 import 'package:peek/features/home/providers/home_state_provider.dart';
 import 'package:peek/core/firestore_service.dart';
-
 import 'package:peek/theme/colors.dart';
 import 'package:peek/core/widgets/peek_loading_indicator.dart';
 import 'package:rive/rive.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
-import 'package:peek/core/providers.dart';
-import 'package:peek/features/home/providers/home_state_provider.dart';
-import 'package:peek/features/peek/peek_dialog_manager.dart';
-import 'package:peek/features/peek/providers/peek_providers.dart';
-import 'package:peek/features/premium/pages/premium_page.dart';
-import 'package:peek/features/menu/drawer_menu.dart';
-import 'package:peek/theme/colors.dart';
-import 'package:peek/core/providers/session_providers.dart';
-import 'package:flutter/foundation.dart' show kDebugMode;
 
 class HomePage extends ConsumerStatefulWidget {
   const HomePage({super.key});
@@ -43,7 +28,6 @@ class _HomePageState extends ConsumerState<HomePage> {
   Timer? _restrictionTimer;
   bool _restrictionTimerActive = false; // 🔧 NEW: Prevent multiple timers
   int? _secondsRemaining;
-  int _restrictionUpdateCounter = 0; // 🔧 NEW: Force UI updates
 
   // Track which cancellation panels have already been shown to prevent duplicates
   final Set<String> _shownCancellationPanels = <String>{};
@@ -74,10 +58,6 @@ class _HomePageState extends ConsumerState<HomePage> {
   }
 
   void _showPeekCancelledSheet(String reason) {
-    // Create a unique key for this cancellation to prevent duplicates
-    final cancellationKey =
-        '${reason}_${DateTime.now().millisecondsSinceEpoch}';
-
     // Check if we've already shown a cancellation panel recently
     if (_shownCancellationPanels.contains(reason)) {
       print("⚠️ Cancellation panel already shown for reason: $reason");
@@ -374,10 +354,7 @@ class _HomePageState extends ConsumerState<HomePage> {
         setState(() {});
         ref.invalidate(homeStateProvider); // Refresh the state
       } else {
-        setState(() {
-          // 🔧 FIX: Force UI rebuild with new countdown
-          _restrictionUpdateCounter++; // This will force the UI to rebuild
-        }); // Update countdown display every 30 seconds
+        setState(() {}); // Update countdown display every 30 seconds
       }
     });
 
@@ -421,7 +398,6 @@ class _HomePageState extends ConsumerState<HomePage> {
           final subtitleTextInBuild = state.subtitleText;
           final isPremiumForUI = state.isPremium;
           final isRestricted = state.isRestricted;
-          final restrictionReason = state.restrictionReason;
 
           final bool isCooldownActive = state.cooldownEndTime != null;
 
@@ -640,105 +616,6 @@ class _HomePageState extends ConsumerState<HomePage> {
                         label: const material.Text('Upgrade to Premium'),
                       ),
                     ),
-
-                  // Debug section for session management testing
-                  if (kDebugMode) ...[
-                    const SizedBox(height: 20),
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.grey.withOpacity(0.3)),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            '🔒 Session Debug Info',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white70,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Consumer(
-                            builder: (context, ref, child) {
-                              final sessionInfo =
-                                  ref.watch(sessionInfoProvider);
-                              return Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text('State: ${sessionInfo['state']}'),
-                                  Text(
-                                      'Request ID: ${sessionInfo['requestId'] ?? 'None'}'),
-                                  Text(
-                                      'In Session: ${sessionInfo['isInSession']}'),
-                                  Text(
-                                      'Can Receive Peeks: ${sessionInfo['canReceivePeeks']}'),
-                                  if (sessionInfo['sessionStartTime'] != null)
-                                    Text(
-                                        'Started: ${sessionInfo['sessionStartTime']}'),
-                                  Text(
-                                      'Session Age: ${sessionInfo['sessionAge']} minutes'),
-                                  Text(
-                                      'Timeout: ${sessionInfo['timeoutMinutes']} minutes (Max Duration)'),
-                                  Text('Cleanup: Immediate on completion'),
-                                ],
-                              );
-                            },
-                          ),
-                          const SizedBox(height: 16),
-                          // 🔒 NEW: Debug session reset button
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton(
-                              onPressed: () async {
-                                final sessionManager =
-                                    ref.read(sessionManagerProvider);
-                                await sessionManager.forceResetSession();
-
-                                // Refresh UI state
-                                ref.read(sessionStateProvider.notifier).state =
-                                    sessionManager.currentState;
-                                ref
-                                    .read(sessionRequestIdProvider.notifier)
-                                    .state = sessionManager.currentRequestId;
-                                ref.read(isInSessionProvider.notifier).state =
-                                    sessionManager.isInSession;
-                                ref
-                                        .read(canReceivePeeksProvider.notifier)
-                                        .state =
-                                    sessionManager.canReceivePeekRequests();
-
-                                // Show confirmation
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text(
-                                          '🔒 Session force reset completed'),
-                                      backgroundColor: Colors.green,
-                                    ),
-                                  );
-                                }
-                              },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.red.withOpacity(0.8),
-                                foregroundColor: Colors.white,
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 12),
-                              ),
-                              child: const Text(
-                                '🔒 Force Reset Session',
-                                style: TextStyle(fontWeight: FontWeight.bold),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
                 ],
               ),
             ),
