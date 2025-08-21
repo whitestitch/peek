@@ -16,6 +16,7 @@ import 'package:peek/features/peek/controllers/peek_controller.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:peek/core/providers/session_providers.dart';
 
 // Global camera list (keeping this as is for compatibility)
 List<CameraDescription> _cameras = [];
@@ -71,6 +72,48 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
     _initializeManagers();
     _setupAnimation();
     _initializeCapture();
+
+    // 🔒 NEW: Update session state to photo capture mode
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _updateSessionState();
+    });
+  }
+
+  /// Update session state to reflect current mode
+  void _updateSessionState() {
+    try {
+      final sessionManager = ref.read(sessionManagerProvider);
+      if (widget.mode == 'response') {
+        // User is responding to a peek request
+        // 🔒 FIX: Start session first, then update state
+        sessionManager.startSession(widget.requestId, 'photo_capture');
+        ref.read(sessionStateProvider.notifier).state =
+            sessionManager.currentState;
+        ref.read(sessionRequestIdProvider.notifier).state =
+            sessionManager.currentRequestId;
+        ref.read(isInSessionProvider.notifier).state =
+            sessionManager.isInSession;
+        ref.read(canReceivePeeksProvider.notifier).state =
+            sessionManager.canReceivePeekRequests();
+        debugPrint(
+            '🔒 [PhotoCapturePage] Session started for photo capture (response mode)');
+      } else {
+        // User is sending a peek request
+        sessionManager.startSession(widget.requestId, 'photo_capture');
+        ref.read(sessionStateProvider.notifier).state =
+            sessionManager.currentState;
+        ref.read(sessionRequestIdProvider.notifier).state =
+            sessionManager.currentRequestId;
+        ref.read(isInSessionProvider.notifier).state =
+            sessionManager.isInSession;
+        ref.read(canReceivePeeksProvider.notifier).state =
+            sessionManager.canReceivePeekRequests();
+        debugPrint(
+            '🔒 [PhotoCapturePage] Session started for photo capture (send mode)');
+      }
+    } catch (e) {
+      debugPrint('❌ [PhotoCapturePage] Error updating session state: $e');
+    }
   }
 
   @override
@@ -644,6 +687,9 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
         debugPrint(
             "[PhotoCapturePage] Peek cancelled successfully via Cloud Function. Navigating home...");
 
+        // 🔒 NEW: Immediate session cleanup after successful cancellation
+        await _forceCleanupSession();
+
         // Navigate directly to home with cancellation parameters
         if (mounted) {
           debugPrint(
@@ -660,6 +706,10 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
 
       // Fallback: Even if Cloud Function fails, navigate home
       // The sender will eventually detect the cancellation through other means
+
+      // 🔒 NEW: Force cleanup session even on fallback
+      await _forceCleanupSession();
+
       if (mounted) {
         debugPrint(
             "[PhotoCapturePage] Fallback navigation due to Cloud Function error...");
@@ -675,7 +725,49 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
     _captureLogic.dispose();
     _countdownManager.dispose();
     _statusListener?.cancel(); // Cancel the listener
+
+    // 🔒 NEW: Immediate session cleanup when leaving photo capture
+    _cleanupSessionOnDispose();
+
     super.dispose();
+  }
+
+  /// 🔒 NEW: Clean up session when PhotoCapturePage is disposed
+  void _cleanupSessionOnDispose() {
+    try {
+      // 🔒 FIX: Don't use ref after dispose - just log the cleanup attempt
+      debugPrint(
+          '🔒 [PhotoCapturePage] PhotoCapturePage disposed - session cleanup will happen via periodic validation');
+    } catch (e) {
+      debugPrint('❌ [PhotoCapturePage] Error in dispose cleanup: $e');
+    }
+  }
+
+  /// 🔒 NEW: Force cleanup session immediately (for cancellations)
+  Future<void> _forceCleanupSession() async {
+    try {
+      final sessionManager = ref.read(sessionManagerProvider);
+      if (sessionManager.isInSession) {
+        debugPrint('🔒 [PhotoCapturePage] Force cleaning up session');
+
+        // End the session immediately
+        await sessionManager.endSession();
+
+        // Update all providers
+        ref.read(sessionStateProvider.notifier).state =
+            sessionManager.currentState;
+        ref.read(sessionRequestIdProvider.notifier).state =
+            sessionManager.currentRequestId;
+        ref.read(isInSessionProvider.notifier).state =
+            sessionManager.isInSession;
+        ref.read(canReceivePeeksProvider.notifier).state =
+            sessionManager.canReceivePeekRequests();
+
+        debugPrint('🔒 [PhotoCapturePage] Session force cleanup completed');
+      }
+    } catch (e) {
+      debugPrint('❌ [PhotoCapturePage] Error force cleaning up session: $e');
+    }
   }
 
   @override

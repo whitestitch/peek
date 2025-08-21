@@ -16,6 +16,14 @@ service cloud.firestore {
       // BULLETPROOF TEST RULE - ALLOW ALL OPERATIONS
       allow read, write: if request.auth != null;
 
+      // 🔒 NEW: Allow users to update their own session state
+      allow update: if request.auth != null && request.auth.uid == userId && (
+        // Allow updating activePeekSession for session management
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['activePeekSession', 'updatedAt']) ||
+        // Allow existing reputation updates
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reputation', 'updatedAt'])
+      );
+
       // Deny deleting or listing all users.
       allow delete, list: if false;
 

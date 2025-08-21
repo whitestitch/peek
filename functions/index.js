@@ -282,6 +282,37 @@ exports.autoPingReceiverOnRequestCreate = onDocumentCreated(
         return null;
       }
 
+      // 🔒 NEW: Check if recipient is currently in an active peek session
+      const activeSession = recipientData.activePeekSession || {};
+      const isInSession = activeSession.isActive === true;
+      const sessionRequestId = activeSession.requestId;
+      const sessionStartTime = activeSession.startTime;
+
+      if (isInSession && sessionRequestId && sessionStartTime) {
+        // Check if session is not too old (max 30 minutes)
+        const sessionAge = Date.now() - sessionStartTime.toMillis();
+        const maxSessionAge = 30 * 60 * 1000; // 30 minutes in milliseconds
+
+        if (sessionAge < maxSessionAge) {
+          logger.info(
+              `autoPingReceiver: Recipient ${receiverUid} is in active ` +
+              `session (${sessionRequestId}). Skipping notification for ` +
+              `${requestId}.`,
+          );
+          return null;
+        } else {
+          logger.info(
+              `autoPingReceiver: Recipient ${receiverUid} has stale ` +
+              `session (${sessionAge}ms old). Clearing and allowing ` +
+              `notification.`,
+          );
+          // Clear stale session
+          await recipientDocRef.update({
+            "activePeekSession": null,
+          });
+        }
+      }
+
       const fcmToken = (recipientData && recipientData.fcmToken) ?
       recipientData.fcmToken : null;
 

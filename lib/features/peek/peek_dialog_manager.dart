@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:peek/theme/colors.dart';
 import 'package:peek/features/peek/providers/peek_providers.dart';
+import 'package:peek/core/providers/session_providers.dart';
 import 'package:peek/core/router.dart';
 import 'dart:async';
 
@@ -27,14 +28,32 @@ class PeekDialogManager {
   }
 
   /// Show peek request dialog
-  void showPeekRequestDialog(
-      QueryDocumentSnapshot<Map<String, dynamic>> requestDoc) {
+  Future<void> showPeekRequestDialog(
+      QueryDocumentSnapshot<Map<String, dynamic>> requestDoc) async {
     debugPrint('🎭 [PeekDialogManager] showPeekRequestDialog ENTRY');
 
     // Only process requests after initialization
     if (!_isInitialized) {
       debugPrint('⚠️ [PeekDialogManager] Not yet initialized, skipping dialog');
       return;
+    }
+
+    // 🔒 NEW: Check if user is in an active session
+    // 🔒 ENHANCED: Force refresh session state before checking
+    final sessionManager = ref.read(sessionManagerProvider);
+    if (sessionManager.isInSession) {
+      // 🔒 NEW: Double-check by verifying peek request status
+      await sessionManager.checkPeekRequestStatus();
+
+      // Re-check after potential cleanup
+      if (sessionManager.isInSession) {
+        debugPrint(
+            '🔒 [PeekDialogManager] User is in active session, blocking new peek request');
+        return;
+      } else {
+        debugPrint(
+            '🔒 [PeekDialogManager] Session was stale, now cleaned up - allowing peek request');
+      }
     }
 
     final requestId = requestDoc.id;
@@ -185,6 +204,22 @@ class PeekDialogManager {
   /// Accept peek request
   Future<void> _acceptPeekRequest(String requestId) async {
     try {
+      // 🔒 NEW: Start session when accepting peek request
+      final sessionManager = ref.read(sessionManagerProvider);
+      await sessionManager.startSession(requestId, 'waiting_response');
+
+      // Update session state providers
+      ref.read(sessionStateProvider.notifier).state =
+          sessionManager.currentState;
+      ref.read(sessionRequestIdProvider.notifier).state =
+          sessionManager.currentRequestId;
+      ref.read(isInSessionProvider.notifier).state = sessionManager.isInSession;
+      ref.read(canReceivePeeksProvider.notifier).state =
+          sessionManager.canReceivePeekRequests();
+
+      debugPrint(
+          '🔒 [PeekDialogManager] Session started for accepted request: $requestId');
+
       await FirebaseFirestore.instance
           .collection('peek_requests')
           .doc(requestId)
@@ -232,8 +267,8 @@ class PeekDialogManager {
   }
 
   /// Handle dialog visibility based on pending requests
-  void handlePendingRequests(
-      List<QueryDocumentSnapshot<Map<String, dynamic>>> requests) {
+  Future<void> handlePendingRequests(
+      List<QueryDocumentSnapshot<Map<String, dynamic>>> requests) async {
     final requestIds = requests.map((req) => req.id).toSet();
     final activeDialogId = ref.read(activePeekRequestDialogProvider);
 
@@ -263,7 +298,7 @@ class PeekDialogManager {
     if (ref.read(activePeekRequestDialogProvider) == null) {
       final firstNewId = newlyAdded.first;
       final firstDoc = requests.firstWhere((r) => r.id == firstNewId);
-      showPeekRequestDialog(firstDoc);
+      await showPeekRequestDialog(firstDoc);
     }
 
     // Update cache after handling

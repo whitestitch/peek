@@ -12,6 +12,7 @@ import 'package:peek/features/peek/image_view/user_permissions_manager.dart';
 import 'package:peek/features/peek/image_view/analytics_manager.dart';
 // ModerationManager import removed - no longer needed for report/block actions
 import 'package:peek/theme/colors.dart';
+import 'package:peek/core/providers/session_providers.dart';
 
 @immutable
 class PeekImageView extends ConsumerStatefulWidget {
@@ -48,6 +49,11 @@ class _PeekImageViewState extends ConsumerState<PeekImageView> {
     _initializeManagers();
     _loadAllData();
 
+    // 🔒 NEW: Update session state to viewing image mode
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _updateSessionState();
+    });
+
     // Make status bar transparent for better edge spacing
     SystemChrome.setSystemUIOverlayStyle(
       const SystemUiOverlayStyle(
@@ -57,6 +63,37 @@ class _PeekImageViewState extends ConsumerState<PeekImageView> {
         systemNavigationBarIconBrightness: Brightness.light,
       ),
     );
+  }
+
+  /// Update session state to reflect current mode
+  void _updateSessionState() {
+    try {
+      final sessionManager = ref.read(sessionManagerProvider);
+
+      // 🔒 FIX: Check if session exists before updating
+      if (!sessionManager.isInSession) {
+        debugPrint(
+            '🔒 [PeekImageView] No active session, starting new session for viewing_image');
+        sessionManager.startSession(widget.requestId, 'viewing_image');
+      } else {
+        debugPrint(
+            '🔒 [PeekImageView] Updating existing session to viewing_image');
+        sessionManager.updateSessionState('viewing_image');
+      }
+
+      // Update providers
+      ref.read(sessionStateProvider.notifier).state =
+          sessionManager.currentState;
+      ref.read(sessionRequestIdProvider.notifier).state =
+          sessionManager.currentRequestId;
+      ref.read(isInSessionProvider.notifier).state = sessionManager.isInSession;
+      ref.read(canReceivePeeksProvider.notifier).state =
+          sessionManager.canReceivePeekRequests();
+
+      debugPrint('🔒 [PeekImageView] Session state updated to viewing_image');
+    } catch (e) {
+      debugPrint('❌ [PeekImageView] Error updating session state: $e');
+    }
   }
 
   /// Initialize all manager components
