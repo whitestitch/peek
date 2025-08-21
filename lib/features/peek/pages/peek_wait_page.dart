@@ -450,6 +450,9 @@ class _PeekWaitPageState extends ConsumerState<PeekWaitPage> {
                   SvgPicture.asset(
                     'assets/images/peekio_logo.svg',
                     height: 30, // Adjusted for text balance
+                    width: (320 / 177) *
+                        30, // 🔒 FIX: Preserve aspect ratio (~54.2)
+                    fit: material.BoxFit.contain, // 🔒 FIX: Ensure proper fit
                     colorFilter: const material.ColorFilter.mode(
                       peekWhiteColor,
                       material.BlendMode.srcIn,

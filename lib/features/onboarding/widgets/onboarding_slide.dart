@@ -61,33 +61,57 @@ class OnboardingSlide extends material.StatelessWidget {
 
     material.Widget logoWidget;
     if (logoAsset.toLowerCase().endsWith('.svg')) {
-      logoWidget = SvgPicture.asset(
-        logoAsset,
-        height: 30, // Match existing Image.asset height
-        // width: 100, // Optional: specify width if needed
-        colorFilter: const material.ColorFilter.mode(
-            // Apply color if your SVG is single-color and needs theming
-            peekWhiteColor, // Or any color you want the SVG to be
-            material.BlendMode.srcIn),
-        placeholderBuilder: (material.BuildContext context) =>
-            const material.SizedBox(
-                width: 30,
-                height: 30,
-                child: material.CircularProgressIndicator(
-                  strokeWidth: 2.0,
-                  color: peekWhiteColor,
-                )),
-      );
+      // 🔒 FIX: Preserve aspect ratio for SVG logos
+      if (logoAsset.contains('peekio_logo.svg')) {
+        // peekio_logo.svg is 320x177 (aspect ratio ~1.81:1)
+        // Calculate width to maintain aspect ratio with height: 30
+        const double logoHeight = 30.0;
+        const double logoWidth = (320 / 177) * logoHeight; // ~54.2
+
+        logoWidget = SvgPicture.asset(
+          logoAsset,
+          height: logoHeight,
+          width: logoWidth, // 🔒 FIX: Explicit width to prevent stretch
+          fit: material.BoxFit.contain, // 🔒 FIX: Ensure proper fit
+          colorFilter: const material.ColorFilter.mode(
+              peekWhiteColor, material.BlendMode.srcIn),
+          placeholderBuilder: (material.BuildContext context) =>
+              material.SizedBox(
+                  width: logoWidth,
+                  height: logoHeight,
+                  child: const material.CircularProgressIndicator(
+                    strokeWidth: 2.0,
+                    color: peekWhiteColor,
+                  )),
+        );
+      } else {
+        // For other SVGs (like peekio_eye.svg), use standard approach
+        logoWidget = SvgPicture.asset(
+          logoAsset,
+          height: 30,
+          fit: material.BoxFit.contain, // 🔒 FIX: Ensure proper fit
+          colorFilter: const material.ColorFilter.mode(
+              peekWhiteColor, material.BlendMode.srcIn),
+          placeholderBuilder: (material.BuildContext context) =>
+              const material.SizedBox(
+                  width: 30,
+                  height: 30,
+                  child: material.CircularProgressIndicator(
+                    strokeWidth: 2.0,
+                    color: peekWhiteColor,
+                  )),
+        );
+      }
     } else {
       logoWidget = material.Image.asset(
         logoAsset,
         height: 30,
+        fit: material.BoxFit.contain, // 🔒 FIX: Ensure proper fit
         gaplessPlayback: true,
         errorBuilder: (context, error, stackTrace) {
           material.debugPrint("Error loading logo asset ($logoAsset): $error");
           return const material.Icon(material.Icons.broken_image,
-              size: 30,
-              color: peekWhiteColor); // Fallback for raster image errors
+              size: 30, color: peekWhiteColor);
         },
       );
     }

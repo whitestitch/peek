@@ -347,6 +347,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             child: SvgPicture.asset(
               'assets/images/peekio_logo.svg',
               height: 50,
+              width: (320 / 177) * 50, // 🔒 FIX: Preserve aspect ratio (~90.4)
+              fit: BoxFit.contain, // 🔒 FIX: Ensure proper fit
               errorBuilder: (context, error, stackTrace) {
                 debugPrint(
                     "Error loading settings logo: assets/images/peekio_logo.svg - $error");

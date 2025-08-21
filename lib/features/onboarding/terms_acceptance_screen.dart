@@ -206,8 +206,8 @@ class _TermsAcceptanceScreenState extends ConsumerState<TermsAcceptanceScreen> {
                                   decoration: TextDecoration.underline,
                                 ),
                                 recognizer: TapGestureRecognizer()
-                                  ..onTap = () =>
-                                      _launchURL('https://peekio.io/terms'),
+                                  ..onTap = () => _launchURL(
+                                      'https://peekio.app/terms.html'),
                               ),
                               const TextSpan(text: ' and '),
                               TextSpan(
@@ -217,8 +217,8 @@ class _TermsAcceptanceScreenState extends ConsumerState<TermsAcceptanceScreen> {
                                   decoration: TextDecoration.underline,
                                 ),
                                 recognizer: TapGestureRecognizer()
-                                  ..onTap = () =>
-                                      _launchURL('https://peekio.io/privacy'),
+                                  ..onTap = () => _launchURL(
+                                      'https://peekio.app/privacy.html'),
                               ),
                             ],
                           ),

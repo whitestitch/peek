@@ -78,6 +78,7 @@ dev_dependencies:
   flutter_lints: ^4.0.0 # Keep at 4.x
   # --- NOTE: Keep minor version locked for now ---
   flutter_launcher_icons: ^0.13.1 # Keep at 0.13.x
+  flutter_native_splash: ^2.4.6
 
 # 🔧 Exclude deprecated Firebase Dynamic Links
 dependency_overrides:
@@ -125,6 +126,12 @@ flutter_launcher_icons:
   adaptive_icon_background: "#1A1A1A"
   adaptive_icon_foreground: "assets/images/peekio_app.png"
 
-# Keep native splash config commented out or configured
-# flutter_native_splash:
-#   ...
+# Native splash screen configuration
+flutter_native_splash:
+  color: "#1A1A1A"  # Match peekBackgroundColor
+  image: assets/images/peekio_app.png
+  android_12:
+    image: assets/images/peekio_app.png
+    color: "#1A1A1A"
+  web: false
+  ios: true
