@@ -390,10 +390,7 @@ class _PeekImageViewState extends ConsumerState<PeekImageView> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Left side - empty for balance
-          const SizedBox(width: 40),
-
-          // Sender name - centered
+          // Left side - Sender name aligned left
           if (_permissionsManager.hasSenderInfo())
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -420,7 +417,9 @@ class _PeekImageViewState extends ConsumerState<PeekImageView> {
                   ),
                 ],
               ),
-            ),
+            )
+          else
+            const SizedBox(width: 40),
 
           // Close button (X) - aligned right
           CircleAvatar(
