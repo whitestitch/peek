@@ -421,8 +421,104 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
   /// Handle upload success
   void _handleUploadSuccess(String downloadUrl) {
     debugPrint("Upload successful: $downloadUrl");
-    // Navigate directly to home instead of the 3-second confirmation page
-    context.go('/');
+
+    // Show "Peek Sent!" confirmation dialog
+    _showPeekSentConfirmation();
+  }
+
+  /// Show Peek Sent confirmation dialog
+  void _showPeekSentConfirmation() {
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          child: Container(
+            padding: const EdgeInsets.all(30),
+            decoration: BoxDecoration(
+              color: peekBackgroundColor,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Success icon
+                Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    color: peekPrimaryColor.withOpacity(0.2),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.check_circle_outline,
+                    size: 50,
+                    color: peekPrimaryColor,
+                  ),
+                ),
+
+                const SizedBox(height: 20),
+
+                // Title
+                const Text(
+                  'Peek Sent!',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+
+                const SizedBox(height: 10),
+
+                // Subtitle
+                const Text(
+                  'Your Peek is on its way!',
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Colors.white70,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+
+                const SizedBox(height: 25),
+
+                // OK button
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      // Navigate to home after dialog is closed
+                      context.go('/');
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: peekPrimaryColor,
+                      foregroundColor: peekSurfaceColor,
+                      minimumSize: const Size(double.infinity, 50),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(30),
+                      ),
+                    ),
+                    child: const Text(
+                      'OK',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   /// Handle errors

@@ -53,7 +53,8 @@ class DefaultFirebaseOptions {
     messagingSenderId: '458153260208',
     projectId: 'peekio-db',
     storageBucket: 'peekio-db.firebasestorage.app',
-    iosClientId: '458153260208-o07aepatsq9sjdltm0re07fk8eoq868e.apps.googleusercontent.com',
+    iosClientId:
+        'google-458153260208-o07aepatsq9sjdltm0re07fk8eoq868e.apps.googleusercontent.com',
     iosBundleId: 'com.fab.peek',
   );
 
@@ -63,7 +64,8 @@ class DefaultFirebaseOptions {
     messagingSenderId: '458153260208',
     projectId: 'peekio-db',
     storageBucket: 'peekio-db.firebasestorage.app',
-    iosClientId: '458153260208-o07aepatsq9sjdltm0re07fk8eoq868e.apps.googleusercontent.com',
+    iosClientId:
+        'google-458153260208-o07aepatsq9sjdltm0re07fk8eoq868e.apps.googleusercontent.com',
     iosBundleId: 'com.fab.peek',
   );
 
@@ -75,5 +77,4 @@ class DefaultFirebaseOptions {
     authDomain: 'peekio-db.firebaseapp.com',
     storageBucket: 'peekio-db.firebasestorage.app',
   );
-
 }

@@ -318,8 +318,8 @@ class _PeekImageViewState extends ConsumerState<PeekImageView> {
           // Main image display
           _buildImageDisplay(),
 
-          // Timer overlay (for non-premium users)
-          if (_timerManager.shouldShowTimer()) _buildTimerOverlay(),
+          // Timer overlay (for non-premium users) - REMOVED: Clashing with user name display
+          // if (_timerManager.shouldShowTimer()) _buildTimerOverlay(),
 
           // Top controls
           _buildTopControls(),
@@ -355,31 +355,31 @@ class _PeekImageViewState extends ConsumerState<PeekImageView> {
     );
   }
 
-  /// Build timer overlay
-  Widget _buildTimerOverlay() {
-    return Positioned(
-      top: 100,
-      left: 0,
-      right: 0,
-      child: Center(
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          decoration: BoxDecoration(
-            color: Colors.black54,
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Text(
-            'Time remaining: ${_remainingSeconds}s',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 16,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  /// Build timer overlay - REMOVED: No longer needed
+  // Widget _buildTimerOverlay() {
+  //   return Positioned(
+  //     top: 100,
+  //     left: 0,
+  //     right: 0,
+  //     child: Center(
+  //       child: Container(
+  //         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+  //         decoration: BoxDecoration(
+  //           color: Colors.black54,
+  //           borderRadius: BorderRadius.circular(20),
+  //         ),
+  //         child: Text(
+  //           'Time remaining: ${_remainingSeconds}s',
+  //           style: const TextStyle(
+  //             color: Colors.white,
+  //             fontSize: 16,
+  //             fontWeight: FontWeight.w500,
+  //           ),
+  //         ),
+  //       ),
+  //     ),
+  //   );
+  // }
 
   /// Build top controls
   Widget _buildTopControls() {
