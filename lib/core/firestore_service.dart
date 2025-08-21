@@ -2,61 +2,19 @@
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart'; // Import Riverpod
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/foundation.dart';
-import 'package:peek/main.dart';
 
-// DEBUG
-// DEBUG
-// DEBUG
+/// Riverpod Provider for FirestoreService
 final firestoreServiceProvider = Provider<FirestoreService>((ref) {
-  // Pass the ref to the service so it can read other providers
-  return FirestoreService(
-      ref, FirebaseFirestore.instance, FirebaseAuth.instance);
+  return FirestoreService(FirebaseFirestore.instance, FirebaseAuth.instance);
 });
-// END DEBUG
-// END DEBUG
-// END DEBUG
-
-// LIVE
-// LIVE
-// LIVE
-// --- Riverpod Provider for the Service ---
-// final firestoreServiceProvider = Provider<FirestoreService>((ref) {
-//   return FirestoreService(FirebaseFirestore.instance, FirebaseAuth.instance);
-// });
-
-// END LIVE
-// END LIVE
-// END LIVE
-// --- End Provider ---
 
 class FirestoreService {
   final FirebaseFirestore _db;
   final FirebaseAuth _auth;
-  // DEBUG
-  // DEBUG
-  // DEBUG
-  final Ref _ref;
-  // END DEBUG
-// END DEBUG
-// END DEBUG
 
-// DEBUG
-  // DEBUG
-  // DEBUG
-  FirestoreService(this._ref, this._db, this._auth); // Update this line
-  // END DEBUG
-  // END DEBUG
-  // END DEBUG
-
-  // LIVE
-// LIVE
-// LIVE
-  // FirestoreService(this._db, this._auth);
-  // END LIVE
-// END LIVE
-// END LIVE
+  FirestoreService(this._db, this._auth);
 
   String? get _currentUserId => _auth.currentUser?.uid;
 
@@ -350,8 +308,8 @@ class FirestoreService {
   Future<void> updateUserLocationPreference(bool isEnabled) async {
     final user = _auth.currentUser; // Use instance variable
     if (user == null) {
-      print(
-        "❌ [FirestoreService] Cannot update preference: User not logged in.",
+      debugPrint(
+        "[FirestoreService] ❌ Cannot update preference: User not logged in.",
       );
       throw Exception("User not authenticated to update preference.");
     }
@@ -359,17 +317,18 @@ class FirestoreService {
     final userDocRef = _db.collection('users').doc(user.uid);
 
     try {
-      print(
+      debugPrint(
         "[FirestoreService] Updating user ${user.uid} location preference to: $isEnabled",
       );
       await userDocRef.set({
         'shareLocationPreference': isEnabled,
       }, SetOptions(merge: true));
-      print(
+      debugPrint(
         "[FirestoreService] User location preference updated successfully.",
       );
     } catch (e) {
-      print("❌ [FirestoreService] Error updating user location preference: $e");
+      debugPrint(
+          "[FirestoreService] ❌ Error updating user location preference: $e");
       rethrow;
     }
   }
@@ -387,8 +346,7 @@ class FirestoreService {
       final docRef = _db.collection('users').doc(userId);
       final docSnap = await docRef.get();
       if (docSnap.exists) {
-        // Explicitly cast to the expected type for safety.
-        return docSnap as DocumentSnapshot<Map<String, dynamic>>;
+        return docSnap;
       } else {
         debugPrint(
             "[FirestoreService] Info: User document for $userId does not exist.");
@@ -480,7 +438,8 @@ class FirestoreService {
               },
               SetOptions(
                   merge: true)); // merge so we never clobber an existing doc
-          debugPrint("✅ User document created/merged for $userId");
+          debugPrint(
+              "[FirestoreService] User document created/merged for $userId");
         } else {
           rethrow; // Bubble up unknown write errors
         }
@@ -489,8 +448,9 @@ class FirestoreService {
       // We don't read back here to avoid rules that forbid reads pre-existence or without specific fields.
       return ensuredName; // null means doc already existed; non-null means we created one.
     } catch (e, stack) {
-      debugPrint("❌ Error in ensureDisplayNameExists for user $userId: $e");
-      debugPrint("Stack trace: $stack");
+      debugPrint(
+          "[FirestoreService] Error in ensureDisplayNameExists for user $userId: $e");
+      debugPrint("[FirestoreService] Stack trace: $stack");
       return null;
     }
   }
@@ -506,21 +466,20 @@ class FirestoreService {
   /// This is the trigger that the waiting sender will listen for.
   Future<void> addReactionToPeek(String requestId, String reactionType) async {
     if (requestId.isEmpty || reactionType.isEmpty) {
-      debugPrint(
-          "❌ [FirestoreService] addReactionToPeek: a parameter is empty.");
+      debugPrint("[FirestoreService] addReactionToPeek: a parameter is empty.");
       return;
     }
     final reactorUid = _auth.currentUser?.uid;
     if (reactorUid == null) {
       debugPrint(
-          "❌ [FirestoreService] addReactionToPeek: no authenticated user.");
+          "[FirestoreService] addReactionToPeek: no authenticated user.");
       return;
     }
 
     debugPrint(
-        "[FirestoreService] 🚀 Creating reaction document: peek_requests/$requestId/reactions/$reactorUid");
+        "[FirestoreService] Creating reaction document: peek_requests/$requestId/reactions/$reactorUid");
     debugPrint(
-        "[FirestoreService] 📝 Reaction data: {type: '${reactionType.toLowerCase()}', createdAt: serverTimestamp}");
+        "[FirestoreService] Reaction data: {type: '${reactionType.toLowerCase()}', createdAt: serverTimestamp}");
 
     final reactionRef = _db
         .collection('peek_requests')
@@ -533,12 +492,12 @@ class FirestoreService {
         'createdAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
       debugPrint(
-          "✅ [FirestoreService] Reaction '$reactionType' created for $requestId by $reactorUid.");
+          "[FirestoreService] Reaction '$reactionType' created for $requestId by $reactorUid.");
       debugPrint(
-          "[FirestoreService] 🔍 Cloud Function 'onReactionCreated' should now trigger...");
+          "[FirestoreService] Cloud Function 'onReactionCreated' should now trigger...");
     } catch (e) {
       debugPrint(
-          "❌ [FirestoreService] Error creating reaction for $requestId: $e");
+          "[FirestoreService] Error creating reaction for $requestId: $e");
     }
   }
 
@@ -563,9 +522,9 @@ class FirestoreService {
       debugPrint(
           "[FirestoreService] Report added successfully for peek: $peekRequestId by $reporterId");
 
-      // 🔧 RESTORED: Update user reputation after report
+      // Update user reputation after report
       debugPrint(
-          "[FirestoreService] 🔧 About to update reputation for user: $reportedSenderId");
+          "[FirestoreService] About to update reputation for user: $reportedSenderId");
       await _updateUserReputationAfterReport(reportedSenderId, reason);
     } catch (e) {
       debugPrint("[FirestoreService] Error adding report: $e");
@@ -598,7 +557,7 @@ class FirestoreService {
     }
   }
 
-  /// 🔧 RESTORED: Checks if a user can send peeks based on their reputation status
+  /// Checks if a user can send peeks based on their reputation status
   Future<bool> canUserSendPeeks(String userId) async {
     try {
       final userDoc = await _db.collection('users').doc(userId).get();
@@ -626,29 +585,19 @@ class FirestoreService {
     }
   }
 
-  /// 🔧 RESTORED: Updates user reputation after receiving a report and implements auto-flagging
+  /// Updates user reputation after receiving a report and implements auto-flagging
   Future<void> _updateUserReputationAfterReport(
       String userId, String reason) async {
     try {
-      debugPrint(
-          "[FirestoreService] 🔍 DEBUG - _updateUserReputationAfterReport called with:");
-      debugPrint("[FirestoreService]   - userId: $userId");
-      debugPrint("[FirestoreService]   - reason: $reason");
-
-      // 🔧 CRITICAL FIX: Ensure we have an authenticated user
+      // Ensure we have an authenticated user
       final currentUser = _auth.currentUser;
       if (currentUser == null) {
         debugPrint(
-            "[FirestoreService] ❌ ERROR: No authenticated user found for reputation update");
+            "[FirestoreService] ❌ No authenticated user found for reputation update");
         return;
       }
 
-      debugPrint(
-          "[FirestoreService] 🔐 Authenticated user: ${currentUser.uid}");
-
       final userDocRef = _db.collection('users').doc(userId);
-      debugPrint(
-          "[FirestoreService] 🔧 About to update user document: users/$userId");
 
       // Get current user data to check existing reputation
       final userDoc = await userDocRef.get();
@@ -673,7 +622,7 @@ class FirestoreService {
       // Determine new status based on report count
       String newStatus = currentStatus;
 
-      // 🔧 CRITICAL FIX: Handle Firestore Timestamp objects properly
+      // Handle Firestore Timestamp objects properly
       DateTime? flaggedAt;
       if (userData['reputation']?['flaggedAt'] != null) {
         final timestamp = userData['reputation']?['flaggedAt'] as Timestamp;
@@ -688,27 +637,23 @@ class FirestoreService {
 
       DateTime? lastModerationAction = DateTime.now();
 
-      // 🔧 NEW: Progressive restriction system
+      // Progressive restriction system
       if (newReportCount >= 10 && currentStatus != 'restricted') {
         // 10+ reports = 30 days restriction
         newStatus = 'restricted';
         restrictedAt = DateTime.now();
-        final restrictionEndTime = DateTime.now().add(const Duration(days: 30));
         debugPrint(
             "[FirestoreService] User $userId automatically restricted for 30 days after 10+ reports");
       } else if (newReportCount >= 7 && currentStatus != 'restricted') {
         // 7+ reports = 7 days restriction
         newStatus = 'restricted';
         restrictedAt = DateTime.now();
-        final restrictionEndTime = DateTime.now().add(const Duration(days: 7));
         debugPrint(
             "[FirestoreService] User $userId automatically restricted for 7 days after 7+ reports");
       } else if (newReportCount >= 5 && currentStatus != 'restricted') {
         // 5+ reports = 24 hours restriction
         newStatus = 'restricted';
         restrictedAt = DateTime.now();
-        final restrictionEndTime =
-            DateTime.now().add(const Duration(hours: 24));
         debugPrint(
             "[FirestoreService] User $userId automatically restricted for 24 hours after 5+ reports");
       } else if (newReportCount >= 3 && currentStatus == 'normal') {
@@ -719,19 +664,10 @@ class FirestoreService {
       }
 
       // Update user reputation
-      debugPrint("[FirestoreService] 🔧 Updating user document: users/$userId");
       debugPrint(
-          "[FirestoreService]   - Current reportCount: $currentReportCount");
-      debugPrint("[FirestoreService]   - New reportCount: $newReportCount");
-      debugPrint("[FirestoreService]   - Current status: $currentStatus");
-      debugPrint("[FirestoreService]   - New status: $newStatus");
+          "[FirestoreService] Updating user $userId reputation: reportCount=$newReportCount, status=$newStatus");
 
-      // 🔧 CRITICAL FIX: Add more debug info before the update
-      debugPrint(
-          "[FirestoreService] 🔐 About to make Firestore update with auth context: ${currentUser.uid}");
-      debugPrint("[FirestoreService] 🔧 Firestore instance: ${_db.app.name}");
-
-      // 🔧 NEW: Calculate restriction end time based on report count
+      // Calculate restriction end time based on report count
       DateTime? restrictionEndTime;
       if (newStatus == 'restricted') {
         if (newReportCount >= 10) {
@@ -757,7 +693,7 @@ class FirestoreService {
       });
 
       debugPrint(
-          "[FirestoreService] ✅ User $userId reputation updated: reportCount=$newReportCount, status=$newStatus");
+          "[FirestoreService] User $userId reputation updated: reportCount=$newReportCount, status=$newStatus");
 
       // If user is restricted, automatically remove their recent content
       if (newStatus == 'restricted') {
@@ -769,7 +705,7 @@ class FirestoreService {
     }
   }
 
-  /// 🔧 RESTORED: Removes user content when they are restricted
+  /// Removes user content when they are restricted
   Future<void> _removeUserContent(String userId) async {
     try {
       // Find and mark recent peek requests as removed
@@ -794,7 +730,7 @@ class FirestoreService {
     }
   }
 
-  /// 🔧 NEW: Gets user restriction details for UI display
+  /// Gets user restriction details for UI display
   Future<Map<String, dynamic>?> getUserRestrictionDetails(String userId) async {
     try {
       final userDoc = await _db.collection('users').doc(userId).get();
@@ -825,11 +761,11 @@ class FirestoreService {
     }
   }
 
-  /// 🔧 NEW: Fix existing restricted users by adding missing restrictionEndTime
+  /// Fix existing restricted users by adding missing restrictionEndTime
   Future<void> fixExistingRestrictedUsers() async {
     try {
       debugPrint(
-          "[FirestoreService] 🔧 Starting migration for existing restricted users...");
+          "[FirestoreService] Starting migration for existing restricted users...");
 
       // Find all users with status = 'restricted' but no restrictionEndTime
       final restrictedUsers = await _db
@@ -865,14 +801,14 @@ class FirestoreService {
 
           fixedCount++;
           debugPrint(
-              "[FirestoreService] ✅ Fixed user ${doc.id} with end time: $restrictionEndTime");
+              "[FirestoreService] Fixed user ${doc.id} with end time: $restrictionEndTime");
         }
       }
 
       debugPrint(
           "[FirestoreService] 🎯 Migration complete! Fixed $fixedCount users.");
     } catch (e) {
-      debugPrint("[FirestoreService] ❌ Error during migration: $e");
+      debugPrint("[FirestoreService] Error during migration: $e");
     }
   }
 }
