@@ -484,7 +484,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                                       : peekSurfaceColor.withOpacity(0.5),
                             ),
                             child: isLoading
-                                ? const PeekLoadingIndicator.small(
+                                ? const PeekLoadingIndicator.medium(
                                     logoColor: material.Colors.white)
                                 : isRestricted
                                     ? const material.Icon(

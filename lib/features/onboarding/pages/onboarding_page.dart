@@ -47,10 +47,10 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
       'logo': 'assets/images/peekio_logo.svg',
       'image': 'assets/images/onboarding_03.png',
       'isHeroFullWidth': false,
-      'title': 'Think Fast: 10 Sec!',
+      'title': 'Think Fast: 30 Sec!',
       'subtitle': 'Ready, Set, Peek',
       'text':
-          'You have 10 seconds to capture your moment. Share your world instantly.',
+          'You have 30 seconds to capture your moment. Share your world instantly.',
       'background': 'assets/images/onboarding_bg_03.jpg',
     },
     {

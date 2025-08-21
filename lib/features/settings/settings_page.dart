@@ -512,7 +512,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               horizontal: 16.0,
             ),
             child: Text(
-              'App Version: 1.0.0 (Placeholder)',
+              'App Version: 1.0.0',
               textAlign: TextAlign.center,
               style: theme.textTheme.bodySmall?.copyWith(color: Colors.grey),
             ),
