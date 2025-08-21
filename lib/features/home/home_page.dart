@@ -417,15 +417,17 @@ class _HomePageState extends ConsumerState<HomePage> {
             child: material.Padding(
               padding: const material.EdgeInsets.symmetric(
                 horizontal: 24.0,
-                vertical: 80.0,
+                vertical: 40.0,
               ),
               child: material.Column(
                 mainAxisAlignment: material.MainAxisAlignment.center,
                 mainAxisSize: material.MainAxisSize.min,
                 children: [
+                  // 🔧 Add top margin to center content better on screen
+                  const material.SizedBox(height: 20),
                   _buildWelcomeArea(context, isPremiumForUI),
 
-                  const material.SizedBox(height: 20),
+                  const material.SizedBox(height: 30),
                   material.Container(
                     height: 20,
                     alignment: material.Alignment.center,
@@ -449,7 +451,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                       ),
                     ),
                   ),
-                  const material.SizedBox(height: 10),
+                  const material.SizedBox(height: 30),
                   material.SizedBox(
                     width: 450,
                     height: 350,
@@ -532,7 +534,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                     ),
                   ),
 
-                  const material.SizedBox(height: 20),
+                  const material.SizedBox(height: 30),
 
                   // 🔧 NEW: Show restriction info when user is banned
 
@@ -604,7 +606,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                       ),
                     ),
 
-                  const material.SizedBox(height: 20),
+                  const material.SizedBox(height: 30),
 
                   if (!isPremiumForUI && !isRestricted)
                     material.SizedBox(
@@ -624,27 +626,8 @@ class _HomePageState extends ConsumerState<HomePage> {
                           material.Icons.star_purple500_outlined,
                         ),
                         label: const material.Text('Upgrade to Premium'),
-
-                        // style: material.ElevatedButton.styleFrom(
-                        //   backgroundColor: peekPrimaryColor,
-                        //   foregroundColor: material.Colors.black87,
-                        // ),
                       ),
                     ),
-                  // Development helper
-
-                  // -------------  Space
-                  // const material.SizedBox(height: 20),
-                  // material.SizedBox(
-                  //   width: double.infinity,
-                  //   child: material.OutlinedButton.icon(
-                  //     onPressed:
-                  //         isLoading ? null : () => context.go('/onboarding'),
-                  //     icon: const material.Icon(material.Icons.slideshow),
-                  //     label: const material.Text('View Tutorial'),
-                  //   ),
-                  // ),
-                  // -------------  Space
                 ],
               ),
             ),
