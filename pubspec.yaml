@@ -79,6 +79,11 @@ dev_dependencies:
   # --- NOTE: Keep minor version locked for now ---
   flutter_launcher_icons: ^0.13.1 # Keep at 0.13.x
 
+# 🔧 Exclude deprecated Firebase Dynamic Links
+dependency_overrides:
+  firebase_dynamic_links: 6.1.10
+  firebase_dynamic_links_platform_interface: 0.2.7+10
+
 flutter:
   uses-material-design: true
 
