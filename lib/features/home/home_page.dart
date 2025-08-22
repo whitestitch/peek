@@ -681,7 +681,7 @@ class _HomePageState extends ConsumerState<HomePage> {
         material.Text(
           titleText,
           style: const material.TextStyle(
-            fontSize: 34,
+            fontSize: 33,
             fontWeight: material.FontWeight.bold,
             color: peekWhiteColor,
           ),
