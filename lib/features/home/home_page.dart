@@ -12,6 +12,8 @@ import 'package:peek/features/home/providers/home_state_provider.dart';
 import 'package:peek/core/firestore_service.dart';
 import 'package:peek/theme/colors.dart';
 import 'package:peek/core/widgets/peek_loading_indicator.dart';
+import 'package:peek/core/providers/session_providers.dart';
+import 'package:peek/features/peek/providers/peek_providers.dart';
 import 'package:rive/rive.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
@@ -32,6 +34,10 @@ class _HomePageState extends ConsumerState<HomePage> {
   // Track which cancellation panels have already been shown to prevent duplicates
   final Set<String> _shownCancellationPanels = <String>{};
 
+  // Track when cancellation panels were shown to prevent immediate clearing
+  final Map<String, DateTime> _cancellationPanelTimestamps =
+      <String, DateTime>{};
+
   @override
   void initState() {
     super.initState();
@@ -41,6 +47,9 @@ class _HomePageState extends ConsumerState<HomePage> {
         // _checkIfPeekWasCancelled();
         // 🔧 NEW: Fix existing restricted users on app start
         _fixExistingRestrictedUsers();
+
+        // 🔒 NEW: Check for cancellation parameters in URL
+        _checkForCancellationParameters();
       }
     });
   }
@@ -57,30 +66,170 @@ class _HomePageState extends ConsumerState<HomePage> {
     }
   }
 
+  /// 🔒 NEW: Check for cancellation parameters in URL and show panel if needed
+  void _checkForCancellationParameters() {
+    try {
+      final context = this.context;
+      if (context.mounted) {
+        final uri = GoRouterState.of(context).uri;
+        final showCancelled = uri.queryParameters['show'];
+        final reason = uri.queryParameters['reason'];
+
+        if (showCancelled == 'peekCancelled' && reason != null) {
+          debugPrint(
+              "[HomePage] 🔒 URL contains cancellation parameters: show=$showCancelled, reason=$reason");
+
+          // Clear the URL parameters to prevent showing again on refresh
+          if (context.mounted) {
+            context.go('/');
+          }
+
+          // Show the cancellation panel
+          _showPeekCancelledSheet(reason);
+        }
+      }
+    } catch (e) {
+      debugPrint("[HomePage] ❌ Error checking cancellation parameters: $e");
+    }
+  }
+
+  /// 🔒 NEW: Force clear all cancellation states immediately
+  void _forceClearAllCancellationStates() {
+    try {
+      debugPrint("[HomePage] 🔒 Force clearing all cancellation states");
+
+      // Clear all cancellation panels
+      _shownCancellationPanels.clear();
+      _cancellationPanelTimestamps.clear();
+
+      // 🔒 NEW: Force dismiss any visible cancellation panels to prevent blocking new peeks
+      if (mounted) {
+        try {
+          // Check if there are any routes that can be popped
+          final navigator = material.Navigator.of(context);
+          final canPopMain = navigator.canPop();
+
+          debugPrint("[HomePage] 🔍 Main navigator canPop: $canPopMain");
+
+          if (canPopMain) {
+            navigator.pop();
+            debugPrint("[HomePage] 🔒 Dismissed visible cancellation panel");
+          } else {
+            debugPrint(
+                "[HomePage] ℹ️ No modal sheets to dismiss in main navigator");
+          }
+
+          // Also check root navigator for modal routes
+          try {
+            final rootNavigator =
+                material.Navigator.of(context, rootNavigator: true);
+            final canPopRoot = rootNavigator.canPop();
+
+            debugPrint("[HomePage] 🔍 Root navigator canPop: $canPopRoot");
+
+            if (canPopRoot && rootNavigator != navigator) {
+              rootNavigator.pop();
+              debugPrint("[HomePage] 🔒 Dismissed modal from root navigator");
+            }
+          } catch (rootError) {
+            debugPrint(
+                "[HomePage] ⚠️ Error checking root navigator: $rootError");
+          }
+        } catch (e) {
+          debugPrint("[HomePage] ⚠️ Error dismissing cancellation panel: $e");
+        }
+      }
+
+      debugPrint("[HomePage] ✅ All cancellation states cleared");
+    } catch (e) {
+      debugPrint("[HomePage] ❌ Error force clearing cancellation states: $e");
+    }
+  }
+
+  /// 🔒 NEW: Clear cancellation state globally when panel is dismissed
+  Future<void> _clearCancellationState(String reason) async {
+    try {
+      debugPrint(
+          "[HomePage] 🔒 Clearing cancellation state for reason: $reason");
+
+      // 🔒 NEW: Force clear ALL cancellation states immediately (not just this reason)
+      _shownCancellationPanels.clear();
+      _cancellationPanelTimestamps.clear();
+
+      // Clear from session manager to ensure clean state
+      final sessionManager = ref.read(sessionManagerProvider);
+      if (sessionManager.isInSession) {
+        debugPrint(
+            "[HomePage] 🔒 Ending active session to clear cancellation state");
+        await sessionManager.endSession();
+      }
+
+      // Clear any pending peek request states
+      ref.invalidate(pendingPeekRequestsProvider);
+
+      // 🔒 REMOVED: Don't aggressively pop navigation - causes stack crashes
+      // The modal sheet will be dismissed naturally by the OK button or auto-close
+      debugPrint(
+          "[HomePage] ℹ️ Relying on natural sheet dismissal to avoid navigation crashes");
+
+      debugPrint("[HomePage] ✅ Cancellation state cleared successfully");
+    } catch (e) {
+      debugPrint("[HomePage] ❌ Error clearing cancellation state: $e");
+    }
+  }
+
   void _showPeekCancelledSheet(String reason) {
     // Check if we've already shown a cancellation panel recently
     if (_shownCancellationPanels.contains(reason)) {
-      print("⚠️ Cancellation panel already shown for reason: $reason");
+      debugPrint(
+          "⚠️ [HomePage] Cancellation panel already shown for reason: $reason");
       return;
+    }
+
+    debugPrint(
+        "[HomePage] 🔍 Evaluating whether to show cancellation panel for reason: $reason");
+
+    // 🔒 REMOVED: Don't block cancellation panels based on pending requests
+    // Cancellation panels are important user feedback and should always be shown
+    debugPrint(
+        "[HomePage] ℹ️ Allowing cancellation panel - user feedback is important");
+
+    // 🔒 NEW: Check if we're currently in a session, but allow cancellation panels for completed flows
+    final sessionManager = ref.read(sessionManagerProvider);
+    if (sessionManager.isInSession) {
+      // 🔧 FIX: Allow cancellation panels even during sessions - they're important for user feedback
+      debugPrint(
+          "[HomePage] ℹ️ User in session, but allowing cancellation panel for user feedback");
+      // Continue to show the cancellation panel
+    }
+
+    // 🔒 NEW: Final safety check - if we somehow still have cancellation panels showing, clear them
+    if (_shownCancellationPanels.isNotEmpty) {
+      debugPrint(
+          "[HomePage] ⚠️ Clearing existing cancellation panels before showing new one");
+      _shownCancellationPanels.clear();
     }
 
     // Mark this cancellation as shown
     _shownCancellationPanels.add(reason);
+    _cancellationPanelTimestamps[reason] = DateTime.now();
+    debugPrint("[HomePage] ✅ Showing cancellation panel for reason: $reason");
 
     // Clean up old entries after 5 seconds to prevent memory leaks
     Future.delayed(const Duration(seconds: 5), () {
       _shownCancellationPanels.remove(reason);
+      _cancellationPanelTimestamps.remove(reason);
     });
 
     final scaffoldContext = material.Scaffold.of(context).context;
     if (scaffoldContext == null) {
-      print("❌ Cannot show cancelled sheet: root context is null.");
+      debugPrint("❌ Cannot show cancelled sheet: root context is null.");
       return;
     }
 
     // Check if we're in the middle of a navigation transition
     if (!mounted) {
-      print("❌ Cannot show cancelled sheet: page not mounted.");
+      debugPrint("❌ Cannot show cancelled sheet: page not mounted.");
       return;
     }
 
@@ -116,9 +265,12 @@ class _HomePageState extends ConsumerState<HomePage> {
 
               // Auto-close after 5 seconds
               Timer? autoCloseTimer;
-              autoCloseTimer = Timer(const Duration(seconds: 5), () {
+              autoCloseTimer = Timer(const Duration(seconds: 5), () async {
                 if (ctx.mounted && !isSheetDismissed) {
                   try {
+                    // 🔒 NEW: Clear cancellation state when auto-closing
+                    await _clearCancellationState(reason);
+
                     // Check if the context is still valid before trying to pop
                     if (material.Navigator.of(ctx).canPop()) {
                       material.Navigator.of(ctx).pop();
@@ -128,12 +280,15 @@ class _HomePageState extends ConsumerState<HomePage> {
                     }
                   } catch (e) {
                     // If there's an error, just log it and don't crash
-                    print("❌ Error auto-closing cancelled sheet: $e");
+                    debugPrint("❌ Error auto-closing cancelled sheet: $e");
                     // Cancel the timer to prevent further attempts
                     autoCloseTimer?.cancel();
                   }
                 }
               });
+
+              // 🔒 NEW: Ensure cleanup happens when the sheet is disposed
+              // This will be handled by the existing cleanup methods
 
               return material.Stack(
                 alignment: material.Alignment.topCenter,
@@ -180,12 +335,25 @@ class _HomePageState extends ConsumerState<HomePage> {
                               backgroundColor: peekSecondaryColor,
                               foregroundColor: peekSurfaceColor,
                             ),
-                            onPressed: () {
+                            onPressed: () async {
                               // Cancel the auto-close timer
                               autoCloseTimer?.cancel();
                               setState(() {
                                 isSheetDismissed = true;
                               });
+
+                              // 🔒 NEW: Clear cancellation state globally when dismissed
+                              await _clearCancellationState(reason);
+
+                              // 🔒 NEW: Force clear any remaining UI elements
+                              if (mounted) {
+                                // Force refresh the UI state
+                                setState(() {});
+
+                                // Invalidate providers to ensure clean state
+                                ref.invalidate(pendingPeekRequestsProvider);
+                                ref.invalidate(sessionStateProvider);
+                              }
 
                               // Use the sheet context to dismiss itself properly
                               if (ctx.mounted) {
@@ -252,6 +420,11 @@ class _HomePageState extends ConsumerState<HomePage> {
     _cooldownTimer?.cancel();
     _restrictionTimer?.cancel();
     _restrictionTimerActive = false; // 🔧 NEW: Reset timer flag
+
+    // 🔒 NEW: Clear all cancellation states when disposing
+    _shownCancellationPanels.clear();
+    _cancellationPanelTimestamps.clear();
+
     super.dispose();
   }
 
@@ -368,15 +541,96 @@ class _HomePageState extends ConsumerState<HomePage> {
   material.Widget build(material.BuildContext context) {
     final goRouterState = GoRouterState.of(context);
 
+    // 🔒 NEW: Setup listener for pending peek requests to auto-clear cancellation panels
+    ref.listen(pendingPeekRequestsProvider, (previous, next) {
+      if (mounted) {
+        final pendingRequests = next.valueOrNull ?? [];
+        final previousRequests = previous?.valueOrNull ?? [];
+
+        // Only clear cancellation panels if we have NEW active requests
+        if (pendingRequests.isNotEmpty &&
+            pendingRequests.length > previousRequests.length) {
+          // Check if the new requests are actually active (not cancelled)
+          final activeRequests = pendingRequests.where((doc) {
+            final data = doc.data();
+            final status = data['status'] as String?;
+            return status != 'cancelled_by_sender' &&
+                status != 'cancelled_by_receiver' &&
+                status != 'completed' &&
+                status != 'expired';
+          }).toList();
+
+          if (activeRequests.isNotEmpty) {
+            // Check if any cancellation panels were shown recently (within last 3 seconds)
+            final now = DateTime.now();
+            final recentPanels =
+                _cancellationPanelTimestamps.entries.where((entry) {
+              return now.difference(entry.value).inSeconds < 3;
+            }).toList();
+
+            // 🔒 NEW: Always prioritize new peek requests over temporal protection
+            if (recentPanels.isEmpty) {
+              debugPrint(
+                  "[HomePage] 🔒 New ACTIVE peek requests detected (${activeRequests.length}), clearing all cancellation panels");
+              // 🔒 NEW: Force clear all cancellation states immediately
+              _forceClearAllCancellationStates();
+
+              // 🔒 NEW: Also force refresh the UI to ensure any lingering panels are cleared
+              if (mounted) {
+                setState(() {});
+              }
+            } else {
+              debugPrint(
+                  "[HomePage] 🔒 OVERRIDING temporal protection - new peek requests take priority");
+              debugPrint(
+                  "[HomePage] 🔒 New ACTIVE peek requests detected (${activeRequests.length}), clearing all cancellation panels despite recent panel");
+              // 🔒 NEW: Override temporal protection for new peek requests
+              _forceClearAllCancellationStates();
+
+              // 🔒 NEW: Also force refresh the UI to ensure any lingering panels are cleared
+              if (mounted) {
+                setState(() {});
+              }
+            }
+          } else {
+            debugPrint(
+                "[HomePage] ℹ️ New requests detected but they're not active, keeping cancellation panel");
+          }
+        }
+      }
+    });
+
     // Handle cancellation events from centralized handler
     if (goRouterState.uri.queryParameters['show'] == 'peekCancelled') {
       final reason = goRouterState.uri.queryParameters['reason'];
 
       material.WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
+          // 🔒 REMOVED: Don't block cancellation panels based on pending requests
+          // Cancellation panels are important user feedback and should always be shown
+          debugPrint(
+              "[HomePage] ℹ️ URL cancellation - allowing panel for user feedback");
+
+          // 🔒 NEW: Check if we're currently in a session, but allow cancellation panels for completed flows
+          final sessionManager = ref.read(sessionManagerProvider);
+          if (sessionManager.isInSession) {
+            // 🔧 FIX: Allow cancellation panels even during sessions - they're important for user feedback
+            debugPrint(
+                "[HomePage] ℹ️ User in session, but allowing cancellation panel for user feedback");
+            // Continue to show the cancellation panel
+          }
+
           // Clear the URL parameters and show the cancellation panel
           context.go('/');
-          _showPeekCancelledSheet(reason ?? 'cancelled');
+          debugPrint(
+              "[HomePage] 🎯 About to show cancellation panel for reason: ${reason ?? 'cancelled'}");
+
+          // Add a small delay to ensure navigation is complete before showing panel
+          Future.delayed(const Duration(milliseconds: 200), () {
+            if (mounted) {
+              _showPeekCancelledSheet(reason ?? 'cancelled');
+            }
+          });
         }
       });
     }
