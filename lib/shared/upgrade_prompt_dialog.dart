@@ -52,7 +52,7 @@ class UpgradePromptDialog extends StatelessWidget {
             "You've used all your free peeks for today.\nUpgrade to Premium for unlimited access and more:";
         break;
       case UpgradeReason.periodic:
-        titleText = "Enjoying Peek?";
+        titleText = "Enjoying Peekio?";
         contentText =
             "Enjoying Peek? Upgrade to Premium and enjoy these benefits:";
         break;

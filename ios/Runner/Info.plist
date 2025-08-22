@@ -52,17 +52,17 @@
 			<string>_dartobservatory._tcp</string>
 		</array>
 		<key>NSCameraUsageDescription</key>
-		<string>We need camera access so you can take a Peek photo.</string>
+		<string>We need camera access so you can take a Peekio photo.</string>
 		<key>NSLocalNetworkUsageDescription</key>
 		<string>Peekio needs to connect to services on your local network for development features like Firebase Emulators and debugging.</string>
 		<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-		<string>Peek uses your location—even when the app is in the background—to share your general area (city/region) with others when you send a Peek, if you enable this feature.</string>
+		<string>Peekio uses your location—even when the app is in the background—to share your general area (city/region) with others when you send a Peek, if you enable this feature.</string>
 		<key>NSLocationWhenInUseUsageDescription</key>
-		<string>Peek uses your location to show where Peeks are approximately sent from.</string>
+		<string>Peekio uses your location to show where Peeks are approximately sent from.</string>
 		<key>NSMicrophoneUsageDescription</key>
-		<string>Peek needs microphone access to capture audio along with photos (optional, but required by camera package).</string>
+		<string>Peekio needs microphone access to capture audio along with photos (optional, but required by camera package).</string>
 		<key>NSPhotoLibraryUsageDescription</key>
-		<string>Used for uploading your Peek image.</string>
+		<string>Used for uploading your Peekio image.</string>
 		<key>UIApplicationSupportsIndirectInputEvents</key>
 		<true/>
 		<key>UIBackgroundModes</key>

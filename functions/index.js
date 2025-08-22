@@ -185,7 +185,7 @@ exports.initiatePeekRequest = onCall(
           );
           throw new HttpsError(
               "not-found",
-              "No eligible Peek recipients available at this time. " +
+              "No eligible Peekio recipients available at this time. " +
               "All users are either restricted or have blocked you. " +
               "Please try again later.",
           );
@@ -636,7 +636,8 @@ exports.cancelPeekRequest = onCall(
         await peekRef.update(statusUpdate);
 
         logger.info(
-            `✅ Peek request ${requestId} cancelled successfully by ${userId} ` +
+            `✅ Peekio request ${requestId}
+            cancelled successfully by ${userId} ` +
             `with reason: ${reason}`);
 
         return {
