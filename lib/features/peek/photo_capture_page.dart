@@ -896,13 +896,18 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
     );
   }
 
-  /// Build camera preview
+  /// Build camera preview or captured image
   Widget _buildCameraPreview() {
     if (!_cameraManager.isCameraInitialized ||
         _cameraManager.controller == null) {
       return const Center(
         child: PeekLoadingIndicator.medium(logoColor: Colors.white),
       );
+    }
+
+    // 🔒 NEW: Show captured image instead of live camera after capture
+    if (_captureLogic.capturedImageBytes != null) {
+      return _buildCapturedImagePreview();
     }
 
     // Use FittedBox with proper dimensions like the original
@@ -924,6 +929,38 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
     }
 
     return Positioned.fill(child: Center(child: cameraPreviewWidget));
+  }
+
+  /// 🔒 NEW: Build captured image preview
+  Widget _buildCapturedImagePreview() {
+    return Positioned.fill(
+      child: Container(
+        color: Colors.black,
+        child: Center(
+          child: FittedBox(
+            fit: BoxFit.cover,
+            child: SizedBox(
+              width: MediaQuery.of(context).size.width,
+              height: MediaQuery.of(context).size.height,
+              child: Image.memory(
+                _captureLogic.capturedImageBytes!,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) {
+                  debugPrint("❌ Error displaying captured image: $error");
+                  return const Center(
+                    child: Icon(
+                      Icons.error_outline,
+                      color: Colors.white,
+                      size: 64,
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   /// Build countdown overlay
