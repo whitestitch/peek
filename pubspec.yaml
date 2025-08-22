@@ -1,5 +1,5 @@
 name: peek
-description: "Peek - Anonymous photo request app"
+description: "Peekio - Anonymous photo request app"
 publish_to: 'none' # private project
 
 version: 1.0.0+18 # 🔧 INCREMENTED: Build number for new icon upload

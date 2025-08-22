@@ -22,8 +22,8 @@ const AndroidNotificationChannel peekRequestChannel =
   // id
   'peek_requests_channel',
   // title
-  'Peek Requests',
-  description: 'Channel for new Peek request notifications.',
+  'Peekio Requests',
+  description: 'Channel for new Peekio request notifications.',
   // This is what enables heads-up display
   importance: Importance.max,
   playSound: true,
@@ -79,8 +79,8 @@ Future<void> _showLocalNotification(String title, String body, int id) async {
   // Define platform-specific details
   const androidDetails = AndroidNotificationDetails(
     'peek_requests_channel',
-    'Peek Requests',
-    channelDescription: 'Channel for new Peek request notifications.',
+    'Peekio Requests',
+    channelDescription: 'Channel for new Peekio request notifications.',
     importance: Importance.max,
     priority: Priority.high,
     icon: '@mipmap/ic_launcher',
@@ -379,8 +379,8 @@ class NotificationService {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Incoming Peek Request'),
-        content: const Text('Would you like to accept the peek?'),
+        title: const Text('Incoming Peekio Request'),
+        content: const Text('Would you like to accept the Peekio?'),
         actions: [
           TextButton(
             onPressed: () {

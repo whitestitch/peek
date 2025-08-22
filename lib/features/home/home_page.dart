@@ -89,14 +89,14 @@ class _HomePageState extends ConsumerState<HomePage> {
     String message;
 
     if (reason == 'receiver_cancelled') {
-      title = "Peek Cancelled!";
-      message = "The receiver cancelled the peek request.";
+      title = "Peekio Cancelled!";
+      message = "The receiver cancelled the Peekio request.";
     } else if (reason == 'sender_cancelled') {
-      title = "Peek Stopped";
-      message = "The sender stopped the peek request.";
+      title = "Peekio Stopped";
+      message = "The sender stopped the Peekio request.";
     } else {
-      title = "Peek Cancelled";
-      message = "The peek request was cancelled.";
+      title = "Peekio Cancelled";
+      message = "The Peekio request was cancelled.";
     }
 
     // Add a small delay to ensure navigation is complete
@@ -415,9 +415,9 @@ class _HomePageState extends ConsumerState<HomePage> {
                   const material.SizedBox(height: 20),
                   _buildWelcomeArea(context, isPremiumForUI),
 
-                  const material.SizedBox(height: 30),
+                  // Add peek counter text under the main title
+                  const material.SizedBox(height: 15),
                   material.Container(
-                    height: 20,
                     alignment: material.Alignment.center,
                     child: material.Text(
                       isRestricted
@@ -435,7 +435,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                                     .textTheme
                                     .titleMedium
                                     ?.color
-                                    ?.withOpacity(0.9),
+                                    ?.withValues(alpha: 0.9),
                       ),
                     ),
                   ),
@@ -468,8 +468,9 @@ class _HomePageState extends ConsumerState<HomePage> {
                               backgroundColor: isRestricted
                                   ? material.Colors.red.shade100
                                   : isButtonEnabled
-                                      ? peekSecondaryColor.withOpacity(0.1)
-                                      : peekSurfaceColor.withOpacity(0.5),
+                                      ? peekSecondaryColor.withValues(
+                                          alpha: 0.1)
+                                      : peekSurfaceColor.withValues(alpha: 0.5),
                             ),
                             child: isLoading
                                 ? const PeekLoadingIndicator.medium(
@@ -648,20 +649,22 @@ class _HomePageState extends ConsumerState<HomePage> {
       material.BuildContext context, bool isPremium) {
     final isAnonymous = FirebaseAuth.instance.currentUser?.isAnonymous ?? true;
 
+    String titleText = isPremium ? 'Welcome Back!' : 'Welcome to Peekio!';
+
     if (isPremium && !isAnonymous) {
-      return material.Row(
+      return material.Column(
         mainAxisAlignment: material.MainAxisAlignment.center,
         children: [
-          const material.Text(
-            'Welcome Back!',
-            style: material.TextStyle(
-              fontSize: 34,
+          material.Text(
+            titleText,
+            style: const material.TextStyle(
+              fontSize: 36,
               fontWeight: material.FontWeight.w600,
               letterSpacing: 0.5,
               color: peekWhiteColor,
             ),
           ),
-          const material.SizedBox(width: 8),
+          const material.SizedBox(height: 8),
           material.Chip(
             avatar: const material.Icon(material.Icons.star, size: 16),
             label: const material.Text('Premium'),
@@ -671,12 +674,9 @@ class _HomePageState extends ConsumerState<HomePage> {
       );
     }
 
-    String titleText = isPremium ? 'Welcome Back' : 'Welcome to Peekio!';
-    String subtitleText = isPremium
-        ? 'You\'re Browse as a premium'
-        : 'You\'re Browse as a guest.';
-
+    // For non-premium users, also use a Column for consistent alignment
     return material.Column(
+      mainAxisAlignment: material.MainAxisAlignment.center,
       children: [
         material.Text(
           titleText,
@@ -684,17 +684,6 @@ class _HomePageState extends ConsumerState<HomePage> {
             fontSize: 32,
             fontWeight: material.FontWeight.bold,
             color: peekWhiteColor,
-          ),
-        ),
-        material.Padding(
-          padding: const material.EdgeInsets.only(top: 10.0),
-          child: material.Text(
-            subtitleText,
-            style: material.TextStyle(
-              color: peekWhiteColor.withValues(alpha: 1),
-              fontSize: 17,
-              fontWeight: material.FontWeight.w400,
-            ),
           ),
         ),
       ],
