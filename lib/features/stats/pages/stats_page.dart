@@ -1,13 +1,10 @@
 // lib/features/stats/pages/stats_page.dart
-import 'dart:math';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/material.dart' as material;
 import 'package:flutter_svg/svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:intl/intl.dart';
 import 'package:peek/features/peek/providers/peek_providers.dart'; // For userProfileStreamProvider
 import 'package:peek/features/premium/providers/premium_controller.dart'; // For premiumStatusProvider
 import 'package:peek/theme/colors.dart'; // Your app's theme colors
@@ -81,7 +78,7 @@ class _StatsPageState extends ConsumerState<StatsPage> {
                 //   BlendMode.srcIn,
                 // ),
                 colorFilter: ColorFilter.mode(
-                  peekSecondaryColor.withOpacity(0.8),
+                  peekSecondaryColor.withValues(alpha: 0.8),
                   BlendMode.srcIn,
                 ),
               ),
@@ -108,7 +105,7 @@ class _StatsPageState extends ConsumerState<StatsPage> {
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w500,
-                      color: peekOnBackgroundColor.withOpacity(0.85),
+                      color: peekOnBackgroundColor.withValues(alpha: 0.85),
                       fontSize: 22,
                     ),
               ),
@@ -117,7 +114,7 @@ class _StatsPageState extends ConsumerState<StatsPage> {
                 "Start Peeking to get reactions from others and see your performance.",
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: peekWhiteColor.withOpacity(1),
+                      color: peekWhiteColor.withValues(alpha: 1),
                       height: 1.55,
                       fontSize: 17,
                       fontWeight: FontWeight.w400,
@@ -149,7 +146,7 @@ class _StatsPageState extends ConsumerState<StatsPage> {
             shape: BoxShape.circle,
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.2),
+                color: Colors.black.withValues(alpha: 0.2),
                 blurRadius: 10,
                 spreadRadius: 45,
               ),
@@ -166,14 +163,14 @@ class _StatsPageState extends ConsumerState<StatsPage> {
               // Dislikes Section
               PieChartSectionData(
                 value: dislikes.toDouble(),
-                color: dislikeColor.withOpacity(0.5), // Opacity added
+                color: dislikeColor.withValues(alpha: 0.5), // Opacity added
                 radius: 25, // Increased thickness
                 showTitle: false,
               ),
               // Likes Section
               PieChartSectionData(
                 value: likes.toDouble(),
-                color: likeColor.withOpacity(0.9), // Opacity added
+                color: likeColor.withValues(alpha: 0.9), // Opacity added
                 radius: 25, // Increased thickness
                 showTitle: false,
               ),
@@ -261,7 +258,7 @@ class _StatsPageState extends ConsumerState<StatsPage> {
                         'assets/images/lock.svg',
                         height: 260,
                         colorFilter: ColorFilter.mode(
-                          peekSecondaryColor.withOpacity(0.6),
+                          peekSecondaryColor.withValues(alpha: 0.6),
                           BlendMode.srcIn,
                         ),
                       ),
@@ -281,7 +278,7 @@ class _StatsPageState extends ConsumerState<StatsPage> {
                         "Upgrade to see how others react to your Peeks!",
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                              color: peekWhiteColor.withOpacity(1),
+                              color: peekWhiteColor.withValues(alpha: 1),
                             ),
                       ),
                       const SizedBox(height: 30),
@@ -420,7 +417,7 @@ class _StatsPageState extends ConsumerState<StatsPage> {
               child: Text(
                 label,
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: peekOnSurfaceColor.withOpacity(0.9),
+                    color: peekOnSurfaceColor.withValues(alpha: 0.9),
                     fontWeight: FontWeight.w500),
               ),
             ),

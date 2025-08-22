@@ -7,11 +7,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:peek/core/providers.dart';
 
-import 'package:peek/features/peek/providers/peek_providers.dart';
 import 'package:peek/features/peek/controllers/peek_controller.dart';
 
 import 'package:peek/shared/upgrade_prompt_dialog.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:peek/theme/colors.dart';
 
 /// A simple, immutable class to hold the state of the HomePage.

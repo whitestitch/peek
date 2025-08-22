@@ -3,7 +3,6 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:peek/services/terms_service.dart';
@@ -103,8 +102,8 @@ class _TermsAcceptanceScreenState extends ConsumerState<TermsAcceptanceScreen> {
                   end: Alignment.bottomCenter,
                   colors: [
                     peekBackgroundColor,
-                    peekBackgroundColor.withOpacity(0.95),
-                    peekSurfaceColor.withOpacity(0.3),
+                    peekBackgroundColor.withValues(alpha: 0.95),
+                    peekSurfaceColor.withValues(alpha: 0.3),
                   ],
                 ),
               ),
@@ -148,7 +147,7 @@ class _TermsAcceptanceScreenState extends ConsumerState<TermsAcceptanceScreen> {
                   Text(
                     'User Agreement',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          color: peekOnBackgroundColor.withOpacity(0.7),
+                          color: peekOnBackgroundColor.withValues(alpha: 0.7),
                         ),
                   ),
 
@@ -158,10 +157,10 @@ class _TermsAcceptanceScreenState extends ConsumerState<TermsAcceptanceScreen> {
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: peekSurfaceColor.withOpacity(0.5),
+                      color: peekSurfaceColor.withValues(alpha: 0.5),
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                        color: peekPrimaryColor.withOpacity(0.2),
+                        color: peekPrimaryColor.withValues(alpha: 0.2),
                         width: 1,
                       ),
                     ),
@@ -180,11 +179,14 @@ class _TermsAcceptanceScreenState extends ConsumerState<TermsAcceptanceScreen> {
                         Text(
                           'Peekio has a zero-tolerance policy for objectionable content or abusive users. '
                           'By continuing, you agree to our Terms of Service and Privacy Policy.',
-                          style:
-                              Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                    color: peekOnSurfaceColor.withOpacity(0.9),
-                                    height: 1.5,
-                                  ),
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodyMedium
+                              ?.copyWith(
+                                color:
+                                    peekOnSurfaceColor.withValues(alpha: 0.9),
+                                height: 1.5,
+                              ),
                         ),
                         const SizedBox(height: 20),
 
@@ -195,7 +197,8 @@ class _TermsAcceptanceScreenState extends ConsumerState<TermsAcceptanceScreen> {
                                 .textTheme
                                 .bodyMedium
                                 ?.copyWith(
-                                  color: peekOnSurfaceColor.withOpacity(0.9),
+                                  color:
+                                      peekOnSurfaceColor.withValues(alpha: 0.9),
                                 ),
                             children: [
                               const TextSpan(text: 'Read our '),
@@ -232,7 +235,7 @@ class _TermsAcceptanceScreenState extends ConsumerState<TermsAcceptanceScreen> {
                   // Checkbox
                   Container(
                     decoration: BoxDecoration(
-                      color: peekSurfaceColor.withOpacity(0.3),
+                      color: peekSurfaceColor.withValues(alpha: 0.3),
                       borderRadius: BorderRadius.circular(12),
                       border: _showError && !_termsAccepted
                           ? Border.all(color: peekErrorColor, width: 2)

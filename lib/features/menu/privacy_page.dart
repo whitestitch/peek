@@ -128,8 +128,8 @@ Website: www.peekio.app
     final TextTheme textTheme = Theme.of(context).textTheme;
     final boldStyle = textTheme.bodyMedium?.copyWith(
         color: peekOnBackgroundColor, fontWeight: FontWeight.w600, height: 1.5);
-    final regularStyle = textTheme.bodyMedium
-        ?.copyWith(color: peekOnBackgroundColor.withOpacity(0.9), height: 1.5);
+    final regularStyle = textTheme.bodyMedium?.copyWith(
+        color: peekOnBackgroundColor.withValues(alpha: 0.9), height: 1.5);
 
     for (String line in lines) {
       line = line.trim();

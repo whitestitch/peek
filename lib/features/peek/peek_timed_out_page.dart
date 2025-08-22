@@ -67,7 +67,7 @@ class _PeekTimedOutPageState extends material.State<PeekTimedOutPage> {
                 children: [
                   material.Icon(
                     material.Icons.timer_off_outlined,
-                    color: peekWhiteColor.withOpacity(0.7),
+                    color: peekWhiteColor.withValues(alpha: 0.7),
                     size: 80,
                   ),
                   const material.SizedBox(height: 32),
@@ -86,7 +86,7 @@ class _PeekTimedOutPageState extends material.State<PeekTimedOutPage> {
                     textAlign: material.TextAlign.center,
                     style: material.TextStyle(
                       fontSize: 16,
-                      color: peekWhiteColor.withOpacity(0.8),
+                      color: peekWhiteColor.withValues(alpha: 0.8),
                       height: 1.4,
                     ),
                   ),

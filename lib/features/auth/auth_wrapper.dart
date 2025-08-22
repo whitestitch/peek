@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:peek/core/widgets/peek_loading_indicator.dart';
 import 'package:peek/core/providers.dart';

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:peek/theme/colors.dart';
 
@@ -26,14 +25,15 @@ class ContactSupportPage extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: peekPrimaryColor.withOpacity(0.1),
+                color: peekPrimaryColor.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: peekPrimaryColor.withOpacity(0.3)),
+                border:
+                    Border.all(color: peekPrimaryColor.withValues(alpha: 0.3)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(
+                  const Icon(
                     Icons.support_agent,
                     size: 48,
                     color: peekPrimaryColor,
@@ -153,13 +153,13 @@ class ContactSupportPage extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.blue.withOpacity(0.1),
+                color: Colors.blue.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
               ),
               child: Row(
                 children: [
-                  Icon(Icons.info, color: Colors.blue),
+                  const Icon(Icons.info, color: Colors.blue),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
@@ -218,9 +218,9 @@ class ContactSupportPage extends StatelessWidget {
         leading: Icon(icon, color: peekPrimaryColor),
         title: Text(title, style: TextStyle(color: peekOnSurfaceColor)),
         subtitle: Text(subtitle,
-            style: TextStyle(color: peekOnSurfaceColor.withOpacity(0.7))),
+            style: TextStyle(color: peekOnSurfaceColor.withValues(alpha: 0.7))),
         trailing: Icon(Icons.arrow_forward_ios,
-            color: peekOnSurfaceColor.withOpacity(0.5)),
+            color: peekOnSurfaceColor.withValues(alpha: 0.5)),
         onTap: onTap,
       ),
     );

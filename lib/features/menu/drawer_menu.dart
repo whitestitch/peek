@@ -5,8 +5,6 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:peek/features/premium/providers/premium_controller.dart';
 
-import 'package:firebase_auth/firebase_auth.dart';
-
 class DrawerMenu extends ConsumerWidget {
   const DrawerMenu({super.key});
 

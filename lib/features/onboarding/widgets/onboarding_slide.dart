@@ -40,12 +40,12 @@ class OnboardingSlide extends material.StatelessWidget {
             ? null
             : material.BoxConstraints(maxWidth: screenWidth * 0.8),
         color: isOverlay
-            ? material.Colors.red.withOpacity(0.1)
-            : material.Colors.grey.shade900.withOpacity(0.5),
+            ? material.Colors.red.withValues(alpha: 0.1)
+            : material.Colors.grey.shade900.withValues(alpha: 0.5),
         child: material.Center(
             child: material.Icon(material.Icons.error_outline,
                 color: isOverlay
-                    ? material.Colors.red.withOpacity(0.6)
+                    ? material.Colors.red.withValues(alpha: 0.6)
                     : peekErrorColor,
                 size: isOverlay ? 25 : 40)));
   }
@@ -233,7 +233,7 @@ class OnboardingSlide extends material.StatelessWidget {
                     // Restore style from your code
                     style: textTheme.titleMedium?.copyWith(
                       fontWeight: material.FontWeight.w500,
-                      color: peekOnBackgroundColor.withOpacity(0.85),
+                      color: peekOnBackgroundColor.withValues(alpha: 0.85),
                       fontSize: 18,
                     ),
                   ),
@@ -244,7 +244,7 @@ class OnboardingSlide extends material.StatelessWidget {
                       textAlign: material.TextAlign.center,
                       // Restore style from your code
                       style: textTheme.bodyMedium?.copyWith(
-                        color: peekWhiteColor.withOpacity(1),
+                        color: peekWhiteColor.withValues(alpha: 1),
                         height: 1.55,
                         fontSize: 16,
                         fontWeight: material.FontWeight.w400,

@@ -134,7 +134,7 @@ class UpgradePromptDialog extends StatelessWidget {
         TextButton(
           onPressed: () => Navigator.of(context).pop(false),
           style: TextButton.styleFrom(
-            foregroundColor: peekOnBackgroundColor.withOpacity(0.7),
+            foregroundColor: peekOnBackgroundColor.withValues(alpha: 0.7),
             textStyle: const TextStyle(
               // fontSize: 16,
               fontWeight: FontWeight.w700,

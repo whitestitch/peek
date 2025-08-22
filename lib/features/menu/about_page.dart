@@ -19,7 +19,7 @@ class AboutPage extends StatelessWidget {
             child: Text(
               text,
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: peekOnBackgroundColor.withOpacity(0.9),
+                    color: peekOnBackgroundColor.withValues(alpha: 0.9),
                     height: 1.5,
                   ),
             ),
@@ -100,7 +100,7 @@ class AboutPage extends StatelessWidget {
             Text(
               "Ever wondered what someone else is seeing, right now, anywhere in the world? Peekio makes it possible.",
               style: textTheme.titleMedium?.copyWith(
-                color: peekOnBackgroundColor.withOpacity(0.9),
+                color: peekOnBackgroundColor.withValues(alpha: 0.9),
                 height: 1.4,
               ),
               // textAlign: TextAlign.center,
@@ -118,7 +118,8 @@ class AboutPage extends StatelessWidget {
             Text(
               "Peekio is a unique social experience built on spontaneity and anonymity. It's a window into real moments, shared instantly and fleetingly. No profiles, no history, just a glimpse.",
               style: textTheme.bodyLarge?.copyWith(
-                  color: peekOnBackgroundColor.withOpacity(0.9), height: 1.5),
+                  color: peekOnBackgroundColor.withValues(alpha: 0.9),
+                  height: 1.5),
               // textAlign: TextAlign.justify,
             ),
             const SizedBox(height: 24),

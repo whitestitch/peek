@@ -16,7 +16,6 @@ class SessionManager {
 
   // Session states
   static const String _stateIdle = 'idle';
-  static const String _stateInSession = 'in_session';
   static const String _stateWaitingResponse = 'waiting_response';
   static const String _statePhotoCapture = 'photo_capture';
   static const String _stateViewingImage = 'viewing_image';

@@ -126,7 +126,7 @@ class _AdminDashboardPageState extends ConsumerState<AdminDashboardPage> {
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: color.withOpacity(0.3)),
+          border: Border.all(color: color.withValues(alpha: 0.3)),
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -144,7 +144,7 @@ class _AdminDashboardPageState extends ConsumerState<AdminDashboardPage> {
             Text(
               title,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: peekOnSurfaceColor.withOpacity(0.7),
+                    color: peekOnSurfaceColor.withValues(alpha: 0.7),
                   ),
               textAlign: TextAlign.center,
             ),
@@ -162,7 +162,7 @@ class _AdminDashboardPageState extends ConsumerState<AdminDashboardPage> {
             Icon(
               Icons.check_circle,
               size: 64,
-              color: Colors.green.withOpacity(0.5),
+              color: Colors.green.withValues(alpha: 0.5),
             ),
             const SizedBox(height: 16),
             Text(
@@ -175,7 +175,7 @@ class _AdminDashboardPageState extends ConsumerState<AdminDashboardPage> {
             Text(
               'All reports have been reviewed.',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: peekOnSurfaceColor.withOpacity(0.7),
+                    color: peekOnSurfaceColor.withValues(alpha: 0.7),
                   ),
             ),
           ],
@@ -204,7 +204,7 @@ class _AdminDashboardPageState extends ConsumerState<AdminDashboardPage> {
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      color: isOverdue ? Colors.red.withOpacity(0.1) : null,
+      color: isOverdue ? Colors.red.withValues(alpha: 0.1) : null,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -256,7 +256,7 @@ class _AdminDashboardPageState extends ConsumerState<AdminDashboardPage> {
               Text(
                 'Image URL:',
                 style: TextStyle(
-                  color: peekOnSurfaceColor.withOpacity(0.7),
+                  color: peekOnSurfaceColor.withValues(alpha: 0.7),
                   fontWeight: FontWeight.w500,
                 ),
               ),
@@ -264,7 +264,7 @@ class _AdminDashboardPageState extends ConsumerState<AdminDashboardPage> {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: Colors.grey.withOpacity(0.1),
+                  color: Colors.grey.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Text(
@@ -295,7 +295,7 @@ class _AdminDashboardPageState extends ConsumerState<AdminDashboardPage> {
                     label: const Text('Details'),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: peekPrimaryColor,
-                      side: BorderSide(color: peekPrimaryColor),
+                      side: const BorderSide(color: peekPrimaryColor),
                     ),
                   ),
                 ),
@@ -318,7 +318,7 @@ class _AdminDashboardPageState extends ConsumerState<AdminDashboardPage> {
             child: Text(
               '$label:',
               style: TextStyle(
-                color: peekOnSurfaceColor.withOpacity(0.7),
+                color: peekOnSurfaceColor.withValues(alpha: 0.7),
                 fontWeight: FontWeight.w500,
               ),
             ),
@@ -326,7 +326,7 @@ class _AdminDashboardPageState extends ConsumerState<AdminDashboardPage> {
           Expanded(
             child: Text(
               value,
-              style: TextStyle(color: peekOnSurfaceColor),
+              style: const TextStyle(color: peekOnSurfaceColor),
             ),
           ),
         ],

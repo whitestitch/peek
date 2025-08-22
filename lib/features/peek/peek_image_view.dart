@@ -461,7 +461,7 @@ class _PeekImageViewState extends ConsumerState<PeekImageView> {
           // Close button (X) - aligned right
           CircleAvatar(
             radius: 20,
-            backgroundColor: Colors.black.withOpacity(0.4),
+            backgroundColor: Colors.black.withValues(alpha: 0.4),
             child: IconButton(
               onPressed: _handleCloseAction,
               icon: const Icon(Icons.close, color: Colors.white, size: 24),

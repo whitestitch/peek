@@ -315,7 +315,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final subtitleStyle = TextStyle(
       color: isPremium
           ? theme.textTheme.bodySmall?.color
-              ?.withOpacity(0.7) // Slightly dimmer for premium
+              ?.withValues(alpha: 0.7) // Slightly dimmer for premium
           : Colors.grey.shade700,
       fontSize: 12,
     );
@@ -323,7 +323,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final sectionDivider = Divider(
       height: 1,
       thickness: 0.5,
-      color: theme.dividerColor.withOpacity(0.5),
+      color: theme.dividerColor.withValues(alpha: 0.5),
     );
 
     return Scaffold(
@@ -378,7 +378,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     displayName,
                     style: TextStyle(
                         color: theme.textTheme.bodyMedium?.color
-                            ?.withOpacity(0.9)),
+                            ?.withValues(alpha: 0.9)),
                     overflow: TextOverflow.ellipsis,
                   ),
                 const SizedBox(height: 4), // Spacing between name and info text
@@ -431,7 +431,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               "Allow others to see your general location (city or region) when they peek you.",
               style: subtitleStyle.copyWith(
                   color: theme.textTheme.bodySmall?.color
-                      ?.withOpacity(0.7) // Consistent subtitle style
+                      ?.withValues(alpha: 0.7) // Consistent subtitle style
                   ),
             ),
             value: currentPreference, // Uses _localLocationSharingEnabled

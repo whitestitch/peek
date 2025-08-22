@@ -7,8 +7,8 @@ import 'package:peek/theme/colors.dart';
 
 // --- (Gradient definitions are kept but will be unused in this test) ---
 Gradient _likeGradient = LinearGradient(colors: [
-  peekPrimaryColor.withOpacity(0.8),
-  peekPrimaryColor.withOpacity(0.5)
+  peekPrimaryColor.withValues(alpha: 0.8),
+  peekPrimaryColor.withValues(alpha: 0.5)
 ]);
 const Gradient _dislikeGradient = LinearGradient(
     colors: [Color(0xEEFF758C), Color(0xEEFF7EB3)],

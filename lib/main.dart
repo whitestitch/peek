@@ -218,15 +218,15 @@ class _PeekAppState extends ConsumerState<PeekApp> {
         ),
       ),
       chipTheme: ChipThemeData(
-        backgroundColor: peekSurfaceColor.withOpacity(0.8),
+        backgroundColor: peekSurfaceColor.withValues(alpha: 0.8),
         labelStyle: TextStyle(
-          color: peekOnSurfaceColor.withOpacity(0.9),
+          color: peekOnSurfaceColor.withValues(alpha: 0.9),
           fontFamily: 'Poppins',
           fontSize: 11,
           fontWeight: FontWeight.w500,
         ),
         iconTheme: IconThemeData(
-          color: peekOnSurfaceColor.withOpacity(0.9),
+          color: peekOnSurfaceColor.withValues(alpha: 0.9),
           size: 16,
         ),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -295,11 +295,11 @@ class _PeekAppState extends ConsumerState<PeekApp> {
         labelMedium: TextStyle(fontWeight: FontWeight.w500),
       ).apply(
         bodyColor: peekOnBackgroundColor,
-        displayColor: peekOnBackgroundColor.withOpacity(0.9),
+        displayColor: peekOnBackgroundColor.withValues(alpha: 0.9),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: peekSurfaceColor.withOpacity(0.5),
+        fillColor: peekSurfaceColor.withValues(alpha: 0.5),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide.none,
@@ -313,7 +313,7 @@ class _PeekAppState extends ConsumerState<PeekApp> {
           borderSide: BorderSide(color: peekPrimaryColor, width: 1.5),
         ),
         labelStyle: TextStyle(
-          color: peekOnSurfaceColor.withOpacity(0.7),
+          color: peekOnSurfaceColor.withValues(alpha: 0.7),
           fontFamily: 'Poppins',
         ),
         hintStyle: TextStyle(

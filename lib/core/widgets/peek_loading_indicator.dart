@@ -110,7 +110,7 @@ class _PeekLoadingIndicatorState extends State<PeekLoadingIndicator>
               height: widget.size,
               child: CircularProgressIndicator(
                 strokeWidth: widget.size > 60 ? 6.0 : 3.0,
-                backgroundColor: Colors.grey.shade800.withOpacity(0.3),
+                backgroundColor: Colors.grey.shade800.withValues(alpha: 0.3),
                 valueColor:
                     AlwaysStoppedAnimation<Color>(effectiveProgressColor),
               ),

@@ -80,7 +80,7 @@ class _PeekDeclinedPageState extends material.State<PeekDeclinedPage> {
                   // --- Visual Element Placeholder ---
                   material.Icon(
                     material.Icons.sentiment_very_dissatisfied_outlined,
-                    color: peekWhiteColor.withOpacity(0.7),
+                    color: peekWhiteColor.withValues(alpha: 0.7),
                     size: 80,
                   ),
                   const material.SizedBox(height: 32),
@@ -111,8 +111,8 @@ class _PeekDeclinedPageState extends material.State<PeekDeclinedPage> {
                     textAlign: material.TextAlign.center,
                     style: material.TextStyle(
                       fontSize: 16,
-                      color: peekWhiteColor
-                          .withOpacity(0.8), // Slightly more opaque
+                      color: peekWhiteColor.withValues(
+                          alpha: 0.8), // Slightly more opaque
                       height: 1.4,
                       // Optional: Add a shadow
                       // shadows: [

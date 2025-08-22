@@ -937,9 +937,9 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    Colors.black.withOpacity(0.9),
-                    Colors.black.withOpacity(0.6),
-                    Colors.black.withOpacity(0.4),
+                    Colors.black.withValues(alpha: 0.9),
+                    Colors.black.withValues(alpha: 0.6),
+                    Colors.black.withValues(alpha: 0.4),
                   ],
                 ),
               )
@@ -1004,14 +1004,14 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black
-                          .withOpacity(_isButtonPressed ? 0.05 : 0.08),
+                          .withValues(alpha: _isButtonPressed ? 0.05 : 0.08),
                       blurRadius: _isButtonPressed ? 8 : 16,
                       spreadRadius: _isButtonPressed ? 0.5 : 1,
                       offset: Offset(0, _isButtonPressed ? 3 : 6),
                     ),
                     BoxShadow(
                       color: Colors.black
-                          .withOpacity(_isButtonPressed ? 0.03 : 0.06),
+                          .withValues(alpha: _isButtonPressed ? 0.03 : 0.06),
                       blurRadius: _isButtonPressed ? 20 : 32,
                       spreadRadius: _isButtonPressed ? 0.3 : 0.6,
                       offset: Offset(0, _isButtonPressed ? 6 : 12),
@@ -1108,7 +1108,7 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
   Widget _buildUploadOverlay() {
     return Positioned.fill(
       child: Container(
-        color: Colors.black.withOpacity(0.8),
+        color: Colors.black.withValues(alpha: 0.8),
         child: const Center(
           child: PeekLoadingIndicator.medium(
             logoColor: Colors.white,
@@ -1126,7 +1126,7 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
       right: 20,
       child: CircleAvatar(
         radius: 20,
-        backgroundColor: Colors.black.withOpacity(0.4),
+        backgroundColor: Colors.black.withValues(alpha: 0.4),
         child: IconButton(
           onPressed: _handleCloseAction,
           icon: const Icon(Icons.close, color: Colors.white, size: 24),

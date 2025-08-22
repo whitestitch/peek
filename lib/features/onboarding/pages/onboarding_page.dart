@@ -268,7 +268,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
               textAlign: TextAlign.center,
               style: textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w500,
-                color: peekOnBackgroundColor.withOpacity(0.85),
+                color: peekOnBackgroundColor.withValues(alpha: 0.85),
                 fontSize: 22,
               ),
             ),
@@ -278,7 +278,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                 slideData['text']!,
                 textAlign: TextAlign.center,
                 style: textTheme.bodyMedium?.copyWith(
-                  color: peekWhiteColor.withOpacity(1),
+                  color: peekWhiteColor.withValues(alpha: 1),
                   height: 1.55,
                   fontSize: 17,
                   fontWeight: FontWeight.w400,
@@ -317,7 +317,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
             onPressed: _isRequestingPermission ? null : _finishOnboarding,
             // Style
             style: TextButton.styleFrom(
-              foregroundColor: peekOnBackgroundColor.withOpacity(0.7),
+              foregroundColor: peekOnBackgroundColor.withValues(alpha: 0.7),
               textStyle: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
@@ -344,7 +344,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
             child: TextButton(
               onPressed: !isLastSlide ? _skipOnboarding : null,
               style: TextButton.styleFrom(
-                foregroundColor: peekOnBackgroundColor.withOpacity(0.7),
+                foregroundColor: peekOnBackgroundColor.withValues(alpha: 0.7),
                 textStyle: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w700,

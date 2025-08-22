@@ -472,7 +472,7 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
               child: Container(
                 color:
                     // Optional: slight dimming
-                    Colors.black.withOpacity(0.55),
+                    Colors.black.withValues(alpha: 0.55),
               ),
             ),
           ),
@@ -492,7 +492,7 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
                     // Report/Block Button (Three-dots top-left)
                     CircleAvatar(
                       radius: 20,
-                      backgroundColor: Colors.black.withOpacity(0.4),
+                      backgroundColor: Colors.black.withValues(alpha: 0.4),
                       child: PopupMenuButton<String>(
                         iconSize: 22,
                         icon: const Icon(Icons.more_vert, color: Colors.white),
@@ -533,7 +533,7 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
                     // Skip Button (X top-right)
                     CircleAvatar(
                       radius: 20,
-                      backgroundColor: Colors.black.withOpacity(0.4),
+                      backgroundColor: Colors.black.withValues(alpha: 0.4),
                       child: IconButton(
                         tooltip: 'Skip',
                         icon: const Icon(Icons.close,
@@ -599,7 +599,7 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
                         "Your feedback is anonymous.",
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                          color: Colors.white.withOpacity(0.90),
+                          color: Colors.white.withValues(alpha: 0.90),
                           fontSize: 16,
                         ),
                       ),
@@ -624,7 +624,7 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
                                 vertical: 18,
                               ),
                               elevation: 8,
-                              shadowColor: Colors.black.withOpacity(0.2),
+                              shadowColor: Colors.black.withValues(alpha: 0.2),
                             ),
                             child: const Icon(
                               // Icons.heart_broken,
@@ -647,7 +647,7 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
                                 vertical: 18,
                               ),
                               elevation: 8,
-                              shadowColor: Colors.black.withOpacity(0.2),
+                              shadowColor: Colors.black.withValues(alpha: 0.2),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(30),
                               ),
@@ -673,7 +673,7 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
           if (_isSubmitting || _isProcessingAction)
             Positioned.fill(
               child: Container(
-                color: Colors.black.withOpacity(0.6),
+                color: Colors.black.withValues(alpha: 0.6),
                 child: const Center(
                     child: PeekLoadingIndicator.small(logoColor: Colors.white)),
               ),
