@@ -89,14 +89,14 @@ class _HomePageState extends ConsumerState<HomePage> {
     String message;
 
     if (reason == 'receiver_cancelled') {
-      title = "Peek Cancelled!";
-      message = "The receiver cancelled the peek request.";
+      title = "Peekio Cancelled!";
+      message = "The receiver cancelled the Peekio request.";
     } else if (reason == 'sender_cancelled') {
-      title = "Peek Stopped";
-      message = "The sender stopped the peek request.";
+      title = "Peekio Stopped";
+      message = "The sender stopped the Peekio request.";
     } else {
-      title = "Peek Cancelled";
-      message = "The peek request was cancelled.";
+      title = "Peekio Cancelled";
+      message = "The Peekio request was cancelled.";
     }
 
     // Add a small delay to ensure navigation is complete
@@ -658,7 +658,7 @@ class _HomePageState extends ConsumerState<HomePage> {
           material.Text(
             titleText,
             style: const material.TextStyle(
-              fontSize: 34,
+              fontSize: 36,
               fontWeight: material.FontWeight.w600,
               letterSpacing: 0.5,
               color: peekWhiteColor,

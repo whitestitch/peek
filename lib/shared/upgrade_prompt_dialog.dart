@@ -49,17 +49,17 @@ class UpgradePromptDialog extends StatelessWidget {
       case UpgradeReason.dailyLimitReached:
         titleText = "🚫 Daily Limit Reached!";
         contentText =
-            "You've used all your free peeks for today.\nUpgrade to Premium for unlimited access and more:";
+            "You've used all your free Peekios for today.\nUpgrade to Premium for unlimited access and more:";
         break;
       case UpgradeReason.periodic:
         titleText = "Enjoying Peekio?";
         contentText =
-            "Enjoying Peek? Upgrade to Premium and enjoy these benefits:";
+            "Enjoying Peekio? Upgrade to Premium and enjoy these benefits:";
         break;
       case UpgradeReason.anonymous:
         titleText = 'Account Required';
         contentText =
-            'Please sign in or create an account to send peeks and enjoy all features.';
+            'Please sign in or create an account to send Peekios and enjoy all features.';
         break;
       case UpgradeReason.custom:
         titleText = customTitle ?? "Peekio Premium";
@@ -92,15 +92,15 @@ class UpgradePromptDialog extends StatelessWidget {
           // *** FIX: Call the public BenefitRow constructor ***
           const BenefitRow(
             icon: Icons.all_inclusive,
-            text: "Unlimited Daily Peeks",
+            text: "Unlimited Daily Peekios",
           ),
           const BenefitRow(
             icon: Icons.flash_on,
-            text: "No Cooldowns Between Peeks",
+            text: "No Cooldowns Between Peekios",
           ),
           const BenefitRow(
             icon: Icons.bar_chart,
-            text: "Access Your Peeks Stats",
+            text: "Access Your Peekios Stats",
           ),
           const Divider(height: 20, color: Colors.white24),
           const BenefitRow(
@@ -109,7 +109,7 @@ class UpgradePromptDialog extends StatelessWidget {
           ),
           const BenefitRow(
             icon: Icons.visibility_outlined,
-            text: "Reveal Who Peeked You",
+            text: "Reveal Who Peekio'd You",
           ),
           const BenefitRow(
             icon: Icons.location_on_outlined,

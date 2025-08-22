@@ -456,7 +456,7 @@ class FirestoreService {
   }
 
   /// Increments the 'dislikesReceivedCount' for the specified user.
-  /// [targetUserId] is the ID of the user whose peek received a dislike.
+  /// [targetUserId] is the ID of the user whose Peekio received a dislike.
   Future<void> incrementDislikesReceived(String targetUserId) async {
     debugPrint(
         "[FirestoreService] incrementDislikesReceived: handled server-side; no-op.");
@@ -557,7 +557,7 @@ class FirestoreService {
     }
   }
 
-  /// Checks if a user can send peeks based on their reputation status
+  /// Checks if a user can send Peekios based on their reputation status
   Future<bool> canUserSendPeeks(String userId) async {
     try {
       final userDoc = await _db.collection('users').doc(userId).get();
@@ -572,15 +572,16 @@ class FirestoreService {
 
       if (status == 'restricted') {
         debugPrint(
-            "[FirestoreService] User $userId cannot send peeks - status: $status");
+            "[FirestoreService] User $userId cannot send Peekios - status: $status");
         return false;
       }
 
       debugPrint(
-          "[FirestoreService] User $userId can send peeks - status: $status");
+          "[FirestoreService] User $userId can send Peekios - status: $status");
       return true;
     } catch (e) {
-      debugPrint("[FirestoreService] Error checking user peek permission: $e");
+      debugPrint(
+          "[FirestoreService] Error checking user Peekio permission: $e");
       return true; // Allow if check fails
     }
   }
