@@ -120,7 +120,8 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
     try {
       if (mounted) {
         debugPrint('🔒 [ReactionScreen] Disposing - ensuring session cleanup');
-        _endSession();
+        // Don't call _endSession() here as it uses ref which may be invalid
+        // Session cleanup should happen before navigation, not during disposal
       }
     } catch (e) {
       debugPrint('❌ [ReactionScreen] Error in dispose cleanup: $e');

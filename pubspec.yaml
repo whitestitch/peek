@@ -91,7 +91,6 @@ flutter:
   assets:
     # Keep asset declarations as before
     - assets/images/
-    - assets/icons/
     - assets/animations/
     - assets/animations/lottie/ # Changed from rive
 
