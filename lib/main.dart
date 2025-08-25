@@ -102,19 +102,193 @@ class _PeekAppState extends ConsumerState<PeekApp> {
     super.dispose();
   }
 
+  /// 🔒 ENHANCED: Show synchronized cancellation panel
+  void _showSyncedCancellationPanel(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        // Auto-close after 5 seconds
+        Future.delayed(const Duration(seconds: 5), () {
+          if (ctx.mounted) {
+            Navigator.of(ctx).pop();
+          }
+        });
+
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(30, 40, 30, 80),
+          decoration: const BoxDecoration(
+            color: peekBackgroundColor,
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(20),
+              topRight: Radius.circular(20),
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.cancel_outlined,
+                  size: 60, color: Colors.white70),
+              const SizedBox(height: 20),
+              const Text("Peekio Stopped",
+                  style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white)),
+              const SizedBox(height: 10),
+              const Text("The sender stopped the Peekio request.",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 16, color: Colors.white70)),
+              const SizedBox(height: 30),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: peekSecondaryColor,
+                    foregroundColor: peekSurfaceColor,
+                    minimumSize: const Size(double.infinity, 50),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(30),
+                    ),
+                  ),
+                  child: const Text('OK',
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// 🔒 ENHANCED: Show synchronized timeout panel
+  void _showSyncedTimeoutPanel(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        // Auto-close after 5 seconds
+        Future.delayed(const Duration(seconds: 5), () {
+          if (ctx.mounted) {
+            Navigator.of(ctx).pop();
+          }
+        });
+
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(30, 40, 30, 80),
+          decoration: const BoxDecoration(
+            color: peekBackgroundColor,
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(20),
+              topRight: Radius.circular(20),
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.timer_off_outlined,
+                  size: 60, color: Colors.white70),
+              const SizedBox(height: 20),
+              const Text("Time's Up!",
+                  style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white)),
+              const SizedBox(height: 10),
+              const Text("The peek request has expired.",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 16, color: Colors.white70)),
+              const SizedBox(height: 30),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: peekSecondaryColor,
+                    foregroundColor: peekSurfaceColor,
+                    minimumSize: const Size(double.infinity, 50),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(30),
+                    ),
+                  ),
+                  child: const Text('OK',
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final router = ref.watch(routerProvider);
 
-    // Listen for peek request changes and handle dialogs
-    // Handle requests immediately - dialog manager will handle context checks
+    // 🔒 ENHANCED: Listen for session-aware peek request changes and handle dialogs
+    // This provider will automatically filter out requests when user is in session
     ref.listen<AsyncValue<List<QueryDocumentSnapshot<Map<String, dynamic>>>>>(
-      pendingPeekRequestsProvider,
+      sessionAwarePendingRequestsProvider,
       (previous, next) {
         next.whenData((requests) async {
           debugPrint(
-              '📋 [PeekApp] Handling ${requests.length} pending requests');
+              '📋 [PeekApp] Handling ${requests.length} session-aware pending requests');
           await _dialogManager.handlePendingRequests(requests);
+        });
+      },
+    );
+
+    // 🔒 ENHANCED: Listen for status changes to show synchronized panels
+    ref.listen<AsyncValue<List<QueryDocumentSnapshot<Map<String, dynamic>>>>>(
+      requestStatusChangesProvider,
+      (previous, next) {
+        next.whenData((statusChanges) async {
+          for (final request in statusChanges) {
+            final data = request.data();
+            final status = data['status'] as String?;
+            final requestId = request.id;
+
+            debugPrint(
+                '🔒 [PeekApp] Status change detected: $requestId -> $status');
+
+            // Show appropriate panel based on status
+            if (status == 'cancelled_by_sender') {
+              debugPrint(
+                  '🔒 [PeekApp] Showing cancellation panel for $requestId');
+              _dialogManager
+                  .dismissActiveDialog(); // Close any active dialog first
+              await Future.delayed(
+                  const Duration(milliseconds: 100)); // Small delay
+              final context = rootNavigatorKey.currentContext;
+              if (context != null && context.mounted) {
+                _showSyncedCancellationPanel(context);
+              }
+              break; // Handle one at a time
+            } else if (status == 'expired' ||
+                status == 'timeout' ||
+                status == 'timed_out') {
+              debugPrint(
+                  '🔒 [PeekApp] Showing timeout panel for $requestId (status: $status)');
+              _dialogManager
+                  .dismissActiveDialog(); // Close any active dialog first
+              await Future.delayed(
+                  const Duration(milliseconds: 100)); // Small delay
+              final context = rootNavigatorKey.currentContext;
+              if (context != null && context.mounted) {
+                _showSyncedTimeoutPanel(context);
+              }
+              break; // Handle one at a time
+            }
+          }
         });
       },
     );

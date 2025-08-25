@@ -254,6 +254,19 @@ class NotificationService {
           _handleIncomingPeekRequest(requestId);
         }
       }
+
+      // 🔒 ENHANCED: Handle peek cancellation notifications
+      if (type == 'peek_cancelled' || type == 'peek_request_cancelled') {
+        final String? reason = message.data['reason'];
+        if (reason == 'sender_cancelled') {
+          debugPrint(
+              '[NotificationService] Received sender cancellation notification');
+          // Navigate to home with cancellation parameters
+          if (_router != null) {
+            _router!.go('/?show=peekCancelled&reason=sender_cancelled');
+          }
+        }
+      }
     });
 
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
@@ -334,6 +347,29 @@ class NotificationService {
         );
         break;
 
+      // 🔒 ENHANCED: Handle peek cancellation notifications
+      case 'peek_cancelled':
+      case 'peek_request_cancelled':
+        final String? reason = data['reason'] as String?;
+        if (reason == 'sender_cancelled') {
+          debugPrint(
+            "[NotificationService] Type: 'peek_cancelled' with reason 'sender_cancelled'. Navigating to home with cancellation panel.",
+          );
+          targetUri = Uri(
+            path: '/',
+            queryParameters: {
+              'show': 'peekCancelled',
+              'reason': 'sender_cancelled',
+            },
+          );
+        } else {
+          debugPrint(
+            "[NotificationService] Type: 'peek_cancelled' with unknown reason: '$reason'. Navigating home.",
+          );
+          targetUri = Uri(path: '/');
+        }
+        break;
+
       // --- Add other notification types here if needed ---
       // case 'some_other_type':
       //   debugPrint("[NotificationService] Type: 'some_other_type'. Navigating...");
@@ -351,18 +387,16 @@ class NotificationService {
     }
 
     // --- Perform navigation ---
-    if (targetUri != null) {
-      try {
-        debugPrint(
-          "[NotificationService] Triggering navigation to: ${targetUri.toString()}",
-        );
-        _router!.go(targetUri.toString());
-      } catch (e) {
-        debugPrint(
-          "❌ [NotificationService] Error during router.go navigation: $e",
-        );
-        _router!.go('/'); // Fallback to home on navigation error
-      }
+    try {
+      debugPrint(
+        "[NotificationService] Triggering navigation to: ${targetUri.toString()}",
+      );
+      _router!.go(targetUri.toString());
+    } catch (e) {
+      debugPrint(
+        "❌ [NotificationService] Error during router.go navigation: $e",
+      );
+      _router!.go('/'); // Fallback to home on navigation error
     }
     // No else needed, default case in switch handles fallback or returns
   }

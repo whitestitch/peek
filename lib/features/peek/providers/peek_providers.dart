@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 // REMOVED: import 'package:peek/features/peek/controllers/peek_controller.dart';
 import '../data/peek_repository.dart';
 import '../../../core/overlay_animation_service.dart';
+import '../../../core/providers/session_providers.dart';
 import 'package:peek/features/onboarding/providers/onboarding_provider.dart';
 
 final peekAuthUidProvider = StreamProvider<String?>((ref) {
@@ -86,6 +87,125 @@ final pendingPeekRequestsProvider = StreamProvider.autoDispose<
     debugPrint(
         "[pendingPeekRequestsProvider] Snapshot received. Found ${snapshot.docs.length} pending requests for UID: $uid. Request IDs: ${snapshot.docs.map((d) => d.id).toList()}");
     return snapshot.docs;
+  });
+});
+
+// 🔒 ENHANCED: Session-aware pending requests provider that filters based on session state
+final sessionAwarePendingRequestsProvider = StreamProvider.autoDispose<
+    List<QueryDocumentSnapshot<Map<String, dynamic>>>>((ref) {
+  // Watch both the base pending requests and session state
+  final pendingRequestsAsync = ref.watch(pendingPeekRequestsProvider);
+
+  return pendingRequestsAsync.when(
+    data: (requests) {
+      // 🔒 ENHANCED: Check session exclusivity before allowing requests through
+      final sessionManager = ref.read(sessionManagerProvider);
+      final canReceivePeeks = ref.read(canReceivePeeksProvider);
+
+      // If user is in session or cannot receive peeks, return empty list
+      if (sessionManager.isInSession || !canReceivePeeks) {
+        debugPrint(
+            "[sessionAwarePendingRequestsProvider] 🔒 User in session (${sessionManager.isInSession}) or cannot receive peeks ($canReceivePeeks), filtering out ${requests.length} requests");
+        return Stream.value(<QueryDocumentSnapshot<Map<String, dynamic>>>[]);
+      }
+
+      debugPrint(
+          "[sessionAwarePendingRequestsProvider] ✅ User can receive peeks, allowing ${requests.length} requests through");
+      return Stream.value(requests);
+    },
+    loading: () =>
+        Stream.value(<QueryDocumentSnapshot<Map<String, dynamic>>>[]),
+    error: (error, stack) {
+      debugPrint("[sessionAwarePendingRequestsProvider] Error: $error");
+      return Stream.value(<QueryDocumentSnapshot<Map<String, dynamic>>>[]);
+    },
+  );
+});
+
+// 🔒 ENHANCED: Provider that listens for cancelled requests to show "Peekio Stopped" panel
+final cancelledRequestsProvider = StreamProvider.autoDispose<
+    List<QueryDocumentSnapshot<Map<String, dynamic>>>>((ref) {
+  // Watch the auth state to automatically refresh when user changes
+  final authState = ref.watch(peekAuthUidProvider);
+  final uid = authState.value;
+
+  if (uid == null) {
+    debugPrint(
+        "[cancelledRequestsProvider] No authenticated user. Returning empty stream.");
+    return Stream.value([]);
+  }
+
+  debugPrint(
+      "[cancelledRequestsProvider] Listening for cancelled requests for user: $uid");
+
+  return FirebaseFirestore.instance
+      .collection('peek_requests')
+      .where('receiverUid', isEqualTo: uid)
+      .where('status', isEqualTo: 'cancelled_by_sender')
+      .orderBy('cancelledAt', descending: true)
+      .limit(1) // Only need the most recent cancellation
+      .snapshots()
+      .handleError((error, stackTrace) {
+    debugPrint("[cancelledRequestsProvider] Firestore stream error: $error");
+  }).map((snapshot) {
+    debugPrint(
+        "[cancelledRequestsProvider] Snapshot received. Found ${snapshot.docs.length} cancelled requests for UID: $uid");
+    return snapshot.docs;
+  });
+});
+
+// 🔒 ENHANCED: Provider that monitors request status changes for synchronized panels
+final requestStatusChangesProvider = StreamProvider.autoDispose<
+    List<QueryDocumentSnapshot<Map<String, dynamic>>>>((ref) {
+  // Watch the auth state to automatically refresh when user changes
+  final authState = ref.watch(peekAuthUidProvider);
+  final uid = authState.value;
+
+  if (uid == null) {
+    debugPrint(
+        "[requestStatusChangesProvider] No authenticated user. Returning empty stream.");
+    return Stream.value([]);
+  }
+
+  debugPrint(
+      "[requestStatusChangesProvider] Listening for status changes for user: $uid");
+
+  // Listen to all requests for this user to catch status changes
+  return FirebaseFirestore.instance
+      .collection('peek_requests')
+      .where('receiverUid', isEqualTo: uid)
+      .orderBy('createdAt', descending: true)
+      .limit(5) // Monitor recent requests
+      .snapshots()
+      .handleError((error, stackTrace) {
+    debugPrint("[requestStatusChangesProvider] Firestore stream error: $error");
+  }).map((snapshot) {
+    debugPrint(
+        "[requestStatusChangesProvider] Snapshot received. Found ${snapshot.docs.length} requests for UID: $uid");
+
+    // Filter for requests that have status changes we care about
+    final relevantRequests = snapshot.docs.where((doc) {
+      final data = doc.data();
+      final status = data['status'] as String?;
+      final createdAt = data['createdAt'] as Timestamp?;
+
+      // Only consider recent requests (within last 5 minutes)
+      if (createdAt != null) {
+        final age = DateTime.now().difference(createdAt.toDate());
+        if (age.inMinutes > 5) return false;
+      }
+
+      // Check for statuses that need panels
+      return status == 'cancelled_by_sender' ||
+          status == 'expired' ||
+          status == 'timeout' ||
+          status == 'timed_out';
+    }).toList();
+
+    debugPrint(
+        "[requestStatusChangesProvider] Found ${relevantRequests.length} relevant status changes");
+
+    return relevantRequests;
   });
 });
 
@@ -228,7 +348,7 @@ final peekRequestHistoryProvider = StreamProvider.autoDispose<
   });
 });
 
-/// users/<me>/received_reactions
+/// users/<me>/received_reactions - Only NEW reactions since last check
 final newReactionStreamProvider = StreamProvider.autoDispose<
     List<QueryDocumentSnapshot<Map<String, dynamic>>>>((ref) {
   // Watch the auth state to be reactive.
@@ -239,19 +359,26 @@ final newReactionStreamProvider = StreamProvider.autoDispose<
     return Stream.value([]);
   }
 
-  // Only consider reactions created after this app session started.
-  final appStart = ref.read(appStartTimeProvider);
+  // Get the last processed reaction time to only fetch newer reactions
+  final lastProcessedTime = ref.watch(lastProcessedReactionTimeProvider);
+
+  // Use the last processed time (it's always initialized with appStartTime)
+  final cutoffTime = lastProcessedTime;
 
   return FirebaseFirestore.instance
       .collection('users')
       .doc(uid)
       .collection('received_reactions')
-      // Filter out any historical/backlog docs on the initial snapshot.
-      .where('timestamp', isGreaterThan: Timestamp.fromDate(appStart))
+      // Only fetch reactions newer than the last processed one
+      .where('timestamp', isGreaterThan: Timestamp.fromDate(cutoffTime))
       .orderBy('timestamp', descending: false)
       .snapshots()
       .map((snap) => snap.docs);
 });
+
+// Provider to track the timestamp of the last processed reaction
+final lastProcessedReactionTimeProvider =
+    StateProvider<DateTime>((ref) => ref.read(appStartTimeProvider));
 
 final pendingAnimationProvider = StateProvider<List<String>>((ref) => []);
 
@@ -283,7 +410,7 @@ final reactionOverlayListenerProvider = Provider.autoDispose<void>((ref) {
       // On the *first* snapshot, only animate docs created *after* app start.
       // Everything older (or missing timestamp) is "primed" without animation.
       if (!primed) {
-        final appStart = ref.read(appStartTimeProvider); // defined earlier
+        // final appStart = ref.read(appStartTimeProvider); // defined earlier - not used in this block
 
         // If onboarding isn't done yet, or this is the first emission for this session,
         // prime all existing docs as processed WITHOUT animating.

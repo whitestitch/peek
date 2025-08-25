@@ -52,6 +52,15 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
 
     _initializeManagers();
     _checkPermissionsAndStartCountdown();
+
+    // 🔒 ENHANCED: Activate reaction listener for animations during wait
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ref.read(reactionOverlayListenerProvider);
+        debugPrint(
+            "[PeekSenderWaitPage] ✅ Reaction overlay listener activated");
+      }
+    });
   }
 
   void _initializeManagers() {

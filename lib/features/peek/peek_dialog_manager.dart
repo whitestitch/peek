@@ -15,8 +15,9 @@ class PeekDialogManager {
   String? _currentRequestId;
   bool _isInitialized = false; // Track initialization status
 
-  // 🔒 NEW: Track active dialog context for proper cleanup
-  BuildContext? _activeDialogContext;
+  // 🔒 ENHANCED: Use OverlayEntry for navigation-independent dialogs
+  OverlayEntry? _activeDialogOverlay;
+  bool _isDialogShowing = false;
 
   PeekDialogManager({
     required this.navigatorKey,
@@ -29,13 +30,17 @@ class PeekDialogManager {
     debugPrint('🎭 [PeekDialogManager] Initialized and ready to show dialogs');
   }
 
-  /// 🔒 NEW: Dismiss active dialog if any
+  /// 🔒 ENHANCED: Dismiss active dialog overlay
   void dismissActiveDialog() {
-    if (_activeDialogContext != null && _activeDialogContext!.mounted) {
-      debugPrint(
-          '🎭 [PeekDialogManager] Dismissing active dialog due to navigation');
-      Navigator.of(_activeDialogContext!, rootNavigator: true).pop();
-      _activeDialogContext = null;
+    if (_activeDialogOverlay != null && _isDialogShowing) {
+      debugPrint('🎭 [PeekDialogManager] Dismissing active dialog overlay');
+      try {
+        _activeDialogOverlay!.remove();
+      } catch (e) {
+        debugPrint('⚠️ [PeekDialogManager] Error removing overlay: $e');
+      }
+      _activeDialogOverlay = null;
+      _isDialogShowing = false;
     }
 
     // Clear provider and cancel timer
@@ -55,22 +60,34 @@ class PeekDialogManager {
       return;
     }
 
-    // 🔒 NEW: Check if user is in an active session
-    // 🔒 ENHANCED: Force refresh session state before checking
+    // 🔒 ENHANCED: Strict session exclusivity check
     final sessionManager = ref.read(sessionManagerProvider);
-    if (sessionManager.isInSession) {
-      // 🔒 NEW: Double-check by verifying peek request status
+    final canReceivePeeks = ref.read(canReceivePeeksProvider);
+
+    // Double-check session state with both SessionManager and provider
+    if (sessionManager.isInSession || !canReceivePeeks) {
+      debugPrint(
+          '🔒 [PeekDialogManager] User is in active session (manager: ${sessionManager.isInSession}, canReceive: $canReceivePeeks), blocking new peek request');
+
+      // Force refresh session state to clean up any stale sessions
       await sessionManager.checkPeekRequestStatus();
 
-      // Re-check after potential cleanup
-      if (sessionManager.isInSession) {
+      // Re-check after cleanup - if still in session, block the request
+      if (sessionManager.isInSession || !ref.read(canReceivePeeksProvider)) {
         debugPrint(
-            '🔒 [PeekDialogManager] User is in active session, blocking new peek request');
+            '🔒 [PeekDialogManager] Session check confirmed - blocking peek request');
         return;
       } else {
         debugPrint(
             '🔒 [PeekDialogManager] Session was stale, now cleaned up - allowing peek request');
       }
+    }
+
+    // 🔒 ENHANCED: Check if dialog is already showing
+    if (_isDialogShowing || _activeDialogOverlay != null) {
+      debugPrint(
+          '🔒 [PeekDialogManager] Dialog already showing, blocking duplicate request');
+      return;
     }
 
     final requestId = requestDoc.id;
@@ -92,144 +109,130 @@ class PeekDialogManager {
     debugPrint('🎭 [PeekDialogManager] Starting expiration timer');
     _startExpirationTimer(requestId);
 
-    // Try to get context, with retry if needed
-    debugPrint('🎭 [PeekDialogManager] Getting navigator context');
-    final context = navigatorKey.currentContext;
-    debugPrint('🎭 [PeekDialogManager] Context is null: ${context == null}');
-
-    if (context == null) {
-      debugPrint(
-          '❌ [PeekDialogManager] Navigator context is null, will retry in 100ms');
-
-      // Retry after a short delay
-      Future.delayed(const Duration(milliseconds: 100), () {
-        debugPrint('🎭 [PeekDialogManager] Retry attempt after 100ms delay');
-        if (_currentRequestId == requestId) {
-          final retryContext = navigatorKey.currentContext;
-          debugPrint(
-              '🎭 [PeekDialogManager] Retry context is null: ${retryContext == null}');
-          if (retryContext != null && retryContext.mounted) {
-            debugPrint(
-                '✅ [PeekDialogManager] Retry successful, showing dialog');
-            _showDialogWithContext(retryContext, requestId);
-          } else {
-            debugPrint(
-                '❌ [PeekDialogManager] Retry failed, context still null or not mounted');
-          }
-        } else {
-          debugPrint(
-              '🎭 [PeekDialogManager] Request ID changed during retry, aborting');
-        }
-      });
-      debugPrint('🎭 [PeekDialogManager] Returning from null context path');
-      return;
-    }
-
+    // 🔒 ENHANCED: Use OverlayEntry for navigation-independent dialog
     debugPrint(
-        '✅ [PeekDialogManager] Navigator context found, showing dialog directly');
-    _showDialogWithContext(context, requestId);
+        '🎭 [PeekDialogManager] Creating navigation-independent dialog overlay');
+    _showDialogOverlay(requestId);
     debugPrint('🎭 [PeekDialogManager] showPeekRequestDialog EXIT');
   }
 
-  /// Show dialog with valid context
-  void _showDialogWithContext(BuildContext context, String requestId) {
+  /// 🔒 ENHANCED: Show dialog as navigation-independent overlay
+  void _showDialogOverlay(String requestId) {
     debugPrint(
-        '🎭 [PeekDialogManager] _showDialogWithContext called for: $requestId');
-    debugPrint('🎭 [PeekDialogManager] Context mounted: ${context.mounted}');
-    debugPrint('🎭 [PeekDialogManager] About to call showDialog');
+        '🎭 [PeekDialogManager] _showDialogOverlay called for: $requestId');
 
-    // 🔒 FIX: Store dialog context for proper cleanup
-    _activeDialogContext = context;
+    // Get the overlay state from the navigator
+    final NavigatorState? navigatorState = navigatorKey.currentState;
+    if (navigatorState == null) {
+      debugPrint(
+          '❌ [PeekDialogManager] Navigator state is null, cannot show overlay');
+      return;
+    }
 
-    // 🔒 FIX: Use post-frame callback to ensure context is stable
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_currentRequestId == requestId && context.mounted) {
-        // Show dialog immediately - no post-frame callback complexity
-        // ignore: use_build_context_synchronously
-        showDialog<void>(
-          context: context,
-          barrierDismissible: false,
-          barrierColor: Colors.black54,
-          useSafeArea: true,
-          useRootNavigator: true,
-          builder: (BuildContext dialogContext) {
-            debugPrint('🎭 [PeekDialogManager] Dialog builder called');
-            return AlertDialog(
-              title: const Text(
-                'New Peek Request!',
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: peekWhiteColor,
-                  letterSpacing: 0.5,
-                  fontSize: 26,
-                ),
+    final OverlayState overlayState = navigatorState.overlay!;
+
+    // Create the overlay entry
+    _activeDialogOverlay = OverlayEntry(
+      builder: (BuildContext overlayContext) {
+        return _buildDialogContent(requestId);
+      },
+    );
+
+    // Insert the overlay
+    overlayState.insert(_activeDialogOverlay!);
+    _isDialogShowing = true;
+
+    debugPrint('✅ [PeekDialogManager] Dialog overlay displayed successfully');
+  }
+
+  /// Build the dialog content widget - restored to original full-height layout
+  Widget _buildDialogContent(String requestId) {
+    return Material(
+      type: MaterialType.transparency,
+      child: Container(
+        color: Colors.black54, // Barrier color
+        child: SafeArea(
+          child: AlertDialog(
+            title: const Text(
+              'New Peek Request!',
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: peekWhiteColor,
+                letterSpacing: 0.5,
+                fontSize: 26,
               ),
-              content: Text(
-                'Someone wants to share a peek with you. Accept?',
-                style: TextStyle(
-                  color: peekWhiteColor.withValues(alpha: 1),
-                  height: 1.55,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w400,
-                ),
+            ),
+            content: Text(
+              'Someone wants to share a peek with you. Accept?',
+              style: TextStyle(
+                color: peekWhiteColor.withValues(alpha: 1),
+                height: 1.55,
+                fontSize: 17,
+                fontWeight: FontWeight.w400,
               ),
-              actionsAlignment: MainAxisAlignment.spaceBetween,
-              actions: <Widget>[
-                TextButton(
-                  style: TextButton.styleFrom(
-                    foregroundColor:
-                        peekOnBackgroundColor.withValues(alpha: 0.7),
-                    textStyle: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                    ),
+            ),
+            actionsAlignment: MainAxisAlignment.spaceBetween,
+            actions: <Widget>[
+              TextButton(
+                style: TextButton.styleFrom(
+                  foregroundColor: peekOnBackgroundColor.withValues(alpha: 0.7),
+                  textStyle: const TextStyle(
+                    fontWeight: FontWeight.w700,
                   ),
-                  onPressed: () {
-                    debugPrint('🎭 [PeekDialogManager] Decline button pressed');
-                    Navigator.of(dialogContext).pop();
-                    _declinePeekRequest(requestId);
-                  },
-                  child: const Text('Decline'),
                 ),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 24, vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(30),
-                    ),
+                onPressed: () {
+                  debugPrint('🎭 [PeekDialogManager] Decline button pressed');
+                  _closeDialogOverlay();
+                  _declinePeekRequest(requestId);
+                },
+                child: const Text('Decline'),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(30),
                   ),
-                  onPressed: () {
-                    debugPrint('🎭 [PeekDialogManager] Accept button pressed');
-                    Navigator.of(dialogContext).pop();
-                    _acceptPeekRequest(requestId);
-                  },
-                  child: const Text('Accept'),
                 ),
-              ],
-            );
-          },
-        ).then((_) {
-          debugPrint('🎭 [PeekDialogManager] Dialog closed');
+                onPressed: () {
+                  debugPrint('🎭 [PeekDialogManager] Accept button pressed');
+                  _closeDialogOverlay();
+                  _acceptPeekRequest(requestId);
+                },
+                child: const Text('Accept'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
-          // 🔒 FIX: Clear stored dialog context
-          _activeDialogContext = null;
-
-          // Clear provider when dialog closes
-          final activeDialogId = ref.read(activePeekRequestDialogProvider);
-          if (activeDialogId == requestId) {
-            ref.read(activePeekRequestDialogProvider.notifier).state = null;
-          }
-
-          // Cancel expiration timer when dialog is manually closed
-          if (_currentRequestId == requestId) {
-            _expirationTimer?.cancel();
-            _currentRequestId = null;
-          }
-        });
+  /// Close the dialog overlay
+  void _closeDialogOverlay() {
+    if (_activeDialogOverlay != null && _isDialogShowing) {
+      debugPrint('🎭 [PeekDialogManager] Closing dialog overlay');
+      try {
+        _activeDialogOverlay!.remove();
+      } catch (e) {
+        debugPrint('⚠️ [PeekDialogManager] Error removing overlay: $e');
       }
-    });
+      _activeDialogOverlay = null;
+      _isDialogShowing = false;
 
-    debugPrint('✅ [PeekDialogManager] Dialog display initiated');
+      // Clear provider when dialog closes
+      final activeDialogId = ref.read(activePeekRequestDialogProvider);
+      if (activeDialogId == _currentRequestId) {
+        ref.read(activePeekRequestDialogProvider.notifier).state = null;
+      }
+
+      // Cancel expiration timer when dialog is manually closed
+      if (_currentRequestId != null) {
+        _expirationTimer?.cancel();
+        _currentRequestId = null;
+      }
+    }
   }
 
   /// Accept peek request
@@ -339,11 +342,31 @@ class PeekDialogManager {
   /// Handle request status change (cancelled, expired, etc.)
   Future<void> _handleRequestStatusChange(String requestId) async {
     try {
-      // Close active dialog
-      if (navigatorKey.currentContext != null &&
-          Navigator.of(navigatorKey.currentContext!).canPop()) {
-        Navigator.of(navigatorKey.currentContext!).pop();
+      // 🔒 ENHANCED: Check the actual status to determine what happened
+      DocumentSnapshot? requestDoc;
+      try {
+        requestDoc = await FirebaseFirestore.instance
+            .collection('peek_requests')
+            .doc(requestId)
+            .get();
+      } catch (e) {
+        debugPrint('🎭 [PeekDialogManager] Error fetching request status: $e');
       }
+
+      final status = requestDoc?.data() is Map<String, dynamic>
+          ? (requestDoc!.data() as Map<String, dynamic>)['status'] as String?
+          : null;
+
+      debugPrint(
+          '🎭 [PeekDialogManager] Request $requestId status changed to: $status');
+
+      // Close active dialog overlay
+      if (_isDialogShowing && _activeDialogOverlay != null) {
+        debugPrint(
+            '🎭 [PeekDialogManager] Closing dialog due to status change');
+        _closeDialogOverlay();
+      }
+
       ref.read(activePeekRequestDialogProvider.notifier).state = null;
 
       // Cancel expiration timer if this was the current request
@@ -352,8 +375,21 @@ class PeekDialogManager {
         _currentRequestId = null;
       }
 
-      // Note: Cancellation panels are now handled by navigation parameters
-      // No need to trigger additional navigation here
+      // 🔒 ENHANCED: Show appropriate panel based on status
+      if (status == 'cancelled_by_sender') {
+        debugPrint(
+            '🔒 [PeekDialogManager] Request was cancelled by sender, showing cancellation panel');
+        _showCancellationPanel();
+      } else if (status == 'expired' ||
+          status == 'timeout' ||
+          status == 'timed_out') {
+        debugPrint(
+            '🔒 [PeekDialogManager] Request expired/timed out (status: $status), showing timeout panel');
+        _showTimeUpSlidePanel();
+      } else {
+        debugPrint(
+            '🔒 [PeekDialogManager] Request status changed to: $status (no panel needed)');
+      }
     } catch (e) {
       debugPrint('❌ Error handling request status change: $e');
     }
@@ -417,23 +453,12 @@ class PeekDialogManager {
         '🧹 [PeekDialogManager] Clearing activePeekRequestDialogProvider');
     ref.read(activePeekRequestDialogProvider.notifier).state = null;
 
-    // Close the dialog if it's still open - use a more robust approach
-    if (navigatorKey.currentContext != null) {
-      try {
-        // Check if we can pop and if there's actually a dialog to close
-        if (Navigator.of(navigatorKey.currentContext!).canPop()) {
-          debugPrint(
-              '✅ [PeekDialogManager] Closing dialog via Navigator.pop()');
-          Navigator.of(navigatorKey.currentContext!).pop();
-        } else {
-          debugPrint(
-              '⚠️ [PeekDialogManager] Cannot pop - no dialog in navigation stack');
-        }
-      } catch (e) {
-        debugPrint('❌ [PeekDialogManager] Error closing dialog: $e');
-      }
+    // 🔒 ENHANCED: Close the dialog overlay if it's still open
+    if (_isDialogShowing && _activeDialogOverlay != null) {
+      debugPrint('✅ [PeekDialogManager] Closing dialog overlay on expiration');
+      _closeDialogOverlay();
     } else {
-      debugPrint('⚠️ [PeekDialogManager] Navigator context is null');
+      debugPrint('⚠️ [PeekDialogManager] No active dialog overlay to close');
     }
 
     // Add a small delay to ensure dialog is fully closed before showing panel
@@ -489,6 +514,73 @@ class PeekDialogManager {
                       color: Colors.white)),
               const SizedBox(height: 10),
               const Text("The peek request has expired.",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 16, color: Colors.white70)),
+              const SizedBox(height: 30),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: peekSecondaryColor,
+                    foregroundColor: peekSurfaceColor,
+                    minimumSize: const Size(double.infinity, 50),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(30),
+                    ),
+                  ),
+                  child: const Text('OK',
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// 🔒 ENHANCED: Show "Peekio Stopped" cancellation panel
+  void _showCancellationPanel() {
+    if (navigatorKey.currentContext == null) return;
+
+    showModalBottomSheet<void>(
+      context: navigatorKey.currentContext!,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        // Auto-close after 5 seconds
+        Future.delayed(const Duration(seconds: 5), () {
+          if (ctx.mounted) {
+            Navigator.of(ctx).pop();
+          }
+        });
+
+        return Container(
+          width: double.infinity,
+          // Increased bottom padding
+          padding: const EdgeInsets.fromLTRB(30, 40, 30, 80),
+          decoration: const BoxDecoration(
+            color: peekBackgroundColor,
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(20),
+              topRight: Radius.circular(20),
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.cancel_outlined,
+                  size: 60, color: Colors.white70),
+              const SizedBox(height: 20),
+              const Text("Peekio Stopped",
+                  style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white)),
+              const SizedBox(height: 10),
+              const Text("The sender stopped the Peekio request.",
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 16, color: Colors.white70)),
               const SizedBox(height: 30),

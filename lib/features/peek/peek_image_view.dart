@@ -286,11 +286,31 @@ class _PeekImageViewState extends ConsumerState<PeekImageView> {
       context.go(
           '/peek-reaction?requestId=${widget.requestId}&originalSenderUid=$originalSenderId');
     } else {
-      // Fallback if sender ID couldn't be found
+      // 🔒 ENHANCED: End session if we're not proceeding to reaction screen
       debugPrint(
-          "[PeekImageView] OriginalSenderId is null or empty. Navigating to home.");
+          "[PeekImageView] OriginalSenderId is null or empty. Ending session and navigating to home.");
 
-      // No fallback available - go to home
+      try {
+        final sessionManager = ref.read(sessionManagerProvider);
+        if (sessionManager.isInSession) {
+          debugPrint(
+              "[PeekImageView] 🔒 Ending session due to incomplete flow");
+          await sessionManager.endSession();
+
+          // Update session state providers
+          ref.read(sessionStateProvider.notifier).state =
+              sessionManager.currentState;
+          ref.read(sessionRequestIdProvider.notifier).state =
+              sessionManager.currentRequestId;
+          ref.read(isInSessionProvider.notifier).state =
+              sessionManager.isInSession;
+          ref.read(canReceivePeeksProvider.notifier).state =
+              sessionManager.canReceivePeekRequests();
+        }
+      } catch (e) {
+        debugPrint("[PeekImageView] ❌ Error ending session: $e");
+      }
+
       debugPrint(
           "[PeekImageView] 🚨 No fallback sender ID available, going to home");
       context.go('/');
