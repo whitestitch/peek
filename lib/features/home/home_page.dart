@@ -873,44 +873,136 @@ class _HomePageState extends ConsumerState<HomePage> {
       material.BuildContext context, bool isPremium) {
     final isAnonymous = FirebaseAuth.instance.currentUser?.isAnonymous ?? true;
 
-    String titleText = isPremium ? 'Welcome Back!' : 'Welcome to Peekio!';
+    String titleText =
+        isPremium ? 'Snap. Peek. Vanish.' : 'Snap. Peek. Vanish.';
 
     if (isPremium && !isAnonymous) {
-      return material.Column(
+      // 🔒 RESPONSIVE: Calculate adaptive font size based on screen dimensions
+      final screenWidth = material.MediaQuery.of(context).size.width;
+      final screenHeight = material.MediaQuery.of(context).size.height;
+
+      // Adaptive font sizing with min/max bounds for optimal readability
+      double adaptiveFontSize = (screenWidth * 0.08).clamp(24.0, 48.0);
+
+      // For very small screens, use height-based calculation as fallback
+      if (screenWidth < 320) {
+        adaptiveFontSize = (screenHeight * 0.06).clamp(20.0, 32.0);
+      }
+
+      // For very large screens, cap the maximum size
+      if (screenWidth > 1200) {
+        adaptiveFontSize = 48.0;
+      }
+
+      return material.Padding(
+        padding: material.EdgeInsets.symmetric(
+          horizontal: (screenWidth * 0.05).clamp(
+            16.0,
+            32.0,
+          ),
+          vertical: (screenHeight * 0.02).clamp(
+            8.0,
+            24.0,
+          ),
+        ),
+        child: material.Column(
+          mainAxisAlignment: material.MainAxisAlignment.center,
+          children: [
+            material.Text(
+              titleText,
+              style: material.TextStyle(
+                fontSize: adaptiveFontSize,
+                fontWeight: material.FontWeight.w700,
+                letterSpacing: 0.8,
+                color: peekWhiteColor,
+                height: 1.1,
+              ),
+              textAlign: material.TextAlign.center,
+            ),
+            material.SizedBox(
+                height: (screenHeight * 0.01).clamp(
+              4.0,
+              12.0,
+            )),
+            material.Chip(
+              avatar: material.Icon(
+                material.Icons.star,
+                size: (screenWidth * 0.04).clamp(
+                  14.0,
+                  20.0,
+                ),
+              ),
+              label: material.Text(
+                'Premium',
+                style: material.TextStyle(
+                  fontSize: (screenWidth * 0.035).clamp(
+                    12.0,
+                    16.0,
+                  ),
+                  fontWeight: material.FontWeight.w600,
+                ),
+              ),
+              backgroundColor: material.Colors.amber.shade600,
+              padding: material.EdgeInsets.symmetric(
+                horizontal: (screenWidth * 0.02).clamp(
+                  8.0,
+                  16.0,
+                ),
+                vertical: (screenHeight * 0.005).clamp(
+                  2.0,
+                  6.0,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // For non-premium users, also use responsive design for consistency
+    final screenWidth = material.MediaQuery.of(context).size.width;
+    final screenHeight = material.MediaQuery.of(context).size.height;
+
+    // Adaptive font sizing for non-premium users
+    double adaptiveFontSize = (screenWidth * 0.075).clamp(22.0, 42.0);
+
+    // For very small screens, use height-based calculation as fallback
+    if (screenWidth < 320) {
+      adaptiveFontSize = (screenHeight * 0.055).clamp(18.0, 28.0);
+    }
+
+    // For very large screens, cap the maximum size
+    if (screenWidth > 1200) {
+      adaptiveFontSize = 42.0;
+    }
+
+    return material.Padding(
+      padding: material.EdgeInsets.symmetric(
+        horizontal: (screenWidth * 0.05).clamp(
+          16.0,
+          32.0,
+        ),
+        vertical: (screenHeight * 0.02).clamp(
+          8.0,
+          24.0,
+        ),
+      ),
+      child: material.Column(
         mainAxisAlignment: material.MainAxisAlignment.center,
         children: [
           material.Text(
             titleText,
-            style: const material.TextStyle(
-              fontSize: 36,
+            style: material.TextStyle(
+              fontSize: adaptiveFontSize,
               fontWeight: material.FontWeight.w600,
-              letterSpacing: 0.5,
+              letterSpacing: 0.6,
               color: peekWhiteColor,
+              height: 1.1,
             ),
-          ),
-          const material.SizedBox(height: 8),
-          material.Chip(
-            avatar: const material.Icon(material.Icons.star, size: 16),
-            label: const material.Text('Premium'),
-            backgroundColor: material.Colors.amber.shade600,
+            textAlign: material.TextAlign.center,
           ),
         ],
-      );
-    }
-
-    // For non-premium users, also use a Column for consistent alignment
-    return material.Column(
-      mainAxisAlignment: material.MainAxisAlignment.center,
-      children: [
-        material.Text(
-          titleText,
-          style: const material.TextStyle(
-            fontSize: 33,
-            fontWeight: material.FontWeight.bold,
-            color: peekWhiteColor,
-          ),
-        ),
-      ],
+      ),
     );
   }
 }
