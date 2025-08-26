@@ -38,22 +38,18 @@ class UserSettingsManager {
     }
 
     try {
-      debugPrint("[UserSettings] Loading settings for user: ${user.uid}");
-
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
           .get();
 
       if (!userDoc.exists) {
-        debugPrint("[UserSettings] User document does not exist");
         onError?.call("User profile not found");
         return;
       }
 
       final data = userDoc.data();
       if (data == null) {
-        debugPrint("[UserSettings] User document has no data");
         return;
       }
 

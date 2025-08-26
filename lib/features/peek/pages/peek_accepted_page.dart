@@ -27,7 +27,6 @@ class _PeekAcceptedPageState extends State<PeekAcceptedPage> {
   @override
   void initState() {
     super.initState();
-    debugPrint("[PeekAcceptedPage] Initialized for 3-second celebration.");
 
     _initializeManagers();
     _startCelebration();
@@ -53,7 +52,6 @@ class _PeekAcceptedPageState extends State<PeekAcceptedPage> {
 
   @override
   void dispose() {
-    debugPrint("[PeekAcceptedPage] Disposing.");
     _celebrationManager.dispose();
     _navigationManager.dispose();
     super.dispose();

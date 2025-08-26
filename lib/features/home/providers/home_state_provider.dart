@@ -51,7 +51,7 @@ class HomeStateNotifier extends AutoDisposeAsyncNotifier<HomeState> {
       loading: () {
         // While the stream is initializing, keep the provider in a loading state.
         // We do this by returning a Future that never completes. The UI will show a spinner.
-        debugPrint("[HomeState] Waiting for user profile stream to connect...");
+
         return Completer<HomeState>().future;
       },
       error: (err, stack) {
@@ -72,7 +72,7 @@ class HomeStateNotifier extends AutoDisposeAsyncNotifier<HomeState> {
         }
 
         // Success! The document exists. We can now build the real state.
-        debugPrint("[HomeState] User document found. Building state.");
+
         return _buildStateFromData(userDoc.data()!);
       },
     );

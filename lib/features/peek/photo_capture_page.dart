@@ -161,11 +161,8 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
           if (snapshot.exists && mounted) {
             final data = snapshot.data();
             final status = data?['status'] as String?;
-            debugPrint("[PhotoCapturePage] Periodic status check: $status");
           }
-        }).catchError((error) {
-          debugPrint("[PhotoCapturePage] Periodic status check error: $error");
-        });
+        }).catchError((error) {});
       });
 
       // 🔒 NEW: Periodic check for countdown readiness
@@ -289,7 +286,6 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
         // For returning users, start countdown immediately once camera is ready
         await _checkAndStartCountdown();
       } else {
-        debugPrint("[PhotoCapturePage] New user - showing waiting state first");
         // For new users, show waiting state first
         _countdownManager.showWaitingForPermissions();
         await _checkAndStartCountdown();
@@ -326,17 +322,13 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
 
         final data = snapshot.data();
         if (data == null) {
-          debugPrint("[PhotoCapturePage] Snapshot data is null");
           return;
         }
 
         final status = data['status'] as String?;
-        debugPrint("[PhotoCapturePage] Status update received: $status");
 
         // Log all status changes for debugging
-        if (status != null) {
-          debugPrint("[PhotoCapturePage] Full status data: $data");
-        }
+        if (status != null) {}
 
         // Handle cancellation events
         if (status == 'cancelled_by_sender') {
@@ -376,8 +368,6 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
         debugPrint("[PhotoCapturePage] Status listener error: $error");
       },
     );
-
-    debugPrint("[PhotoCapturePage] Status listener started successfully");
   }
 
   /// Show the Time Up! state when the peek request expires
@@ -472,7 +462,7 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
     try {
       if (_captureLogic.capturedImageBytes != null) {
         // Upload existing photo
-        debugPrint("[PhotoCapturePage] Starting photo upload...");
+
         await _captureLogic.uploadPhoto(
           requestId: widget.requestId,
           senderUid: FirebaseAuth.instance.currentUser?.uid ??
@@ -483,7 +473,7 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
         );
       } else {
         // Take new photo
-        debugPrint("[PhotoCapturePage] Taking photo...");
+
         await _captureLogic.takePicture(
           controller: _cameraManager.controller,
         );
@@ -833,11 +823,9 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
 
     // 🔒 FIX: Prevent multiple countdown starts
     if (_isCountdownReady) {
-      debugPrint("[PhotoCapturePage] Countdown already started, skipping");
       return;
     }
 
-    debugPrint("[PhotoCapturePage] 🔒 Starting countdown - camera ready");
     _isCountdownReady = true;
     _pulseController.repeat(reverse: true);
 
@@ -851,7 +839,6 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
           "[PhotoCapturePage] Using immediate countdown for returning user");
       _countdownManager.startImmediateCountdown(durationSeconds: 30);
     } else {
-      debugPrint("[PhotoCapturePage] Using manual countdown for new user");
       _countdownManager.startManualCountdown(durationSeconds: 30);
     }
   }
@@ -892,7 +879,6 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
     } catch (e) {
       debugPrint(
           "[PhotoCapturePage] Error cancelling peek via Cloud Function: $e");
-      debugPrint("[PhotoCapturePage] Using fallback approach...");
 
       // Fallback: Even if Cloud Function fails, navigate home
       // The sender will eventually detect the cancellation through other means
@@ -938,9 +924,7 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
         // 🔒 FIX: Providers will be updated via the callback, no need to manually update here
         debugPrint(
             '🔒 [PhotoCapturePage] Session reset completed via callback');
-      } else {
-        debugPrint('🔒 [PhotoCapturePage] No active session to clean up');
-      }
+      } else {}
     } catch (e) {
       debugPrint('❌ [PhotoCapturePage] Error in dispose cleanup: $e');
     }
@@ -951,8 +935,6 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
     try {
       final sessionManager = ref.read(sessionManagerProvider);
       if (sessionManager.isInSession) {
-        debugPrint('🔒 [PhotoCapturePage] Force cleaning up session');
-
         // End the session immediately
         await sessionManager.endSession();
 
@@ -965,8 +947,6 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
             sessionManager.isInSession;
         ref.read(canReceivePeeksProvider.notifier).state =
             sessionManager.canReceivePeekRequests();
-
-        debugPrint('🔒 [PhotoCapturePage] Session force cleanup completed');
       }
     } catch (e) {
       debugPrint('❌ [PhotoCapturePage] Error force cleaning up session: $e');

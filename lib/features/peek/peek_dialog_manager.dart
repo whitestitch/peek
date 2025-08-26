@@ -27,13 +27,11 @@ class PeekDialogManager {
   /// Initialize the dialog manager
   void initialize() {
     _isInitialized = true;
-    debugPrint('🎭 [PeekDialogManager] Initialized and ready to show dialogs');
   }
 
   /// 🔒 ENHANCED: Dismiss active dialog overlay
   void dismissActiveDialog() {
     if (_activeDialogOverlay != null && _isDialogShowing) {
-      debugPrint('🎭 [PeekDialogManager] Dismissing active dialog overlay');
       try {
         _activeDialogOverlay!.remove();
       } catch (e) {
@@ -52,8 +50,6 @@ class PeekDialogManager {
   /// Show peek request dialog
   Future<void> showPeekRequestDialog(
       QueryDocumentSnapshot<Map<String, dynamic>> requestDoc) async {
-    debugPrint('🎭 [PeekDialogManager] showPeekRequestDialog ENTRY');
-
     // Only process requests after initialization
     if (!_isInitialized) {
       debugPrint('⚠️ [PeekDialogManager] Not yet initialized, skipping dialog');
@@ -91,29 +87,27 @@ class PeekDialogManager {
     }
 
     final requestId = requestDoc.id;
-    debugPrint('🎭 [PeekDialogManager] Request ID: $requestId');
 
     debugPrint(
         '🎭 [PeekDialogManager] Attempting to show dialog for request: $requestId');
 
     // Cancel any existing timer
-    debugPrint('🎭 [PeekDialogManager] Cancelling existing timer');
+
     _expirationTimer?.cancel();
     _currentRequestId = requestId;
 
     // Set active dialog provider
-    debugPrint('🎭 [PeekDialogManager] Setting active dialog provider');
+
     ref.read(activePeekRequestDialogProvider.notifier).state = requestId;
 
     // Start expiration timer (60 seconds to match sender's countdown)
-    debugPrint('🎭 [PeekDialogManager] Starting expiration timer');
+
     _startExpirationTimer(requestId);
 
     // 🔒 ENHANCED: Use OverlayEntry for navigation-independent dialog
     debugPrint(
         '🎭 [PeekDialogManager] Creating navigation-independent dialog overlay');
     _showDialogOverlay(requestId);
-    debugPrint('🎭 [PeekDialogManager] showPeekRequestDialog EXIT');
   }
 
   /// 🔒 ENHANCED: Show dialog as navigation-independent overlay
@@ -190,7 +184,6 @@ class PeekDialogManager {
                     ),
                   ),
                   onPressed: () {
-                    debugPrint('🎭 [PeekDialogManager] Decline button pressed');
                     _closeDialogOverlay();
                     _declinePeekRequest(requestId);
                   },
@@ -207,7 +200,6 @@ class PeekDialogManager {
                     ),
                   ),
                   onPressed: () {
-                    debugPrint('🎭 [PeekDialogManager] Accept button pressed');
                     _closeDialogOverlay();
                     _acceptPeekRequest(requestId);
                   },
@@ -224,7 +216,6 @@ class PeekDialogManager {
   /// Close the dialog overlay
   void _closeDialogOverlay() {
     if (_activeDialogOverlay != null && _isDialogShowing) {
-      debugPrint('🎭 [PeekDialogManager] Closing dialog overlay');
       try {
         _activeDialogOverlay!.remove();
       } catch (e) {
@@ -426,12 +417,10 @@ class PeekDialogManager {
             '⏰ [PeekDialogManager] Backup timer fired for request: $requestId');
         if (_currentRequestId == requestId &&
             ref.read(activePeekRequestDialogProvider) == requestId) {
-          debugPrint('🚨 [PeekDialogManager] Backup timer handling expiration');
           _handleDialogExpiration(requestId);
         }
       });
 
-      debugPrint('⏰ [PeekDialogManager] Backup timer set successfully');
       debugPrint(
           '⏰ [PeekDialogManager] _startExpirationTimer EXIT for: $requestId');
     } catch (e) {
@@ -467,21 +456,18 @@ class PeekDialogManager {
 
     // 🔒 ENHANCED: Close the dialog overlay if it's still open
     if (_isDialogShowing && _activeDialogOverlay != null) {
-      debugPrint('✅ [PeekDialogManager] Closing dialog overlay on expiration');
       _closeDialogOverlay();
-    } else {
-      debugPrint('⚠️ [PeekDialogManager] No active dialog overlay to close');
-    }
+    } else {}
 
     // Add a small delay to ensure dialog is fully closed before showing panel
     Future.delayed(const Duration(milliseconds: 100), () {
       // Show "Time Up!" slide panel instead of navigating to timeout page
-      debugPrint('🎭 [PeekDialogManager] Showing Time Up slide panel');
+
       _showTimeUpSlidePanel();
     });
 
     // Clean up timer state
-    debugPrint('🧹 [PeekDialogManager] Cleaning up timer state');
+
     _expirationTimer?.cancel();
     _currentRequestId = null;
   }
@@ -622,7 +608,6 @@ class PeekDialogManager {
 
   /// Dispose resources
   void dispose() {
-    debugPrint('🎭 [PeekDialogManager] Disposing dialog manager');
     _expirationTimer?.cancel();
     dismissActiveDialog();
   }

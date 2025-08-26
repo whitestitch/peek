@@ -146,7 +146,7 @@ class PeekController extends StateNotifier<PeekControllerState> {
     }
     try {
       await _repo.expireRequest(requestId);
-      debugPrint('[PeekController] Peek expired via controller: $requestId');
+
       await _analytics
           .logEvent(name: 'peek_request_expired_client', parameters: {
         'request_id_partial':
@@ -175,7 +175,7 @@ class PeekController extends StateNotifier<PeekControllerState> {
       await _firestore.collection('peek_requests').doc(requestId).update({
         'status': 'expired_capture',
       });
-      debugPrint('[PeekController] Peek capture expired: $requestId');
+
       await _analytics
           .logEvent(name: 'peek_request_capture_expired', parameters: {
         'request_id_partial':
@@ -215,7 +215,6 @@ class PeekController extends StateNotifier<PeekControllerState> {
 
     final userId = _auth.currentUser?.uid;
     if (userId == null) {
-      debugPrint('[PeekController] DEBUG: Cannot reset limits, user is null.');
       return;
     }
     try {
@@ -227,9 +226,7 @@ class PeekController extends StateNotifier<PeekControllerState> {
         name: 'debug_reset_user_limits',
         parameters: {'user_id_partial': userId.substring(0, 8)},
       );
-    } catch (e) {
-      debugPrint('[PeekController] DEBUG: Error resetting user limits: $e');
-    }
+    } catch (e) {}
   }
 
   Future<bool> cancelPeek(String requestId) async {

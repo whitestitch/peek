@@ -54,7 +54,6 @@ class CountdownManager {
     // 🔒 FIX: Allow starting countdown even if showWaitingForPermissions was called
     // but prevent multiple actual countdown timers
     if (_countdownTimer?.isActive ?? false) {
-      debugPrint("[CountdownManager] Countdown already active, skipping");
       return;
     }
 
@@ -93,8 +92,6 @@ class CountdownManager {
         onCountdownUpdate?.call(_secondsRemaining!);
       }
     });
-
-    debugPrint("[CountdownManager] Countdown started: ${_secondsRemaining}s");
   }
 
   /// Handle timeout
@@ -113,7 +110,6 @@ class CountdownManager {
     if (!_countdownHasBeenTriggered) {
       _countdownHasBeenTriggered = true;
       onCountdownComplete?.call();
-      debugPrint("[CountdownManager] Countdown manually triggered");
     }
   }
 
@@ -159,7 +155,6 @@ class CountdownManager {
     _secondsRemaining = null;
     _countdownHasBeenTriggered = false;
     _isTimeoutHandled = false;
-    debugPrint("[CountdownManager] Countdown reset");
   }
 
   /// Dispose resources

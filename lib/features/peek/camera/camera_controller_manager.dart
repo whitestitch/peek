@@ -72,7 +72,6 @@ class CameraControllerManager with WidgetsBindingObserver {
         "[CameraController] Initializing camera: ${cameraDescription.name}");
 
     if (_isCameraInitializing) {
-      debugPrint("[CameraController] Already initializing, skipping");
       return;
     }
 
@@ -176,11 +175,9 @@ class CameraControllerManager with WidgetsBindingObserver {
       case AppLifecycleState.paused:
       case AppLifecycleState.detached:
       case AppLifecycleState.inactive:
-        debugPrint("[CameraController] App paused/inactive - disposing camera");
         await _disposeController();
         break;
       case AppLifecycleState.resumed:
-        debugPrint("[CameraController] App resumed - reinitializing camera");
         if (_selectedCameraIndex != -1) {
           await _initializeCamera(cameras[_selectedCameraIndex]);
         }
@@ -194,7 +191,6 @@ class CameraControllerManager with WidgetsBindingObserver {
   /// Dispose camera controller
   Future<void> _disposeController() async {
     if (_controller != null) {
-      debugPrint("[CameraController] Disposing camera controller");
       try {
         await _controller!.dispose();
       } catch (e) {

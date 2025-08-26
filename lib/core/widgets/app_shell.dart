@@ -58,7 +58,6 @@ class _AppShellState extends ConsumerState<AppShell>
     _lastSeenReactionTime = DateTime.now();
     // Also reset animation state to prevent stuck animations
     if (_showReactionAnimation) {
-      material.debugPrint('[AppShell] 🧹 Resetting stuck animation state');
       _showReactionAnimation = false;
       _currentReactionId = null;
       _currentReactionType = null;
@@ -504,13 +503,10 @@ class _AppShellState extends ConsumerState<AppShell>
             "[AppShell] 📄 Reaction doc: ${doc.id} - type: ${data['reactionType']}");
       }
     } else if (reactionStream.isLoading) {
-      material.debugPrint("[AppShell] ⏳ Reaction stream loading...");
     } else if (reactionStream.hasError) {
       material.debugPrint(
           "[AppShell] ❌ Reaction stream error: ${reactionStream.error}");
-    } else {
-      material.debugPrint("[AppShell] ℹ️ Reaction stream empty or no data");
-    }
+    } else {}
 
     // Declaratively calculate the index and UI visibility from the router state.
     final int selectedIndex =
@@ -638,7 +634,7 @@ class _AppShellState extends ConsumerState<AppShell>
                     // 🔒 ENHANCED: Handle newest unprocessed reaction with queuing
                     if (newestReaction != null) {
                       final data = newestReaction.data();
-                      material.debugPrint('[AppShell] 🔍 Reaction data: $data');
+
                       final reactionType =
                           (data['reactionType'] ?? '').toString().toLowerCase();
                       final reactionId = newestReaction.id;

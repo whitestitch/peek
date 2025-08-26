@@ -158,7 +158,6 @@ class NotificationService {
     if (!kIsWeb && Platform.isIOS) {
       // 1️⃣ grab whatever APNs token we have right now
       final apns = await _firebaseMessaging.getAPNSToken();
-      debugPrint("[NotificationService] initial APNs token: $apns");
 
       if (apns != null) {
         // we already have an APNs token → go straight to FCM
@@ -184,7 +183,7 @@ class NotificationService {
         return;
       }
       final apnsToken = await _firebaseMessaging.getAPNSToken();
-      debugPrint('🔁 [NotificationService] retrying APNs token: $apnsToken');
+
       if (apnsToken != null) {
         timer.cancel();
         debugPrint(
@@ -208,9 +207,7 @@ class NotificationService {
         // Keep delay
         _handleNotificationTap(initialMessage.data);
       });
-    } else {
-      debugPrint("[NotificationService] No initial message found.");
-    }
+    } else {}
   }
 
   Future<void> _requestPermissions() async {
@@ -300,7 +297,6 @@ class NotificationService {
 
     // --- Validate base requirement: requestId ---
     if (requestId != null) {
-      debugPrint("[NotificationService] Navigating with requestId: $requestId");
     } else {
       debugPrint(
           "⚠️ [NotificationService] Notification tap data missing 'requestId' (camelCase). Cannot navigate.");
@@ -320,7 +316,6 @@ class NotificationService {
         // Force a small delay to ensure the navigation completes before dialog shows
         Future.delayed(const Duration(milliseconds: 500), () {
           // The dialog will be triggered by the listener in main.dart
-          debugPrint("[NotificationService] Navigation delay complete");
         });
         break;
 
@@ -442,10 +437,9 @@ class NotificationService {
     try {
       // Force delete old token and get a fresh one
       await _firebaseMessaging.deleteToken();
-      debugPrint('🗑️ [NotificationService] Old FCM token deleted');
 
       final fcmToken = await _firebaseMessaging.getToken();
-      debugPrint('📲 [NotificationService] FCM Token: $fcmToken');
+
       final uid = _auth.currentUser?.uid;
       if (uid != null && fcmToken != null) {
         // Add detailed error handling for Firestore write

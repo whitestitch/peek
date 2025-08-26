@@ -81,9 +81,8 @@ final pendingPeekRequestsProvider = StreamProvider.autoDispose<
       .orderBy('createdAt', descending: true)
       .snapshots()
       // Prevent unhandled stream errors (e.g., missing index) from crashing the app.
-      .handleError((error, stackTrace) {
-    debugPrint("[pendingPeekRequestsProvider] Firestore stream error: $error");
-  }).map((snapshot) {
+      .handleError((error, stackTrace) {})
+      .map((snapshot) {
     debugPrint(
         "[pendingPeekRequestsProvider] Snapshot received. Found ${snapshot.docs.length} pending requests for UID: $uid. Request IDs: ${snapshot.docs.map((d) => d.id).toList()}");
     return snapshot.docs;
@@ -115,7 +114,6 @@ final sessionAwarePendingRequestsProvider = StreamProvider.autoDispose<
     loading: () =>
         Stream.value(<QueryDocumentSnapshot<Map<String, dynamic>>>[]),
     error: (error, stack) {
-      debugPrint("[sessionAwarePendingRequestsProvider] Error: $error");
       return Stream.value(<QueryDocumentSnapshot<Map<String, dynamic>>>[]);
     },
   );

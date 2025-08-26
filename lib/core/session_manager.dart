@@ -97,8 +97,6 @@ class SessionManager {
 
       // 🔒 NEW: Start periodic validation if session is active
       _startPeriodicValidation();
-
-      debugPrint('🔒 [SessionManager] Initialized with state: $_currentState');
     } catch (e) {
       debugPrint('❌ [SessionManager] Error initializing: $e');
       _resetSession();
@@ -117,8 +115,6 @@ class SessionManager {
           timer.cancel();
           return;
         }
-
-        debugPrint('🔒 [SessionManager] Periodic validation check');
 
         // 🔒 NEW: Use immediate cleanup instead of timeout-based cleanup
         await checkPeekRequestStatus();
@@ -179,8 +175,6 @@ class SessionManager {
 
     // 🔒 NEW: Notify state change
     _notifyStateChanged();
-
-    debugPrint('🔒 [SessionManager] Session state updated to: $newState');
   }
 
   /// End current session
@@ -189,8 +183,6 @@ class SessionManager {
       debugPrint('⚠️ [SessionManager] Cannot end session: not in session');
       return;
     }
-
-    debugPrint('🔒 [SessionManager] Ending session: $_currentState');
 
     // 🔒 NEW: Stop periodic validation
     _stopPeriodicValidation();
@@ -207,8 +199,6 @@ class SessionManager {
 
   /// 🔒 NEW: Force reset session (for debugging/testing)
   Future<void> forceResetSession() async {
-    debugPrint('🔒 [SessionManager] Force reset requested');
-
     // 🔒 NEW: Stop periodic validation
     _stopPeriodicValidation();
 
@@ -361,7 +351,6 @@ class SessionManager {
       await prefs.remove(_sessionStartKey);
 
       _resetSession();
-      debugPrint('🔒 [SessionManager] All session data cleared');
     } catch (e) {
       debugPrint('❌ [SessionManager] Error clearing data: $e');
     }
@@ -370,7 +359,6 @@ class SessionManager {
   /// 🔒 NEW: Dispose method for cleanup
   void dispose() {
     _stopPeriodicValidation();
-    debugPrint('🔒 [SessionManager] Disposed');
   }
 
   /// Sync session state to Firestore for Cloud Functions
@@ -390,8 +378,6 @@ class SessionManager {
           'lastUpdated': FieldValue.serverTimestamp(),
         },
       });
-
-      debugPrint('🔒 [SessionManager] Session state synced to Firestore');
     } catch (e) {
       debugPrint('❌ [SessionManager] Error syncing session to Firestore: $e');
     }
@@ -406,8 +392,6 @@ class SessionManager {
       await _firestore.collection('users').doc(currentUser.uid).update({
         'activePeekSession': null,
       });
-
-      debugPrint('🔒 [SessionManager] Session state cleared from Firestore');
     } catch (e) {
       debugPrint(
           '❌ [SessionManager] Error clearing session from Firestore: $e');
@@ -456,8 +440,6 @@ class SessionManager {
 
   /// 🔒 NEW: Force cleanup session (for immediate reset)
   Future<void> _forceCleanupSession() async {
-    debugPrint('🔒 [SessionManager] Force cleaning up session');
-
     // Stop periodic validation
     _stopPeriodicValidation();
 
@@ -474,8 +456,6 @@ class SessionManager {
 
   /// 🔒 NEW: Force clear Firestore session state (for stuck sessions)
   Future<void> forceClearFirestoreSession() async {
-    debugPrint('🔒 [SessionManager] Force clearing Firestore session state');
-
     try {
       await _clearSessionFromFirestore();
       debugPrint(

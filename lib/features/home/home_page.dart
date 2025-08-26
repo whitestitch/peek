@@ -96,8 +96,6 @@ class _HomePageState extends ConsumerState<HomePage> {
   /// 🔒 NEW: Force clear all cancellation states immediately
   void _forceClearAllCancellationStates() {
     try {
-      debugPrint("[HomePage] 🔒 Force clearing all cancellation states");
-
       // Clear all cancellation panels
       _shownCancellationPanels.clear();
       _cancellationPanelTimestamps.clear();
@@ -109,11 +107,8 @@ class _HomePageState extends ConsumerState<HomePage> {
           final navigator = material.Navigator.of(context);
           final canPopMain = navigator.canPop();
 
-          debugPrint("[HomePage] 🔍 Main navigator canPop: $canPopMain");
-
           if (canPopMain) {
             navigator.pop();
-            debugPrint("[HomePage] 🔒 Dismissed visible cancellation panel");
           } else {
             debugPrint(
                 "[HomePage] ℹ️ No modal sheets to dismiss in main navigator");
@@ -125,11 +120,8 @@ class _HomePageState extends ConsumerState<HomePage> {
                 material.Navigator.of(context, rootNavigator: true);
             final canPopRoot = rootNavigator.canPop();
 
-            debugPrint("[HomePage] 🔍 Root navigator canPop: $canPopRoot");
-
             if (canPopRoot && rootNavigator != navigator) {
               rootNavigator.pop();
-              debugPrint("[HomePage] 🔒 Dismissed modal from root navigator");
             }
           } catch (rootError) {
             debugPrint(
@@ -139,8 +131,6 @@ class _HomePageState extends ConsumerState<HomePage> {
           debugPrint("[HomePage] ⚠️ Error dismissing cancellation panel: $e");
         }
       }
-
-      debugPrint("[HomePage] ✅ All cancellation states cleared");
     } catch (e) {
       debugPrint("[HomePage] ❌ Error force clearing cancellation states: $e");
     }
@@ -149,9 +139,6 @@ class _HomePageState extends ConsumerState<HomePage> {
   /// 🔒 NEW: Clear cancellation state globally when panel is dismissed
   Future<void> _clearCancellationState(String reason) async {
     try {
-      debugPrint(
-          "[HomePage] 🔒 Clearing cancellation state for reason: $reason");
-
       // 🔒 NEW: Force clear ALL cancellation states immediately (not just this reason)
       _shownCancellationPanels.clear();
       _cancellationPanelTimestamps.clear();
@@ -159,8 +146,6 @@ class _HomePageState extends ConsumerState<HomePage> {
       // Clear from session manager to ensure clean state
       final sessionManager = ref.read(sessionManagerProvider);
       if (sessionManager.isInSession) {
-        debugPrint(
-            "[HomePage] 🔒 Ending active session to clear cancellation state");
         await sessionManager.endSession();
       }
 
@@ -169,10 +154,6 @@ class _HomePageState extends ConsumerState<HomePage> {
 
       // 🔒 REMOVED: Don't aggressively pop navigation - causes stack crashes
       // The modal sheet will be dismissed naturally by the OK button or auto-close
-      debugPrint(
-          "[HomePage] ℹ️ Relying on natural sheet dismissal to avoid navigation crashes");
-
-      debugPrint("[HomePage] ✅ Cancellation state cleared successfully");
     } catch (e) {
       debugPrint("[HomePage] ❌ Error clearing cancellation state: $e");
     }
@@ -181,39 +162,28 @@ class _HomePageState extends ConsumerState<HomePage> {
   void _showPeekCancelledSheet(String reason) {
     // Check if we've already shown a cancellation panel recently
     if (_shownCancellationPanels.contains(reason)) {
-      debugPrint(
-          "⚠️ [HomePage] Cancellation panel already shown for reason: $reason");
       return;
     }
 
-    debugPrint(
-        "[HomePage] 🔍 Evaluating whether to show cancellation panel for reason: $reason");
-
     // 🔒 REMOVED: Don't block cancellation panels based on pending requests
     // Cancellation panels are important user feedback and should always be shown
-    debugPrint(
-        "[HomePage] ℹ️ Allowing cancellation panel - user feedback is important");
 
     // 🔒 NEW: Check if we're currently in a session, but allow cancellation panels for completed flows
     final sessionManager = ref.read(sessionManagerProvider);
     if (sessionManager.isInSession) {
       // 🔧 FIX: Allow cancellation panels even during sessions - they're important for user feedback
-      debugPrint(
-          "[HomePage] ℹ️ User in session, but allowing cancellation panel for user feedback");
+
       // Continue to show the cancellation panel
     }
 
     // 🔒 NEW: Final safety check - if we somehow still have cancellation panels showing, clear them
     if (_shownCancellationPanels.isNotEmpty) {
-      debugPrint(
-          "[HomePage] ⚠️ Clearing existing cancellation panels before showing new one");
       _shownCancellationPanels.clear();
     }
 
     // Mark this cancellation as shown
     _shownCancellationPanels.add(reason);
     _cancellationPanelTimestamps[reason] = DateTime.now();
-    debugPrint("[HomePage] ✅ Showing cancellation panel for reason: $reason");
 
     // Clean up old entries after 5 seconds to prevent memory leaks
     Future.delayed(const Duration(seconds: 5), () {

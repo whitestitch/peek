@@ -83,8 +83,6 @@ class _PeekAppState extends ConsumerState<PeekApp> {
     ref.read(isInSessionProvider.notifier).state = _sessionManager.isInSession;
     ref.read(canReceivePeeksProvider.notifier).state =
         _sessionManager.canReceivePeekRequests();
-
-    debugPrint('🔒 [PeekApp] SessionManager initialized');
   }
 
   /// 🔒 FIX: Set up SessionManager callback with hot-reload recovery
@@ -110,7 +108,7 @@ class _PeekAppState extends ConsumerState<PeekApp> {
 
       // 🔒 FIX: Force re-establish callback periodically to ensure it's always active
       // This helps recover from hot-reload scenarios where the callback might be lost
-      debugPrint('🔒 [PeekApp] Verifying SessionManager callback is active...');
+
       _sessionManager.setStateChangeCallback(
           (state, requestId, isInSession, canReceivePeeks) {
         debugPrint(
