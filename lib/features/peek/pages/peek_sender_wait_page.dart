@@ -133,11 +133,7 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
     try {
       final cameras = await availableCameras();
       cameraGranted = cameras.isNotEmpty;
-      debugPrint(
-          "[PeekSenderWaitPage] Method 1 - availableCameras: $cameraGranted (${cameras.length} cameras)");
-    } catch (e) {
-      debugPrint("[PeekSenderWaitPage] Method 1 failed: $e");
-    }
+    } catch (e) {}
 
     // Method 2: If Method 1 fails, try alternative permission detection
     if (!cameraGranted) {
@@ -147,12 +143,8 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
         final hasCameraAccess = await _checkCameraAccessAlternative();
         if (hasCameraAccess) {
           cameraGranted = true;
-          debugPrint(
-              "[PeekSenderWaitPage] Method 2 - Alternative check: permissions confirmed");
         }
-      } catch (e) {
-        debugPrint("[PeekSenderWaitPage] Method 2 failed: $e");
-      }
+      } catch (e) {}
     }
 
     // Method 3: Check if user has been through camera flow before (stored preference)
@@ -208,21 +200,14 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
 
       // Check if this is a returning user (has been through camera before)
       final hasPreviousAccess = await _checkPreviousCameraAccess();
-      debugPrint(
-          "[PeekSenderWaitPage] 🔍 Alternative check: Previous access = $hasPreviousAccess");
 
       if (hasPreviousAccess) {
-        debugPrint(
-            "[PeekSenderWaitPage] 🔍 Alternative check: Returning user detected");
         return true;
       }
 
       // If not returning user, don't assume permissions - let them go through proper flow
-      debugPrint(
-          "[PeekSenderWaitPage] 🔍 Alternative check: New user - no assumptions made");
       return false;
     } catch (e) {
-      debugPrint("[PeekSenderWaitPage] Alternative check failed: $e");
       return false;
     }
   }
@@ -244,9 +229,6 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
       final prefs = await SharedPreferences.getInstance();
       final hasAccess = prefs.getBool('has_camera_access') ?? false;
 
-      debugPrint(
-          "[PeekSenderWaitPage] 🔍 Previous access check: SharedPreferences value = $hasAccess");
-
       // 🔒 HOT-RELOAD FIX: If SharedPreferences is empty, try alternative persistence methods
       if (!hasAccess) {
         final alternativeAccess =
@@ -262,7 +244,6 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
       // This prevents new users from being incorrectly identified as returning users
       return hasAccess;
     } catch (e) {
-      debugPrint("[PeekSenderWaitPage] Previous access check failed: $e");
       return false;
     }
   }
@@ -326,8 +307,6 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
       await prefs.setInt('last_camera_activity', currentTime);
       await prefs.setBool('has_app_usage', true);
 
-      debugPrint("[PeekSenderWaitPage] 💾 Camera access stored for future use");
-
       // Verify the values were stored correctly
       final storedAccess = prefs.getBool('has_camera_access');
       final storedActivity = prefs.getInt('last_camera_activity');
@@ -335,9 +314,7 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
 
       debugPrint(
           "[PeekSenderWaitPage] 💾 Verification: access=$storedAccess, activity=$storedActivity, usage=$storedUsage");
-    } catch (e) {
-      debugPrint("[PeekSenderWaitPage] Failed to store camera access: $e");
-    }
+    } catch (e) {}
   }
 
   // 🔒 DEBUG METHOD: Clear camera access preference for testing
@@ -370,11 +347,9 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
       // If user has none of these signals, they're likely new
       final isNew =
           !hasOnboardingCompleted && !hasAppHistory && !hasCameraAccess;
-      debugPrint("[PeekSenderWaitPage] 🔍 New user determination: $isNew");
 
       return isNew;
     } catch (e) {
-      debugPrint("[PeekSenderWaitPage] New user check failed: $e");
       // If we can't determine, assume new user (conservative approach)
       return true;
     }
@@ -400,7 +375,6 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
       // 🔧 BALANCED: If any indicator is true, we're likely in development
       return isDebug || isDevelopmentBuild || isHotReload;
     } catch (e) {
-      debugPrint("[PeekSenderWaitPage] Environment check failed: $e");
       // 🔧 BALANCED: If we can't determine, assume development (safer for hot-reload)
       // This helps returning users who lose SharedPreferences
       return true;
@@ -451,7 +425,6 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
 
       return isHotReload;
     } catch (e) {
-      debugPrint("[PeekSenderWaitPage] Hot-reload check failed: $e");
       return false;
     }
   }
@@ -471,7 +444,6 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
 
         return hasCameras;
       } catch (e) {
-        debugPrint("[PeekSenderWaitPage] Camera check failed: $e");
         return false;
       }
     } catch (e) {
@@ -499,7 +471,6 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
 
       return isRecent;
     } catch (e) {
-      debugPrint("[PeekSenderWaitPage] Recent session check failed: $e");
       return false;
     }
   }
@@ -546,7 +517,6 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
 
       return isReturningUser;
     } catch (e) {
-      debugPrint("[PeekSenderWaitPage] Known user check failed: $e");
       return false;
     }
   }
@@ -639,7 +609,6 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
       }
     } catch (e) {
       // Ignore errors in light recheck - optimistic flow will handle it
-      debugPrint("[PeekSenderWaitPage] Light recheck failed (expected): $e");
     }
   }
 
@@ -751,17 +720,12 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
             final currentSession = userData['currentSession'] as String?;
             final sessionMode = userData['sessionMode'] as String?;
 
-            debugPrint(
-                "[PeekSenderWaitPage] 🔧 Real-time session update: activePeekSession.state=$currentSessionState, activePeekSession.isActive=$currentSessionActive, sessionState=$sessionState, currentSession=$currentSession, sessionMode=$sessionMode");
-
             // 🔒 FIX: Check correct field first, then fallback to legacy fields
             if ((currentSessionState == 'photo_capture' &&
                     currentSessionActive == true) ||
                 sessionState == 'photo_capture' ||
                 currentSession == 'photo_capture' ||
                 sessionMode == 'photo_capture') {
-              debugPrint(
-                  "[PeekSenderWaitPage] 🔧 ✅ Real-time detection: Receiver in photo_capture mode - starting countdown immediately");
               _permissionsGranted = true;
               _isInConservativeMode = false;
               setState(() {});
@@ -877,7 +841,6 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
 
       return isReceiverReady;
     } catch (e) {
-      debugPrint("[PeekSenderWaitPage] Receiver state check failed: $e");
       return false;
     }
   }
@@ -970,9 +933,6 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
         // Extract current session state from the correct structure
         final currentSessionState = activePeekSession?['state'] as String?;
         final currentSessionActive = activePeekSession?['isActive'] as bool?;
-
-        debugPrint(
-            "[PeekSenderWaitPage] 🔍 Receiver session fields: activePeekSession.state=$currentSessionState, activePeekSession.isActive=$currentSessionActive, sessionState=$sessionState, currentSession=$currentSession, sessionMode=$sessionMode, isInSession=$isInSession");
 
         // 🔒 FIX: Check the correct field first
         if (currentSessionState != null &&
@@ -1186,8 +1146,6 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
   }
 
   void _handleStatusUpdate(PeekStatusUpdate update) {
-    debugPrint("[PeekSenderWaitPage] Status update received: ${update.status}");
-
     switch (update.status) {
       case 'accepted':
         debugPrint(
@@ -1234,13 +1192,11 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
         );
         break;
       default:
-        debugPrint("[PeekSenderWaitPage] Unknown status: ${update.status}");
     }
   }
 
   void _startInitialCountdown() {
     if (_countdownStarted) {
-      debugPrint("[PeekSenderWaitPage] Countdown already started, skipping");
       return;
     }
     _countdownStarted = true;
@@ -1282,16 +1238,15 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
         _startImmediateCountdown();
       }
     } catch (e) {
-      debugPrint("[PeekSenderWaitPage] Error fetching expiration: $e");
       _startDefaultCountdown();
     }
   }
 
   void _startDefaultCountdown() {
     setState(() {
-      _secondsRemaining = 31;
+      _secondsRemaining = 30;
     });
-    debugPrint("[PeekSenderWaitPage] Starting default countdown: 31s");
+
     _startLiveCountdown();
   }
 
@@ -1334,8 +1289,6 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
           _secondsRemaining = 0;
         }
       });
-
-      debugPrint("[PeekSenderWaitPage] Countdown: ${_secondsRemaining}s");
 
       if (_secondsRemaining == 0) {
         timer.cancel();
