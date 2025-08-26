@@ -156,7 +156,7 @@ class HomeStateNotifier extends AutoDisposeAsyncNotifier<HomeState> {
           isPremium: false,
           isButtonEnabled: false,
           buttonText: 'Limit Reached',
-          subtitleText: '🚫 Daily peek limit reached!',
+          subtitleText: 'Daily peek limit reached!',
           isRestricted: false);
     }
 

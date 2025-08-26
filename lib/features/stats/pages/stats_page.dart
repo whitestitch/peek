@@ -93,7 +93,7 @@ class _StatsPageState extends ConsumerState<StatsPage> {
                 "No Feedback Yet",
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w700,
                       color: peekWhiteColor,
                       letterSpacing: 0.5,
                       fontSize: 34,
@@ -106,7 +106,7 @@ class _StatsPageState extends ConsumerState<StatsPage> {
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w500,
                       color: peekOnBackgroundColor.withValues(alpha: 0.85),
-                      fontSize: 22,
+                      fontSize: 20,
                     ),
               ),
               const SizedBox(height: 20),
@@ -339,9 +339,10 @@ class _StatsPageState extends ConsumerState<StatsPage> {
                             .textTheme
                             .headlineMedium
                             ?.copyWith(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600)),
-                    const SizedBox(height: 10),
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                            )),
+                    const SizedBox(height: 12),
                     Text("Reactions to Your Peeks",
                         style: Theme.of(context)
                             .textTheme

@@ -269,7 +269,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
               style: textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w500,
                 color: peekOnBackgroundColor.withValues(alpha: 0.85),
-                fontSize: 22,
+                fontSize: 20,
               ),
             ),
             if (slideData['text'] != null) ...[

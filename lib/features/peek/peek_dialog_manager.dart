@@ -149,63 +149,135 @@ class PeekDialogManager {
         color: Colors.black54, // Barrier color
         child: Center(
           child: Container(
-            margin: const EdgeInsets.all(24.0),
-            child: AlertDialog(
-              backgroundColor: peekBackgroundColor,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
-              title: const Text(
-                'New Peek Request!',
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: peekWhiteColor,
-                  letterSpacing: 0.5,
-                  fontSize: 26,
-                ),
-              ),
-              content: Text(
-                'Someone wants to share a peek with you. Accept?',
-                style: TextStyle(
-                  color: peekWhiteColor.withValues(alpha: 1),
-                  height: 1.55,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w400,
-                ),
-              ),
-              actionsAlignment: MainAxisAlignment.spaceBetween,
-              actions: <Widget>[
-                TextButton(
-                  style: TextButton.styleFrom(
-                    foregroundColor:
-                        peekOnBackgroundColor.withValues(alpha: 0.7),
-                    textStyle: const TextStyle(
-                      fontWeight: FontWeight.w700,
+            // ✅ FIX: Match Reactions dialog width and styling
+            margin: const EdgeInsets.fromLTRB(24, 40, 24, 80),
+            child: TweenAnimationBuilder<double>(
+              duration: const Duration(milliseconds: 600),
+              tween: Tween<double>(begin: 0.0, end: 1.0),
+              curve: Curves.easeOutBack,
+              builder: (context, value, child) {
+                // 🔒 FIX: Clamp opacity value to prevent assertion errors
+                final clampedValue = value.clamp(0.0, 1.0);
+
+                return Transform.scale(
+                  scale: 0.8 + (0.2 * clampedValue),
+                  child: Opacity(
+                    opacity: clampedValue,
+                    child: Container(
+                      padding: const EdgeInsets.all(30),
+                      decoration: BoxDecoration(
+                        // ✅ MATCH: Beautiful gradient background matching Reaction dialog style
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            peekBackgroundColor,
+                            peekBackgroundColor.withValues(alpha: 0.95),
+                            peekSurfaceColor.withValues(alpha: 0.3),
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(20),
+                        // ✅ MATCH: Subtle shadow for depth
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.3),
+                            blurRadius: 20,
+                            spreadRadius: 2,
+                            offset: const Offset(0, 10),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // ✅ MATCH: Animated title with slide-in effect
+                          Transform.translate(
+                            offset: Offset(0, 15 * (1 - clampedValue)),
+                            child: const Text(
+                              'New Peek Request!',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 24,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ),
+
+                          const SizedBox(height: 20),
+
+                          // ✅ MATCH: Animated content with slide-in effect
+                          Transform.translate(
+                            offset: Offset(0, 10 * (1 - clampedValue)),
+                            child: Text(
+                              'Someone wants to share a peek with you. Accept?',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.90),
+                                fontSize: 16,
+                                height: 1.4,
+                                fontWeight: FontWeight.w400,
+                              ),
+                            ),
+                          ),
+
+                          const SizedBox(height: 30),
+
+                          // ✅ MATCH: Animated buttons with slide-in effect
+                          Transform.translate(
+                            offset: Offset(0, 25 * (1 - clampedValue)),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                // ✅ KEEP: Decline button (left, no bg)
+                                TextButton(
+                                  style: TextButton.styleFrom(
+                                    foregroundColor:
+                                        Colors.white.withValues(alpha: 0.8),
+                                    textStyle: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                  onPressed: () {
+                                    _closeDialogOverlay();
+                                    _declinePeekRequest(requestId);
+                                  },
+                                  child: const Text('Decline'),
+                                ),
+                                // ✅ KEEP: Accept button (right, with bg)
+                                ElevatedButton(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: peekPrimaryColor,
+                                    foregroundColor: peekSurfaceColor,
+                                    textStyle: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 18,
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 24,
+                                      vertical: 16,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(30),
+                                    ),
+                                  ),
+                                  onPressed: () {
+                                    _closeDialogOverlay();
+                                    _acceptPeekRequest(requestId);
+                                  },
+                                  child: const Text('Accept'),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                  onPressed: () {
-                    _closeDialogOverlay();
-                    _declinePeekRequest(requestId);
-                  },
-                  child: const Text('Decline'),
-                ),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: peekPrimaryColor,
-                    foregroundColor: peekSurfaceColor,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 24, vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(30),
-                    ),
-                  ),
-                  onPressed: () {
-                    _closeDialogOverlay();
-                    _acceptPeekRequest(requestId);
-                  },
-                  child: const Text('Accept'),
-                ),
-              ],
+                );
+              },
             ),
           ),
         ),

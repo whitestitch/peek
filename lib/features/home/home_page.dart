@@ -213,6 +213,9 @@ class _HomePageState extends ConsumerState<HomePage> {
     } else if (reason == 'sender_cancelled') {
       title = "Peekio Stopped";
       message = "The sender stopped the Peekio request.";
+    } else if (reason == 'timeout') {
+      title = "Time Out!";
+      message = "The Peekio request timed out.";
     } else {
       title = "Peekio Cancelled";
       message = "The Peekio request was cancelled.";
@@ -619,7 +622,7 @@ class _HomePageState extends ConsumerState<HomePage> {
           final isLoading = ref.watch(peekControllerProvider).isLoading;
           final isButtonEnabled = state.isButtonEnabled && !isLoading;
           final startButtonText = state.buttonText;
-          final subtitleTextInBuild = state.subtitleText;
+          // final subtitleTextInBuild = state.subtitleText;
           final isPremiumForUI = state.isPremium;
           final isRestricted = state.isRestricted;
 
@@ -629,48 +632,24 @@ class _HomePageState extends ConsumerState<HomePage> {
             child: material.Padding(
               padding: const material.EdgeInsets.symmetric(
                 horizontal: 24.0,
-                vertical: 40.0,
+                vertical: 16,
               ),
               child: material.Column(
                 mainAxisAlignment: material.MainAxisAlignment.center,
                 mainAxisSize: material.MainAxisSize.min,
                 children: [
                   // 🔧 Add top margin to center content better on screen
-                  const material.SizedBox(height: 20),
+                  // const material.SizedBox(height: 20),
                   _buildWelcomeArea(context, isPremiumForUI),
 
-                  // Add peek counter text under the main title
-                  const material.SizedBox(height: 15),
-                  material.Container(
-                    alignment: material.Alignment.center,
-                    child: material.Text(
-                      isRestricted
-                          ? 'You are banned for inappropriate content'
-                          : subtitleTextInBuild,
-                      textAlign: material.TextAlign.center,
-                      style: material.TextStyle(
-                        fontSize: 17,
-                        fontWeight: material.FontWeight.w600,
-                        color: isRestricted
-                            ? peekErrorColor
-                            : isPremiumForUI
-                                ? material.Colors.green.shade600
-                                : material.Theme.of(context)
-                                    .textTheme
-                                    .titleMedium
-                                    ?.color
-                                    ?.withValues(alpha: 0.9),
-                      ),
-                    ),
-                  ),
-                  const material.SizedBox(height: 30),
+                  // const material.SizedBox(height: 30),
                   material.SizedBox(
                     width: 450,
                     height: 350,
                     child: material.Stack(
                       alignment: material.Alignment.center,
                       children: [
-                        material.SizedBox(
+                        const material.SizedBox(
                           width: 450,
                           height: 450,
                           child: RiveAnimation.asset(
@@ -728,7 +707,8 @@ class _HomePageState extends ConsumerState<HomePage> {
                                               )
                                             : material.Padding(
                                                 padding: const material
-                                                    .EdgeInsets.all(15),
+                                                    // .EdgeInsets.all(15),
+                                                    .EdgeInsets.all(0),
                                                 child: SvgPicture.asset(
                                                   'assets/images/peekio_eye.svg',
                                                   // height: 200,
@@ -747,7 +727,13 @@ class _HomePageState extends ConsumerState<HomePage> {
                     ),
                   ),
 
-                  const material.SizedBox(height: 30),
+                  // const material.SizedBox(height: 30),
+                  // const material.SizedBox(height: 20),
+
+                  // 🔒 NEW: Dynamic peek status text below the send peek button
+                  const material.SizedBox(height: 16),
+                  _buildPeekStatusText(
+                      context, isPremiumForUI, isRestricted, isCooldownActive),
 
                   // 🔧 NEW: Show restriction info when user is banned
 
@@ -876,54 +862,75 @@ class _HomePageState extends ConsumerState<HomePage> {
     String titleText =
         isPremium ? 'Snap. Peek. Vanish.' : 'Snap. Peek. Vanish.';
 
-    if (isPremium && !isAnonymous) {
-      // 🔒 RESPONSIVE: Calculate adaptive font size based on screen dimensions
-      final screenWidth = material.MediaQuery.of(context).size.width;
-      final screenHeight = material.MediaQuery.of(context).size.height;
+    // 🔒 UNIFIED: Calculate adaptive font size for all user types
+    final screenWidth = material.MediaQuery.of(context).size.width;
+    final screenHeight = material.MediaQuery.of(context).size.height;
 
-      // Adaptive font sizing with min/max bounds for optimal readability
-      double adaptiveFontSize = (screenWidth * 0.08).clamp(24.0, 48.0);
+    // Unified font sizing with min/max bounds for optimal readability
+    double adaptiveFontSize = (screenWidth * 0.095).clamp(30.0, 54.0);
 
-      // For very small screens, use height-based calculation as fallback
-      if (screenWidth < 320) {
-        adaptiveFontSize = (screenHeight * 0.06).clamp(20.0, 32.0);
-      }
+    // For very small screens, use height-based calculation as fallback
+    if (screenWidth < 320) {
+      adaptiveFontSize = (screenHeight * 0.07).clamp(26.0, 38.0);
+    }
 
-      // For very large screens, cap the maximum size
-      if (screenWidth > 1200) {
-        adaptiveFontSize = 48.0;
-      }
+    // For very large screens, cap the maximum size
+    if (screenWidth > 1200) {
+      adaptiveFontSize = 54.0;
+    }
 
-      return material.Padding(
-        padding: material.EdgeInsets.symmetric(
-          horizontal: (screenWidth * 0.05).clamp(
-            16.0,
-            32.0,
-          ),
-          vertical: (screenHeight * 0.02).clamp(
-            8.0,
-            24.0,
-          ),
+    return material.Padding(
+      padding: material.EdgeInsets.symmetric(
+        horizontal: (screenWidth * 0.05).clamp(
+          16.0,
+          32.0,
         ),
-        child: material.Column(
-          mainAxisAlignment: material.MainAxisAlignment.center,
-          children: [
-            material.Text(
-              titleText,
-              style: material.TextStyle(
-                fontSize: adaptiveFontSize,
-                fontWeight: material.FontWeight.w700,
-                letterSpacing: 0.8,
-                color: peekWhiteColor,
-                height: 1.1,
-              ),
-              textAlign: material.TextAlign.center,
+        vertical: (screenHeight * 0.02).clamp(
+          8.0,
+          24.0,
+        ),
+      ),
+      child: material.Column(
+        mainAxisAlignment: material.MainAxisAlignment.center,
+        children: [
+          material.Text(
+            titleText,
+            style: material.TextStyle(
+              fontSize: adaptiveFontSize,
+              fontWeight: isPremium
+                  ? material.FontWeight.w700
+                  : material.FontWeight.w600,
+              letterSpacing: 0.6,
+              color: peekWhiteColor,
+              height: 1.4,
             ),
-            material.SizedBox(
-                height: (screenHeight * 0.01).clamp(
-              4.0,
-              12.0,
-            )),
+            textAlign: material.TextAlign.center,
+          ),
+          // 🔒 NEW: Subtitle below title for all users
+          material.SizedBox(
+              height: (screenHeight * 0.08).clamp(
+            12.0,
+            24.0,
+          )),
+          material.Text(
+            'See someone\'s world.',
+            style: material.TextStyle(
+              fontSize: (screenWidth * 0.04).clamp(
+                20.0,
+                22.0,
+              ),
+              fontWeight: material.FontWeight.w400,
+              letterSpacing: 0.3,
+              color: peekWhiteColor.withOpacity(0.8),
+              height: 1.2,
+            ),
+            textAlign: material.TextAlign.center,
+          ),
+          material.SizedBox(
+            height: (screenWidth < 320 ? 16.0 : 20.0),
+          ),
+          // 🔒 NEW: Premium chip (only for premium users)
+          if (isPremium && !isAnonymous)
             material.Chip(
               avatar: material.Icon(
                 material.Icons.star,
@@ -954,52 +961,156 @@ class _HomePageState extends ConsumerState<HomePage> {
                 ),
               ),
             ),
-          ],
-        ),
-      );
-    }
-
-    // For non-premium users, also use responsive design for consistency
-    final screenWidth = material.MediaQuery.of(context).size.width;
-    final screenHeight = material.MediaQuery.of(context).size.height;
-
-    // Adaptive font sizing for non-premium users
-    double adaptiveFontSize = (screenWidth * 0.075).clamp(22.0, 42.0);
-
-    // For very small screens, use height-based calculation as fallback
-    if (screenWidth < 320) {
-      adaptiveFontSize = (screenHeight * 0.055).clamp(18.0, 28.0);
-    }
-
-    // For very large screens, cap the maximum size
-    if (screenWidth > 1200) {
-      adaptiveFontSize = 42.0;
-    }
-
-    return material.Padding(
-      padding: material.EdgeInsets.symmetric(
-        horizontal: (screenWidth * 0.05).clamp(
-          16.0,
-          32.0,
-        ),
-        vertical: (screenHeight * 0.02).clamp(
-          8.0,
-          24.0,
-        ),
+        ],
       ),
-      child: material.Column(
+    );
+
+    // return material.Padding(
+    //   padding: material.EdgeInsets.symmetric(
+    //     horizontal: (screenWidth * 0.05).clamp(
+    //       16.0,
+    //       32.0,
+    //     ),
+    //     vertical: (screenHeight * 0.02).clamp(
+    //       8.0,
+    //       24.0,
+    //     ),
+    //   ),
+    //   child: material.Column(
+    //     mainAxisAlignment: material.MainAxisAlignment.center,
+    //     children: [
+    //       material.Text(
+    //         titleText,
+    //         style: material.TextStyle(
+    //           fontSize: adaptiveFontSize,
+    //           fontWeight: material.FontWeight.w600,
+    //           letterSpacing: 0.6,
+    //           color: peekWhiteColor,
+    //           height: 1.4,
+    //         ),
+    //         textAlign: material.TextAlign.center,
+    //       ),
+    //       // 🔒 NEW: Subtitle below title for non-premium users too
+    //       material.SizedBox(
+    //           height: (screenHeight * 0.08).clamp(
+    //         12.0,
+    //         24.0,
+    //       )),
+    //       material.Text(
+    //         'See someone\'s world',
+    //         style: material.TextStyle(
+    //           fontSize: (screenWidth * 0.04).clamp(
+    //             20.0,
+    //             22.0,
+    //           ),
+    //           fontWeight: material.FontWeight.w400,
+    //           letterSpacing: 0.3,
+    //           color: peekWhiteColor.withOpacity(0.8),
+    //           height: 1.2,
+    //         ),
+    //         textAlign: material.TextAlign.center,
+    //       ),
+    //       material.SizedBox(
+    //           height: (screenHeight * 0.02).clamp(
+    //         12.0,
+    //         20.0,
+    //       )),
+    //     ],
+    //   ),
+    // );
+  }
+
+  /// 🔒 NEW: Build dynamic peek status text with glassmorphism effect
+  material.Widget _buildPeekStatusText(material.BuildContext context,
+      bool isPremium, bool isRestricted, bool isCooldownActive) {
+    // 🔒 Use existing peek status logic - don't recreate
+    String statusText;
+    material.IconData statusIcon;
+    material.Color backgroundColor;
+    material.Color textColor;
+    material.Color iconColor;
+
+    if (isRestricted) {
+      // User is banned
+      statusText = 'Account suspended due to violations';
+      statusIcon = material.Icons.block;
+      backgroundColor = material.Colors.red.withAlpha(13);
+      textColor = material.Colors.red.shade400;
+      iconColor = material.Colors.red.shade400;
+    } else if (isCooldownActive) {
+      // User is in cooldown
+      statusText = 'Please wait for cooldown';
+      statusIcon = material.Icons.timer;
+      backgroundColor = material.Colors.orange.withAlpha(13);
+      textColor = material.Colors.orange.shade400;
+      iconColor = material.Colors.orange.shade400;
+    } else if (isPremium) {
+      // Premium user
+      statusText = 'Unlimited peeks available!';
+      statusIcon = material.Icons.all_inclusive;
+      backgroundColor = material.Colors.green.withAlpha(13);
+      textColor = material.Colors.green.shade400;
+      iconColor = material.Colors.green.shade400;
+    } else {
+      // 🔒 FIX: Use existing peek limit logic instead of hardcoded values
+      // Get the actual peek count from the existing state system
+      final homeState = ref.read(homeStateProvider).value;
+      if (homeState != null) {
+        // Use the existing subtitleText which contains the actual peek count
+        statusText = homeState.subtitleText;
+      } else {
+        // Fallback if state is not available
+        statusText = 'Check peek availability';
+      }
+      statusIcon = material.Icons.visibility;
+      backgroundColor = material.Colors.blue.withAlpha(13);
+      textColor = material.Colors.blue.shade400;
+      iconColor = material.Colors.blue.shade400;
+    }
+
+    return material.Container(
+      width: double.infinity,
+      padding: const material.EdgeInsets.symmetric(
+        horizontal: 20.0,
+        vertical: 16.0,
+      ),
+      decoration: material.BoxDecoration(
+        color: backgroundColor,
+        borderRadius: material.BorderRadius.circular(16),
+        border: material.Border.all(
+          color: textColor.withAlpha(20),
+          width: 1,
+        ),
+        // 🔒 GLASSMORPHISM: Enhanced shadow for depth
+        boxShadow: [
+          material.BoxShadow(
+            color: material.Colors.black.withOpacity(0.1),
+            blurRadius: 20,
+            spreadRadius: 0,
+            offset: const material.Offset(0, 4),
+          ),
+        ],
+      ),
+      child: material.Row(
         mainAxisAlignment: material.MainAxisAlignment.center,
         children: [
-          material.Text(
-            titleText,
-            style: material.TextStyle(
-              fontSize: adaptiveFontSize,
-              fontWeight: material.FontWeight.w600,
-              letterSpacing: 0.6,
-              color: peekWhiteColor,
-              height: 1.1,
+          material.Icon(
+            statusIcon,
+            color: iconColor,
+            size: 20,
+          ),
+          const material.SizedBox(width: 12),
+          material.Expanded(
+            child: material.Text(
+              statusText,
+              style: material.TextStyle(
+                fontSize: 16,
+                fontWeight: material.FontWeight.w500,
+                color: textColor,
+                height: 1.2,
+              ),
+              textAlign: material.TextAlign.center,
             ),
-            textAlign: material.TextAlign.center,
           ),
         ],
       ),

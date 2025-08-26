@@ -7,6 +7,8 @@ import 'package:peek/features/peek/controllers/peek_controller.dart';
 import 'package:rive/rive.dart';
 import 'package:peek/theme/colors.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:flutter/foundation.dart';
 
 /// Waits for acceptance from a receiver; on accept, routes into SplashPage.
 /// Navigates home on rejection or timeout.
@@ -172,9 +174,9 @@ class _PeekWaitPageState extends ConsumerState<PeekWaitPage> {
   void _onTimeout() {
     if (!mounted || _navigated)
       return; // Prevent multiple calls if _navigated was already true
-    // _hasTimedOut is no longer used to control UI here.
+
     material.debugPrint(
-      "[PeekWaitPage] Timeout reached for request ${widget.requestId}. Navigating to PeekTimedOutPage.",
+      "[PeekWaitPage] Timeout reached for request ${widget.requestId}. Navigating home with timeout panel.",
     );
 
     _navigated = true;
@@ -189,9 +191,11 @@ class _PeekWaitPageState extends ConsumerState<PeekWaitPage> {
           (e) => material.debugPrint('⚠️ [PeekWaitPage] expirePeek error: $e'),
         );
 
-    // Navigate to the dedicated PeekTimedOutPage
-    // Ensure your GoRouter configuration has a route for '/peek-timed-out'
-    context.go('/peek-timed-out');
+    // ✅ FIX: Navigate home with timeout panel (same pattern as cancellation)
+    // This ensures both users see the same "Time Out!" panel
+    if (mounted) {
+      context.go('/?show=peekCancelled&reason=timeout');
+    }
   }
 
   /// Navigates to the Peek Accept page
@@ -291,6 +295,73 @@ class _PeekWaitPageState extends ConsumerState<PeekWaitPage> {
     _sub = null;
     _timeoutTimer?.cancel();
     _timeoutTimer = null;
+  }
+
+  /// ✅ NEW: Handle close action for the close button (reusing Photo Capture logic)
+  void _handleCloseAction() async {
+    material.debugPrint(
+        "[PeekWaitPage] Close button tapped. Attempting to cancel peek as sender...");
+
+    try {
+      // Use Cloud Function to cancel the peek request with admin privileges
+      final functions = FirebaseFunctions.instanceFor(region: "us-central1");
+      final callable = functions.httpsCallable('cancelPeekRequest');
+
+      final result = await callable.call({
+        'requestId': widget.requestId,
+        'reason': 'sender_cancelled',
+        'debug': kDebugMode,
+      });
+
+      final responseData = result.data as Map<String, dynamic>;
+      if (responseData['success'] == true) {
+        material.debugPrint(
+            "[PeekWaitPage] Peek cancelled successfully via Cloud Function. Navigating home...");
+
+        // Navigate directly to home with cancellation parameters
+        if (mounted) {
+          material.debugPrint(
+              "[PeekWaitPage] Navigating to home with sender cancellation...");
+          context.go('/?show=peekCancelled&reason=sender_cancelled');
+        }
+      } else {
+        throw Exception('Cloud Function returned success: false');
+      }
+    } catch (e) {
+      material.debugPrint(
+          "[PeekWaitPage] Error cancelling peek via Cloud Function: $e");
+
+      // Fallback: Even if Cloud Function fails, navigate home
+      if (mounted) {
+        material.debugPrint(
+            "[PeekWaitPage] Fallback navigation due to Cloud Function error...");
+        context.go('/');
+      }
+    }
+  }
+
+  /// ✅ NEW: Build close button overlay (reusing Photo Capture design)
+  material.Widget _buildCloseButton() {
+    return material.Positioned(
+      top: material.MediaQuery.of(context).padding.top + 20,
+      right: 20,
+      child: material.Container(
+        decoration: material.BoxDecoration(
+          color: material.Colors.black.withValues(alpha: 0.6),
+          shape: material.BoxShape.circle,
+        ),
+        child: material.IconButton(
+          onPressed: _handleCloseAction,
+          icon: const material.Icon(material.Icons.close,
+              color: material.Colors.white, size: 24),
+          padding: material.EdgeInsets.zero,
+          constraints: const material.BoxConstraints(
+            minWidth: 40,
+            minHeight: 40,
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -432,6 +503,9 @@ class _PeekWaitPageState extends ConsumerState<PeekWaitPage> {
               ],
             ),
           ),
+
+          // ✅ NEW: Close button (X) for cancelling peek request (TOP LAYER)
+          _buildCloseButton(),
 
           // --- Layer 3: Top Logo ---
           material.Padding(

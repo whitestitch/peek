@@ -358,9 +358,14 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
         // Handle timeout/expiration events
         if (status == 'expired' || status == 'expired_capture') {
           debugPrint(
-              "[PhotoCapturePage] Peek request expired (status: $status). Showing Time Up! state...");
+              "[PhotoCapturePage] Peek request expired (status: $status). Navigating home with timeout panel...");
           if (mounted) {
-            _showTimeUpState();
+            // ✅ FIX: Use same timeout handling as wait page for consistency
+            // Cancel the countdown since it's no longer needed
+            _countdownManager.cancelCountdown();
+
+            // Navigate home with timeout panel (same pattern as wait page)
+            context.go('/?show=peekCancelled&reason=timeout');
           }
         }
       },
@@ -370,87 +375,7 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
     );
   }
 
-  /// Show the Time Up! state when the peek request expires
-  void _showTimeUpState() {
-    // Cancel the countdown since it's no longer needed
-    _countdownManager.cancelCountdown();
-
-    // Show the Time Up! slide panel
-    if (mounted) {
-      showModalBottomSheet(
-        context: context,
-        backgroundColor: Colors.transparent,
-        isScrollControlled: true,
-        isDismissible: true,
-        builder: (context) {
-          return Container(
-            height: MediaQuery.of(context).size.height * 0.4,
-            width: double.infinity,
-            decoration: const BoxDecoration(
-              color: peekBackgroundColor,
-              borderRadius: BorderRadius.vertical(
-                top: Radius.circular(24),
-              ),
-            ),
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(
-                  Icons.timer_off_outlined,
-                  size: 60,
-                  color: Colors.white70,
-                ),
-                const SizedBox(height: 20),
-                const Text(
-                  "Time Up!",
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  "The peek request has expired.",
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.white70,
-                  ),
-                ),
-                const SizedBox(height: 24),
-                ElevatedButton(
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                    if (mounted) {
-                      context.go('/');
-                    }
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    foregroundColor: peekBackgroundColor,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 32, vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: const Text(
-                    "Go Home",
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
-      );
-    }
-  }
+  // ✅ REMOVED: _showTimeUpState method - now using unified timeout handling
 
   /// Handle capture button press
   Future<void> _handleCapturePress() async {
