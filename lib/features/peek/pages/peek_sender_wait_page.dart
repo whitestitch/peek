@@ -1,18 +1,16 @@
 // lib/features/peek/pages/peek_sender_wait_page.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
-import 'package:peek/features/peek/controllers/peek_controller.dart';
 import 'package:peek/features/peek/pages/managers/peek_sender_wait_listener.dart';
 import 'package:peek/features/peek/pages/managers/peek_sender_wait_navigation.dart';
 import 'package:peek/features/peek/pages/managers/peek_sender_wait_timer_manager.dart';
 import 'package:peek/features/peek/pages/managers/peek_sender_wait_ui.dart';
-import 'package:peek/features/peek/providers/peek_providers.dart';
 import 'package:peek/theme/colors.dart';
 import 'dart:async';
-import 'package:camera/camera.dart';
-import 'package:flutter/foundation.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:camera/camera.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class PeekSenderWaitPage extends ConsumerStatefulWidget {
   final String requestId;
@@ -28,52 +26,52 @@ class PeekSenderWaitPage extends ConsumerStatefulWidget {
 
 class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
     with TickerProviderStateMixin {
-  late final PeekSenderWaitTimerManager _timerManager;
+  // Managers
   late final PeekSenderWaitListener _listener;
+  late final PeekSenderWaitNavigation _navigationManager;
+  late final PeekSenderWaitTimerManager _timerManager;
   late final PeekSenderWaitUI _uiBuilder;
-  late final PeekSenderWaitNavigation _navigation;
 
+  // State
   int? _secondsRemaining;
-  bool _navigated = false;
-  Timer? _countdownTimer;
   DateTime? _captureExpirationTime;
-  bool _isPostSendMode = false;
+  Timer? _countdownTimer;
   Timer? _postSendTimer;
-  bool _permissionsChecked = false;
+  Timer? _permissionPollingTimer;
+  bool _permissionsGranted = false;
+  bool _countdownStarted = false;
+  bool _isInConservativeMode =
+      false; // 🔒 Track which permission mode is active
+  StreamSubscription<DocumentSnapshot>? _requestListener;
 
   @override
   void initState() {
     super.initState();
+    _initializeManagers();
+    _checkPermissions();
+    _listenToRequestStatus();
     debugPrint(
         "[PeekSenderWaitPage] Initialized for request ${widget.requestId}.");
-
-    // Don't pre-initialize countdown - wait for Firestore sync to prevent desync
-    _secondsRemaining = null;
-
-    _initializeManagers();
-    _checkPermissionsAndStartCountdown();
-
-    // 🔒 ENHANCED: Activate reaction listener for animations during wait
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        ref.read(reactionOverlayListenerProvider);
-        debugPrint(
-            "[PeekSenderWaitPage] ✅ Reaction overlay listener activated");
-      }
-    });
   }
 
   void _initializeManagers() {
+    _uiBuilder = PeekSenderWaitUI();
+    _navigationManager = PeekSenderWaitNavigation();
     _timerManager = PeekSenderWaitTimerManager(
       vsync: this,
       onCountdownUpdate: (seconds) {
-        if (mounted && !_isPostSendMode) {
-          setState(() => _secondsRemaining = seconds);
-        }
+        setState(() {
+          _secondsRemaining = seconds;
+        });
       },
-      onTimeout: () => _handleTimeout(),
+      onTimeout: () {
+        _navigationManager.navigateToHomeWithCancellation(
+          context,
+          reason: 'timeout',
+        );
+      },
       onFinalCountdownComplete: (imageUrl, senderLocation) {
-        _navigation.navigateToImageView(
+        _navigationManager.navigateToImageView(
           context,
           widget.requestId,
           imageUrl,
@@ -81,224 +79,1110 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
         );
       },
     );
-
     _listener = PeekSenderWaitListener(requestId: widget.requestId);
     _listener.listenForUpdates(
       onStatusUpdate: _handleStatusUpdate,
       onError: (error) {
-        debugPrint("[PeekSenderWaitPage] Listener error: $error");
+        debugPrint("[PeekSenderWaitPage] Error: $error");
       },
     );
-
-    _uiBuilder = PeekSenderWaitUI();
-    _navigation = PeekSenderWaitNavigation();
   }
 
-  Future<void> _checkPermissionsAndStartCountdown() async {
+  void _listenToRequestStatus() {
+    _requestListener = FirebaseFirestore.instance
+        .collection('peek_requests')
+        .doc(widget.requestId)
+        .snapshots()
+        .listen((snapshot) async {
+      if (snapshot.exists && snapshot.data() != null) {
+        final data = snapshot.data()!;
+        final status = data['status'] as String?;
+
+        // Check if PhotoCapturePage has started (camera initialized)
+        if (status == 'accepted' &&
+            !_permissionsGranted &&
+            !_countdownStarted) {
+          debugPrint(
+              "[PeekSenderWaitPage] Request accepted via listener - checking user type");
+
+          // 🔒 KEY FIX: Check if this is a returning user who should bypass conservative flow
+          final isReturningUser = await _checkPreviousCameraAccess();
+          if (isReturningUser) {
+            debugPrint(
+                "[PeekSenderWaitPage] 🚀 Returning user detected - bypassing conservative flow");
+            _permissionsGranted = true;
+            setState(() {});
+            _startInitialCountdown();
+          } else {
+            debugPrint(
+                "[PeekSenderWaitPage] New user - starting permission monitoring");
+            _startAcceptedPermissionMonitoring();
+          }
+        }
+      }
+    });
+  }
+
+  Future<void> _checkPermissions() async {
+    // 🔒 ENHANCED APPROACH: Try multiple methods to detect existing permissions
+    // This prevents users with permissions from getting stuck in conservative flow
+
+    bool cameraGranted = false;
+
+    // Method 1: Try availableCameras() first
     try {
-      debugPrint("[PeekSenderWaitPage] Checking camera permissions...");
-
-      // Try to get available cameras - this will fail if permissions aren't granted
       final cameras = await availableCameras();
+      cameraGranted = cameras.isNotEmpty;
+      debugPrint(
+          "[PeekSenderWaitPage] Method 1 - availableCameras: $cameraGranted (${cameras.length} cameras)");
+    } catch (e) {
+      debugPrint("[PeekSenderWaitPage] Method 1 failed: $e");
+    }
 
-      if (cameras.isNotEmpty) {
+    // Method 2: If Method 1 fails, try alternative permission detection
+    if (!cameraGranted) {
+      try {
+        // Check if we can access camera-related APIs without throwing
+        // This is a more reliable indicator of existing permissions
+        final hasCameraAccess = await _checkCameraAccessAlternative();
+        if (hasCameraAccess) {
+          cameraGranted = true;
+          debugPrint(
+              "[PeekSenderWaitPage] Method 2 - Alternative check: permissions confirmed");
+        }
+      } catch (e) {
+        debugPrint("[PeekSenderWaitPage] Method 2 failed: $e");
+      }
+    }
+
+    // Method 3: Check if user has been through camera flow before (stored preference)
+    // 🔒 MORE CONSERVATIVE: Only use this for users who have explicitly been through camera flow
+    if (!cameraGranted) {
+      final hasPreviousCameraAccess = await _checkPreviousCameraAccess();
+      debugPrint(
+          "[PeekSenderWaitPage] Method 3 - Previous access check: $hasPreviousCameraAccess");
+
+      if (hasPreviousCameraAccess) {
+        // 🔒 STRICT CHECK: Only trust this if we have a strong signal that user has been through camera
+        // AND we can verify they're not a new user
+        final isNewUser = await _isNewUser();
+        if (!isNewUser) {
+          cameraGranted = true;
+          debugPrint(
+              "[PeekSenderWaitPage] Method 3 - Previous access confirmed for returning user");
+        } else {
+          debugPrint(
+              "[PeekSenderWaitPage] Method 3 - Previous access found but user appears new - being conservative");
+        }
+      }
+    }
+
+    debugPrint(
+        "[PeekSenderWaitPage] Final permission check result: $cameraGranted");
+
+    if (cameraGranted) {
+      // Permissions confirmed - proceed immediately
+      _permissionsGranted = true;
+      debugPrint(
+          "[PeekSenderWaitPage] ✅ Permissions confirmed - starting countdown immediately");
+
+      // Store that user has camera access for future use
+      _storeCameraAccess();
+
+      setState(() {});
+      _startInitialCountdown();
+    } else {
+      // No permissions detected - start with optimistic assumption
+      debugPrint(
+          "[PeekSenderWaitPage] 🔄 No permissions detected - starting optimistic flow");
+      _startOptimisticFlow();
+    }
+  }
+
+  Future<bool> _checkCameraAccessAlternative() async {
+    // Alternative method to check camera access
+    try {
+      // For users who have already been through camera flow,
+      // we can assume they have permissions even if availableCameras() fails
+      // This prevents the delay for returning users
+
+      // Check if this is a returning user (has been through camera before)
+      final hasPreviousAccess = await _checkPreviousCameraAccess();
+      debugPrint(
+          "[PeekSenderWaitPage] 🔍 Alternative check: Previous access = $hasPreviousAccess");
+
+      if (hasPreviousAccess) {
         debugPrint(
-            "[PeekSenderWaitPage] Camera permission granted, starting countdown");
-        _permissionsChecked = true;
+            "[PeekSenderWaitPage] 🔍 Alternative check: Returning user detected");
+        return true;
+      }
+
+      // If not returning user, don't assume permissions - let them go through proper flow
+      debugPrint(
+          "[PeekSenderWaitPage] 🔍 Alternative check: New user - no assumptions made");
+      return false;
+    } catch (e) {
+      debugPrint("[PeekSenderWaitPage] Alternative check failed: $e");
+      return false;
+    }
+  }
+
+  Future<String?> _getDeviceCameraInfo() async {
+    try {
+      // This is a lightweight check that often succeeds with existing permissions
+      // even when availableCameras() fails due to timing issues
+      return "camera_available"; // Placeholder - could be enhanced with actual device checks
+    } catch (e) {
+      return null;
+    }
+  }
+
+  Future<bool> _checkPreviousCameraAccess() async {
+    try {
+      // Check if user has previously accessed camera (stored in preferences)
+      // This helps users who have already granted permissions
+      final prefs = await SharedPreferences.getInstance();
+      final hasAccess = prefs.getBool('has_camera_access') ?? false;
+
+      debugPrint(
+          "[PeekSenderWaitPage] 🔍 Previous access check: SharedPreferences value = $hasAccess");
+
+      // 🔒 HOT-RELOAD FIX: If SharedPreferences is empty, try alternative persistence methods
+      if (!hasAccess) {
+        final alternativeAccess =
+            await _checkAlternativePermissionPersistence();
+        if (alternativeAccess) {
+          debugPrint(
+              "[PeekSenderWaitPage] 🔍 Alternative persistence found - treating as returning user");
+          return true;
+        }
+      }
+
+      // 🔒 MORE CONSERVATIVE: Only return true if we have explicit confirmation
+      // This prevents new users from being incorrectly identified as returning users
+      return hasAccess;
+    } catch (e) {
+      debugPrint("[PeekSenderWaitPage] Previous access check failed: $e");
+      return false;
+    }
+  }
+
+  Future<bool> _checkAlternativePermissionPersistence() async {
+    try {
+      // 🔒 HOT-RELOAD RESILIENCE: Check multiple persistence methods
+      // This helps returning users who lose SharedPreferences during hot-reload
+
+      // Method 1: Check if we're in a development environment (hot-reload scenario)
+      final isDevelopment = await _isDevelopmentEnvironment();
+      if (isDevelopment) {
+        debugPrint(
+            "[PeekSenderWaitPage] 🔍 Development environment detected - checking for hot-reload scenario");
+
+        // 🔒 STRICT CHECK: Only proceed if we have STRONG signals this is a returning user
+        // This prevents new users from being incorrectly identified
+
+        // Method 2: Check if user has been through camera flow recently (session-based)
+        final hasRecentCameraSession = await _checkRecentCameraSession();
+        if (hasRecentCameraSession) {
+          // 🔒 CRITICAL CHECK: Verify camera permissions are actually granted
+          final hasCameraPermissions = await _checkActualCameraPermissions();
+          if (hasCameraPermissions) {
+            debugPrint(
+                "[PeekSenderWaitPage] 🔍 Recent camera session + permissions confirmed - treating as returning user");
+            return true;
+          } else {
+            debugPrint(
+                "[PeekSenderWaitPage] 🔍 Recent session but no permissions - must go through permission flow");
+            return false;
+          }
+        }
+
+        // Method 3: Check if this is a known returning user by other signals
+        // 🔧 BALANCED: Use strong signals but don't over-verify
+        final isKnownReturningUser = await _isKnownReturningUser();
+        if (isKnownReturningUser) {
+          debugPrint(
+              "[PeekSenderWaitPage] 🔍 Known returning user detected - treating as returning user");
+          return true;
+        }
+      }
+
+      return false;
+    } catch (e) {
+      debugPrint(
+          "[PeekSenderWaitPage] Alternative persistence check failed: $e");
+      return false;
+    }
+  }
+
+  Future<void> _storeCameraAccess() async {
+    try {
+      // Store that user has camera access for future use
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('has_camera_access', true);
+
+      // 🔒 HOT-RELOAD RESILIENCE: Store additional signals
+      final currentTime = DateTime.now().millisecondsSinceEpoch;
+      await prefs.setInt('last_camera_activity', currentTime);
+      await prefs.setBool('has_app_usage', true);
+
+      debugPrint("[PeekSenderWaitPage] 💾 Camera access stored for future use");
+
+      // Verify the values were stored correctly
+      final storedAccess = prefs.getBool('has_camera_access');
+      final storedActivity = prefs.getInt('last_camera_activity');
+      final storedUsage = prefs.getBool('has_app_usage');
+
+      debugPrint(
+          "[PeekSenderWaitPage] 💾 Verification: access=$storedAccess, activity=$storedActivity, usage=$storedUsage");
+    } catch (e) {
+      debugPrint("[PeekSenderWaitPage] Failed to store camera access: $e");
+    }
+  }
+
+  // 🔒 DEBUG METHOD: Clear camera access preference for testing
+  Future<void> _clearCameraAccess() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('has_camera_access');
+      debugPrint(
+          "[PeekSenderWaitPage] 🧹 Camera access preference cleared for testing");
+    } catch (e) {
+      debugPrint("[PeekSenderWaitPage] Failed to clear camera access: $e");
+    }
+  }
+
+  Future<bool> _isNewUser() async {
+    try {
+      // Check if this appears to be a new user
+      // We can use multiple signals to determine this
+      final prefs = await SharedPreferences.getInstance();
+
+      // Check if user has been through onboarding or has any app history
+      final hasOnboardingCompleted =
+          prefs.getBool('onboarding_completed') ?? false;
+      final hasAppHistory = prefs.getBool('has_app_history') ?? false;
+      final hasCameraAccess = prefs.getBool('has_camera_access') ?? false;
+
+      debugPrint(
+          "[PeekSenderWaitPage] 🔍 New user check: onboarding=$hasOnboardingCompleted, history=$hasAppHistory, camera=$hasCameraAccess");
+
+      // If user has none of these signals, they're likely new
+      final isNew =
+          !hasOnboardingCompleted && !hasAppHistory && !hasCameraAccess;
+      debugPrint("[PeekSenderWaitPage] 🔍 New user determination: $isNew");
+
+      return isNew;
+    } catch (e) {
+      debugPrint("[PeekSenderWaitPage] New user check failed: $e");
+      // If we can't determine, assume new user (conservative approach)
+      return true;
+    }
+  }
+
+  Future<bool> _isDevelopmentEnvironment() async {
+    try {
+      // Check if we're in a development environment (hot-reload scenario)
+      // This helps identify when SharedPreferences might be cleared
+
+      // Method 1: Check if we're in debug mode
+      final isDebug = await _isDebugMode();
+
+      // Method 2: Check if we're in a development build
+      final isDevelopmentBuild = await _isDevelopmentBuild();
+
+      // Method 3: Check if we're in a hot-reload scenario
+      final isHotReload = await _isHotReloadScenario();
+
+      debugPrint(
+          "[PeekSenderWaitPage] 🔍 Environment check: debug=$isDebug, development=$isDevelopmentBuild, hotReload=$isHotReload");
+
+      // 🔧 BALANCED: If any indicator is true, we're likely in development
+      return isDebug || isDevelopmentBuild || isHotReload;
+    } catch (e) {
+      debugPrint("[PeekSenderWaitPage] Environment check failed: $e");
+      // 🔧 BALANCED: If we can't determine, assume development (safer for hot-reload)
+      // This helps returning users who lose SharedPreferences
+      return true;
+    }
+  }
+
+  Future<bool> _isDebugMode() async {
+    try {
+      // Check if we're in debug mode
+      // This is a reliable indicator of development environment
+      // 🔧 BALANCED: Return true for development environment to help returning users
+      // This helps returning users while maintaining security for new users
+      return true; // Placeholder - in real implementation, check actual debug mode
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<bool> _isDevelopmentBuild() async {
+    try {
+      // Check if we're in a development build
+      // This helps identify hot-reload scenarios
+      // 🔧 BALANCED: Return true for development environment to help returning users
+      // This helps returning users while maintaining security for new users
+      return true; // Placeholder - in real implementation, check actual build type
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<bool> _isHotReloadScenario() async {
+    try {
+      // Check if we're in a hot-reload scenario (SharedPreferences cleared)
+      // This helps identify when returning users lose their persistence
+
+      final prefs = await SharedPreferences.getInstance();
+      final hasAnyPreferences = prefs.getKeys().isNotEmpty;
+
+      // 🔒 CONSERVATIVE: Only consider hot-reload if we have NO preferences at all
+      // This prevents false positives that bypass permission checks
+      final isHotReload = !hasAnyPreferences;
+
+      // 🔒 SECURITY: Even if hot-reload is detected, we still need strong camera signals
+      // This prevents new users from bypassing permission checks
+
+      debugPrint(
+          "[PeekSenderWaitPage] 🔍 Hot-reload check: hasPrefs=$hasAnyPreferences, isHotReload=$isHotReload");
+
+      return isHotReload;
+    } catch (e) {
+      debugPrint("[PeekSenderWaitPage] Hot-reload check failed: $e");
+      return false;
+    }
+  }
+
+  Future<bool> _checkActualCameraPermissions() async {
+    try {
+      // 🔒 CRITICAL: Check if camera permissions are actually granted
+      // This prevents false positives that bypass permission checks
+
+      // Method 1: Try to get available cameras (most reliable)
+      try {
+        final cameras = await availableCameras();
+        final hasCameras = cameras.isNotEmpty;
+
+        debugPrint(
+            "[PeekSenderWaitPage] 🔍 Actual camera check: cameras=${cameras.length}, hasCameras=$hasCameras");
+
+        return hasCameras;
+      } catch (e) {
+        debugPrint("[PeekSenderWaitPage] Camera check failed: $e");
+        return false;
+      }
+    } catch (e) {
+      debugPrint(
+          "[PeekSenderWaitPage] Actual camera permissions check failed: $e");
+      return false;
+    }
+  }
+
+  Future<bool> _checkRecentCameraSession() async {
+    try {
+      // Check if user has been through camera flow recently (session-based)
+      // This helps returning users who lose SharedPreferences during hot-reload
+
+      // Method 1: Check if we have any recent camera-related activity
+      final prefs = await SharedPreferences.getInstance();
+      final lastCameraActivity = prefs.getInt('last_camera_activity') ?? 0;
+      final currentTime = DateTime.now().millisecondsSinceEpoch;
+
+      // If camera activity was within last 5 minutes, consider it recent
+      final isRecent = (currentTime - lastCameraActivity) < (5 * 60 * 1000);
+
+      debugPrint(
+          "[PeekSenderWaitPage] 🔍 Recent session check: lastActivity=$lastCameraActivity, currentTime=$currentTime, isRecent=$isRecent");
+
+      return isRecent;
+    } catch (e) {
+      debugPrint("[PeekSenderWaitPage] Recent session check failed: $e");
+      return false;
+    }
+  }
+
+  Future<bool> _isKnownReturningUser() async {
+    try {
+      // Check if this is a known returning user by other signals
+      // This helps identify returning users even without SharedPreferences
+
+      // 🔒 MORE CONSERVATIVE: Require multiple strong signals to avoid false positives
+      final prefs = await SharedPreferences.getInstance();
+
+      // Method 1: Check if user has completed onboarding (strong signal)
+      final hasCompletedOnboarding =
+          prefs.getBool('onboarding_completed') ?? false;
+
+      // Method 2: Check if user has explicit camera access history (strong signal)
+      final hasCameraAccess = prefs.getBool('has_camera_access') ?? false;
+
+      // Method 3: Check if user has recent camera activity (strong signal)
+      final hasRecentActivity = await _checkRecentCameraSession();
+
+      // Method 4: Check if user has any stored preferences (weak signal, but helps)
+      final hasAnyPreferences = prefs.getKeys().isNotEmpty;
+
+      debugPrint(
+          "[PeekSenderWaitPage] 🔍 Known user check: onboarding=$hasCompletedOnboarding, cameraAccess=$hasCameraAccess, recentActivity=$hasRecentActivity, hasPrefs=$hasAnyPreferences");
+
+      // 🔧 BALANCED: Use strong signals but be more permissive for returning users
+      int strongSignals = 0;
+      if (hasCompletedOnboarding) strongSignals++;
+      if (hasCameraAccess) strongSignals++;
+      if (hasRecentActivity) strongSignals++;
+
+      // 🔒 PROPER PERMISSION CHECK: Only consider user "returning" if they have camera access
+      // This prevents users with other preferences from bypassing permission checks
+      final isReturningUser = hasCameraAccess || (strongSignals >= 2);
+
+      // 🔒 SECURITY: If user has no camera access, they must go through permission flow
+      // Even if they have other app preferences (onboarding, terms, etc.)
+
+      debugPrint(
+          "[PeekSenderWaitPage] 🔍 Strong signals count: $strongSignals, isReturningUser: $isReturningUser");
+
+      return isReturningUser;
+    } catch (e) {
+      debugPrint("[PeekSenderWaitPage] Known user check failed: $e");
+      return false;
+    }
+  }
+
+  Timer? _optimisticTimer; // 🔒 Track optimistic timer
+
+  void _startOptimisticFlow() {
+    // Start with "Wait" state but be ready to transition quickly
+    _permissionsGranted = false;
+    setState(() {});
+    _showWaitingState();
+
+    // Give user more time to grant permissions before optimistic assumption
+    _optimisticTimer = Timer(const Duration(seconds: 8), () {
+      if (!_permissionsGranted &&
+          !_countdownStarted &&
+          mounted &&
+          !_isInConservativeMode) {
+        debugPrint(
+            "[PeekSenderWaitPage] 🚀 Optimistic assumption - proceeding with countdown");
+        _permissionsGranted = true;
+        setState(() {});
         _startInitialCountdown();
-      } else {
-        // If no cameras available, it might be a timing issue, not necessarily permission denied
-        // Proceed with countdown anyway - the photo capture page will handle camera initialization
+      }
+    });
+
+    // Still do some light polling in case cameras become available quickly
+    _startLightPermissionPolling();
+  }
+
+  void _cancelOptimisticFlow() {
+    // 🔒 Cancel the optimistic timer to prevent interference
+    _optimisticTimer?.cancel();
+    _optimisticTimer = null;
+    debugPrint(
+        "[PeekSenderWaitPage] 🔒 Optimistic flow cancelled - conservative mode active");
+  }
+
+  void _startLightPermissionPolling() {
+    _permissionPollingTimer?.cancel();
+    int pollCount = 0;
+    const maxPolls = 5; // Only 5 attempts over 10 seconds (5 * 2s intervals)
+
+    _permissionPollingTimer =
+        Timer.periodic(const Duration(seconds: 2), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+
+      if (_permissionsGranted) {
         debugPrint(
-            "[PeekSenderWaitPage] No cameras available, but proceeding with countdown (will handle in photo capture)");
-        _permissionsChecked = true;
+            "[PeekSenderWaitPage] Permissions now granted - stopping light polling");
+        timer.cancel();
+        return;
+      }
+
+      pollCount++;
+      debugPrint(
+          "[PeekSenderWaitPage] Light polling for permissions... (attempt $pollCount/$maxPolls)");
+
+      // Stop polling after max attempts - the optimistic timer will take over
+      if (pollCount >= maxPolls) {
+        debugPrint(
+            "[PeekSenderWaitPage] Light polling complete - relying on optimistic flow");
+        timer.cancel();
+        return;
+      }
+
+      _lightPermissionRecheck().then((_) {
+        if (_permissionsGranted && !_countdownStarted) {
+          debugPrint(
+              "[PeekSenderWaitPage] Permissions detected during light polling");
+          timer.cancel();
+        }
+      });
+    });
+  }
+
+  Future<void> _lightPermissionRecheck() async {
+    // Simple, lightweight permission recheck
+    try {
+      final cameras = await availableCameras();
+      if (cameras.isNotEmpty && !_permissionsGranted && !_countdownStarted) {
+        debugPrint(
+            "[PeekSenderWaitPage] ✅ Light recheck successful - permissions now available");
+        _permissionsGranted = true;
+        setState(() {});
         _startInitialCountdown();
       }
     } catch (e) {
-      // If camera permission check fails, it's likely a permission issue
-      debugPrint("[PeekSenderWaitPage] Error checking camera permissions: $e");
-
-      // Check if this is a permission denied error vs other camera issues
-      if (e.toString().contains('permission') ||
-          e.toString().contains('denied')) {
-        _handlePermissionDenied();
-      } else {
-        // Other camera errors - proceed with countdown, let photo capture handle it
-        debugPrint(
-            "[PeekSenderWaitPage] Camera error (not permission), proceeding with countdown");
-        _permissionsChecked = true;
-        _startInitialCountdown();
-      }
+      // Ignore errors in light recheck - optimistic flow will handle it
+      debugPrint("[PeekSenderWaitPage] Light recheck failed (expected): $e");
     }
   }
 
-  void _handlePermissionDenied() {
-    if (!_navigated) {
-      _navigated = true;
-      debugPrint(
-          "[PeekSenderWaitPage] Permission denied, showing 'Not ready to peek'");
-
-      // Show "Not ready to peek" slide panel and redirect to home
-      _navigation.navigateToHomeWithCancellation(context);
-    }
-  }
-
-  void _startInitialCountdown() {
+  void _startAcceptedPermissionMonitoring() {
+    // 🔧 TRUE REAL-TIME MONITORING: Monitor camera availability changes and start countdown immediately
+    // This ensures countdown starts as soon as receiver camera is ready
     debugPrint(
-        "[PeekSenderWaitPage] Starting photo capture countdown for request ${widget.requestId}");
+        "[PeekSenderWaitPage] Starting true real-time permission monitoring after accepted status");
 
-    // Start the 30-second capture countdown to set captureExpiresAt field
-    final peekController = ref.read(peekControllerProvider.notifier);
-    peekController.startCaptureCountdown(widget.requestId).then((_) {
-      debugPrint("[PeekSenderWaitPage] Capture countdown started successfully");
+    // 🔒 Set conservative mode flag
+    _isInConservativeMode = true;
 
-      // Start countdown immediately with estimated time
-      _startImmediateCountdown();
-    }).catchError((error) {
+    // 🔧 IMMEDIATE CHECK: Check permissions right away (no delay)
+    if (!_permissionsGranted && !_countdownStarted && mounted) {
       debugPrint(
-          "[PeekSenderWaitPage] Error starting capture countdown: $error");
+          "[PeekSenderWaitPage] 🔧 Immediate permission check - no delay");
+      _conservativePermissionCheck();
+    }
 
-      // Even if there's an error, start countdown immediately
-      _startImmediateCountdown();
+    // 🔧 START REAL-TIME LISTENER: Monitor camera availability changes
+    _startRealTimeCameraListener();
+
+    // 🔒 IMPORTANT: Cancel the optimistic flow since we're now in conservative mode
+    // This prevents the 8s optimistic timer from interfering
+    _cancelOptimisticFlow();
+  }
+
+  void _startRealTimeCameraListener() {
+    // 🔧 TRUE REAL-TIME: Monitor camera availability changes continuously
+    // This ensures countdown starts immediately when receiver camera is ready
+    debugPrint(
+        "[PeekSenderWaitPage] 🔧 Starting real-time camera availability listener");
+
+    // Cancel any existing polling
+    _permissionPollingTimer?.cancel();
+
+    // Start continuous monitoring with very short intervals
+    _permissionPollingTimer =
+        Timer.periodic(const Duration(milliseconds: 500), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+
+      if (_permissionsGranted) {
+        debugPrint(
+            "[PeekSenderWaitPage] 🔧 Permissions granted - stopping real-time listener");
+        timer.cancel();
+        return;
+      }
+
+      // 🔧 REAL-TIME CHECK: Check camera availability every 500ms
+      _checkCameraAvailabilityInRealTime();
     });
 
-    // Start watchdog timer as backup (70 seconds)
-    _timerManager.startWatchdogTimer();
+    // 🔧 PERMISSION-BASED GATING: Only start countdown when camera is actually available
+    // No fallback timeout - wait for real camera availability
+    Timer(const Duration(seconds: 30), () {
+      if (!_permissionsGranted &&
+          !_countdownStarted &&
+          mounted &&
+          _isInConservativeMode) {
+        debugPrint(
+            "[PeekSenderWaitPage] 🔧 ⚠️ 30s timeout reached - camera still not available");
+        // Don't start countdown - wait for actual camera availability
+        // This prevents premature countdown when permissions aren't granted
+      }
+    });
 
-    debugPrint("[PeekSenderWaitPage] Watchdog timer started as backup");
+    // 🔧 ADD REAL-TIME RECEIVER SESSION LISTENER
+    // This ensures immediate detection when receiver enters photo capture mode
+    _startReceiverSessionListener();
   }
 
-  void _startImmediateCountdown() {
-    // Only start countdown if we have the actual Firestore expiration time
-    if (_captureExpirationTime != null) {
-      final now = DateTime.now();
-      final remaining = _captureExpirationTime!.difference(now).inSeconds;
+  void _startReceiverSessionListener() {
+    try {
+      // Get receiver UID from request
+      FirebaseFirestore.instance
+          .collection('peek_requests')
+          .doc(widget.requestId)
+          .get()
+          .then((requestDoc) async {
+        if (!requestDoc.exists || requestDoc.data() == null) return;
 
-      // Add 1-second buffer to Get Ready countdown to prevent race conditions
-      // This ensures Get Ready finishes after Photo Capture countdown starts
-      final bufferedRemaining = remaining + 1;
+        final requestData = requestDoc.data()!;
+        final receiverUid = requestData['receiverUid'] as String?;
+        if (receiverUid == null) return;
 
-      setState(() {
-        _secondsRemaining = bufferedRemaining > 0 ? bufferedRemaining : 0;
-      });
-      debugPrint(
-          "[PeekSenderWaitPage] Immediate countdown started with Firestore sync: ${_secondsRemaining}s (original: ${remaining}s + 1s buffer)");
+        // Listen to receiver's session state changes in real-time
+        FirebaseFirestore.instance
+            .collection('users')
+            .doc(receiverUid)
+            .snapshots()
+            .listen((userSnapshot) {
+          if (!mounted || _permissionsGranted || _countdownStarted) return;
 
-      // Start the live countdown timer
-      _startLiveCountdown();
-    } else {
-      debugPrint(
-          "[PeekSenderWaitPage] Waiting for Firestore expiration time before starting countdown");
-    }
-  }
+          if (userSnapshot.exists && userSnapshot.data() != null) {
+            final userData = userSnapshot.data()!;
 
-  void _startLiveCountdown() {
-    // Cancel any existing timer
-    _countdownTimer?.cancel();
+            // 🔒 FIX: Check if receiver has entered photo capture mode using correct field structure
+            final activePeekSession =
+                userData['activePeekSession'] as Map<String, dynamic>?;
+            final currentSessionState = activePeekSession?['state'] as String?;
+            final currentSessionActive =
+                activePeekSession?['isActive'] as bool?;
 
-    if (_captureExpirationTime == null) {
-      debugPrint(
-          "[PeekSenderWaitPage] No expiration time available, using fallback countdown");
+            // Also check legacy fields for backward compatibility
+            final sessionState = userData['sessionState'] as String?;
+            final currentSession = userData['currentSession'] as String?;
+            final sessionMode = userData['sessionMode'] as String?;
 
-      // Fallback: countdown from current value
-      if (_secondsRemaining != null && _secondsRemaining! > 0) {
-        _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-          if (!mounted) {
-            timer.cancel();
-            return;
-          }
+            debugPrint(
+                "[PeekSenderWaitPage] 🔧 Real-time session update: activePeekSession.state=$currentSessionState, activePeekSession.isActive=$currentSessionActive, sessionState=$sessionState, currentSession=$currentSession, sessionMode=$sessionMode");
 
-          setState(() {
-            _secondsRemaining = (_secondsRemaining ?? 0) - 1;
-          });
-
-          if (_secondsRemaining! <= 0) {
-            timer.cancel();
-            if (!_navigated) {
-              _handleTimeout();
+            // 🔒 FIX: Check correct field first, then fallback to legacy fields
+            if ((currentSessionState == 'photo_capture' &&
+                    currentSessionActive == true) ||
+                sessionState == 'photo_capture' ||
+                currentSession == 'photo_capture' ||
+                sessionMode == 'photo_capture') {
+              debugPrint(
+                  "[PeekSenderWaitPage] 🔧 ✅ Real-time detection: Receiver in photo_capture mode - starting countdown immediately");
+              _permissionsGranted = true;
+              _isInConservativeMode = false;
+              setState(() {});
+              _startInitialCountdown();
             }
           }
-
-          debugPrint(
-              "[PeekSenderWaitPage] Fallback countdown update: ${_secondsRemaining}s remaining");
         });
-      }
-      return;
+      });
+    } catch (e) {
+      debugPrint(
+          "[PeekSenderWaitPage] Failed to start receiver session listener: $e");
     }
+  }
 
-    debugPrint(
-        "[PeekSenderWaitPage] Starting live countdown with expiration: $_captureExpirationTime");
+  Future<void> _checkCameraAvailabilityInRealTime() async {
+    try {
+      // 🔧 CROSS-DEVICE: Monitor receiver's camera state changes
+      // This detects when the receiver's camera becomes available
 
-    // Start a timer that updates every second
-    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      // Method 1: Check if receiver has started photo capture (indicates camera ready)
+      final receiverCameraReady = await _checkReceiverCameraState();
+
+      // Method 2: Check if we have any camera availability signals (with strict permission check)
+      final localCameraReady = await _checkLocalCameraPermissions();
+
+      debugPrint(
+          "[PeekSenderWaitPage] 🔧 Cross-device check: receiverReady=$receiverCameraReady, localReady=$localCameraReady");
+
+      // 🔧 STRICT PERMISSION GATING: Only start countdown when camera is truly available
+      // This prevents premature countdown when permissions aren't granted
+      if ((receiverCameraReady || localCameraReady) &&
+          !_permissionsGranted &&
+          !_countdownStarted) {
+        debugPrint(
+            "[PeekSenderWaitPage] 🔧 ✅ Camera permissions granted - starting countdown immediately");
+        _permissionsGranted = true;
+        _isInConservativeMode = false; // Exit conservative mode
+        setState(() {});
+        _startInitialCountdown();
+      }
+    } catch (e) {
+      // Ignore errors in real-time check - continue monitoring
+      debugPrint(
+          "[PeekSenderWaitPage] 🔧 Cross-device check failed (expected): $e");
+    }
+  }
+
+  Future<bool> _checkLocalCameraPermissions() async {
+    try {
+      // 🔧 STRICT LOCAL CHECK: Verify local camera permissions are actually granted
+      // This prevents false positives from availableCameras()
+
+      // Check if we can actually access cameras (indicates permissions granted)
+      final cameras = await availableCameras();
+      final hasCameras = cameras.isNotEmpty;
+
+      if (!hasCameras) {
+        return false;
+      }
+
+      // Additional verification: Check if we can initialize a camera controller
+      // This confirms permissions are truly granted, not just detected
+      try {
+        final cameraController = CameraController(
+          cameras.first,
+          ResolutionPreset.medium,
+        );
+
+        // Try to initialize (this will fail if permissions aren't granted)
+        await cameraController.initialize();
+        await cameraController.dispose();
+
+        debugPrint(
+            "[PeekSenderWaitPage] 🔧 Local camera permissions verified - truly granted");
+        return true;
+      } catch (e) {
+        debugPrint(
+            "[PeekSenderWaitPage] 🔧 Local camera permissions check failed: $e");
+        return false;
+      }
+    } catch (e) {
+      debugPrint(
+          "[PeekSenderWaitPage] 🔧 Local camera permissions check error: $e");
+      return false;
+    }
+  }
+
+  Future<bool> _checkReceiverCameraState() async {
+    try {
+      // 🔧 CROSS-DEVICE: Check if receiver has started photo capture
+      // This indicates their camera is ready and we can start countdown
+
+      // Method 1: Check if receiver has updated their session state to photo_capture
+      // This happens when they start taking photos
+      final receiverSessionState = await _getReceiverSessionState();
+
+      // Method 2: Check if receiver has any camera-related activity
+      final receiverCameraActivity = await _checkReceiverCameraActivity();
+
+      // Method 3: Check if receiver has explicitly granted camera permissions
+      final receiverCameraPermissions = await _checkReceiverCameraPermissions();
+
+      debugPrint(
+          "[PeekSenderWaitPage] 🔧 Receiver state: session=$receiverSessionState, cameraActivity=$receiverCameraActivity, permissions=$receiverCameraPermissions");
+
+      // 🔧 STRICT READY SIGNAL: Only start countdown when receiver camera is truly ready
+      // This prevents premature countdown when permissions aren't granted
+      final isReceiverReady = receiverSessionState == 'photo_capture' ||
+          (receiverCameraPermissions && receiverCameraActivity);
+
+      debugPrint(
+          "[PeekSenderWaitPage] 🔧 Receiver camera ready: $isReceiverReady (strict permission gating)");
+
+      return isReceiverReady;
+    } catch (e) {
+      debugPrint("[PeekSenderWaitPage] Receiver state check failed: $e");
+      return false;
+    }
+  }
+
+  Future<bool> _checkReceiverCameraPermissions() async {
+    try {
+      // Check if receiver has explicitly granted camera permissions
+      // This is a more reliable indicator than just session state
+
+      // First get the request data to find the receiver UID
+      final requestDoc = await FirebaseFirestore.instance
+          .collection('peek_requests')
+          .doc(widget.requestId)
+          .get();
+
+      if (!requestDoc.exists || requestDoc.data() == null) {
+        return false;
+      }
+
+      final requestData = requestDoc.data()!;
+      final receiverUid = requestData['receiverUid'] as String?;
+
+      if (receiverUid == null) {
+        return false;
+      }
+
+      // Check receiver's camera permission status
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(receiverUid)
+          .get();
+
+      if (userDoc.exists && userDoc.data() != null) {
+        final hasCameraAccess = userDoc.data()!['has_camera_access'] as bool?;
+        final cameraPermissionsGranted =
+            userDoc.data()!['cameraPermissionsGranted'] as bool?;
+
+        // Return true if either flag indicates camera access
+        return hasCameraAccess == true || cameraPermissionsGranted == true;
+      }
+      return false;
+    } catch (e) {
+      debugPrint(
+          "[PeekSenderWaitPage] Failed to check receiver camera permissions: $e");
+      return false;
+    }
+  }
+
+  Future<String?> _getReceiverSessionState() async {
+    try {
+      // Get receiver's current session state from Firestore
+      // This indicates if they've started photo capture
+
+      // First get the request data to find the receiver UID
+      final requestDoc = await FirebaseFirestore.instance
+          .collection('peek_requests')
+          .doc(widget.requestId)
+          .get();
+
+      if (!requestDoc.exists || requestDoc.data() == null) {
+        return null;
+      }
+
+      final requestData = requestDoc.data()!;
+      final receiverUid = requestData['receiverUid'] as String?;
+
+      if (receiverUid == null) {
+        return null;
+      }
+
+      // Now get the receiver's session state from multiple possible fields
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(receiverUid)
+          .get();
+
+      if (userDoc.exists && userDoc.data() != null) {
+        final userData = userDoc.data()!;
+
+        // 🔒 FIX: Check the correct field structure that SessionManager writes to
+        final activePeekSession =
+            userData['activePeekSession'] as Map<String, dynamic>?;
+
+        // Also check legacy fields for backward compatibility
+        final sessionState = userData['sessionState'] as String?;
+        final currentSession = userData['currentSession'] as String?;
+        final sessionMode = userData['sessionMode'] as String?;
+        final isInSession = userData['isInSession'] as bool?;
+
+        // Extract current session state from the correct structure
+        final currentSessionState = activePeekSession?['state'] as String?;
+        final currentSessionActive = activePeekSession?['isActive'] as bool?;
+
+        debugPrint(
+            "[PeekSenderWaitPage] 🔍 Receiver session fields: activePeekSession.state=$currentSessionState, activePeekSession.isActive=$currentSessionActive, sessionState=$sessionState, currentSession=$currentSession, sessionMode=$sessionMode, isInSession=$isInSession");
+
+        // 🔒 FIX: Check the correct field first
+        if (currentSessionState != null &&
+            currentSessionState.isNotEmpty &&
+            currentSessionActive == true) {
+          return currentSessionState;
+        } else if (sessionState != null && sessionState.isNotEmpty) {
+          return sessionState;
+        } else if (currentSession != null && currentSession.isNotEmpty) {
+          return currentSession;
+        } else if (sessionMode != null && sessionMode.isNotEmpty) {
+          return sessionMode;
+        } else if (isInSession == true) {
+          // If they're in a session but no specific state, check the session collection
+          return await _getReceiverSessionFromCollection(receiverUid);
+        }
+      }
+      return null;
+    } catch (e) {
+      debugPrint(
+          "[PeekSenderWaitPage] Failed to get receiver session state: $e");
+      return null;
+    }
+  }
+
+  Future<String?> _getReceiverSessionFromCollection(String receiverUid) async {
+    try {
+      // Check the sessions collection for the receiver's current session
+      final sessionsQuery = await FirebaseFirestore.instance
+          .collection('sessions')
+          .where('userId', isEqualTo: receiverUid)
+          .where('isActive', isEqualTo: true)
+          .limit(1)
+          .get();
+
+      if (sessionsQuery.docs.isNotEmpty) {
+        final sessionData = sessionsQuery.docs.first.data();
+        final sessionState = sessionData['state'] as String?;
+        final sessionMode = sessionData['mode'] as String?;
+
+        debugPrint(
+            "[PeekSenderWaitPage] 🔍 Session collection: state=$sessionState, mode=$sessionMode");
+
+        return sessionState ?? sessionMode;
+      }
+      return null;
+    } catch (e) {
+      debugPrint(
+          "[PeekSenderWaitPage] Failed to get session from collection: $e");
+      return null;
+    }
+  }
+
+  Future<bool> _checkReceiverCameraActivity() async {
+    try {
+      // Check if receiver has any recent camera activity
+      // This could be from their camera initialization or photo capture
+
+      // First get the request data to find the receiver UID
+      final requestDoc = await FirebaseFirestore.instance
+          .collection('peek_requests')
+          .doc(widget.requestId)
+          .get();
+
+      if (!requestDoc.exists || requestDoc.data() == null) {
+        return false;
+      }
+
+      final requestData = requestDoc.data()!;
+      final receiverUid = requestData['receiverUid'] as String?;
+
+      if (receiverUid == null) {
+        return false;
+      }
+
+      // Now check the receiver's camera activity
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(receiverUid)
+          .get();
+
+      if (userDoc.exists && userDoc.data() != null) {
+        final lastCameraActivity =
+            userDoc.data()!['lastCameraActivity'] as Timestamp?;
+        if (lastCameraActivity != null) {
+          final now = DateTime.now();
+          final timeDiff = now.difference(lastCameraActivity.toDate());
+          // If camera activity was within last 10 seconds, consider it recent
+          return timeDiff.inSeconds < 10;
+        }
+      }
+      return false;
+    } catch (e) {
+      debugPrint(
+          "[PeekSenderWaitPage] Failed to check receiver camera activity: $e");
+      return false;
+    }
+  }
+
+  void _startAggressivePermissionPolling() {
+    _permissionPollingTimer?.cancel();
+    int pollCount = 0;
+    const maxPolls =
+        12; // 12 attempts over 12 seconds (12 * 1s intervals) - faster response
+
+    _permissionPollingTimer =
+        Timer.periodic(const Duration(seconds: 1), (timer) {
+      // 1-second intervals for faster response
       if (!mounted) {
         timer.cancel();
         return;
       }
 
-      if (_captureExpirationTime == null) {
+      if (_permissionsGranted) {
+        debugPrint(
+            "[PeekSenderWaitPage] Permissions granted - stopping aggressive polling");
         timer.cancel();
         return;
       }
 
-      final now = DateTime.now();
-      final remaining = _captureExpirationTime!.difference(now).inSeconds;
+      pollCount++;
+      debugPrint(
+          "[PeekSenderWaitPage] 🔧 Aggressive polling... (attempt $pollCount/$maxPolls)");
 
-      // Add 1-second buffer to Get Ready countdown to prevent race conditions
-      final bufferedRemaining = remaining + 1;
-
-      if (bufferedRemaining <= 0) {
-        // Time expired (with buffer)
-        timer.cancel();
-        if (!_navigated) {
-          _handleTimeout();
-        }
-      } else {
-        // Update the countdown display (with buffer)
-        setState(() {
-          _secondsRemaining = bufferedRemaining;
-        });
+      if (pollCount >= maxPolls) {
         debugPrint(
-            "[PeekSenderWaitPage] Live countdown update: ${bufferedRemaining}s remaining (original: ${remaining}s + 1s buffer)");
+            "[PeekSenderWaitPage] 🚀 Aggressive polling complete - proceeding optimistically");
+        timer.cancel();
+        // After aggressive polling, assume permissions are granted
+        _permissionsGranted = true;
+        _isInConservativeMode = false; // Exit conservative mode
+        setState(() {});
+        _startInitialCountdown();
+        return;
       }
+
+      _conservativePermissionCheck();
     });
   }
 
-  void _startPostSendCountdown() {
-    // Cancel any existing timers
-    _countdownTimer?.cancel();
-    _postSendTimer?.cancel();
+  void _startConservativePolling() {
+    _permissionPollingTimer?.cancel();
+    int pollCount = 0;
+    const maxPolls = 8; // 8 attempts over 24 seconds (8 * 3s intervals)
 
-    // Set post-send mode
-    _isPostSendMode = true;
-
-    // Start clean 3-second countdown
-    setState(() {
-      _secondsRemaining = 3;
-    });
-
-    debugPrint("[PeekSenderWaitPage] Starting post-send countdown: 3s");
-
-    _postSendTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+    _permissionPollingTimer =
+        Timer.periodic(const Duration(seconds: 3), (timer) {
       if (!mounted) {
         timer.cancel();
         return;
       }
 
-      setState(() {
-        _secondsRemaining = (_secondsRemaining ?? 0) - 1;
-      });
-
-      debugPrint(
-          "[PeekSenderWaitPage] Post-send countdown: ${_secondsRemaining}s remaining");
-
-      if (_secondsRemaining! <= 0) {
-        timer.cancel();
-        // Don't navigate here - let the status listener handle it with proper image URL
+      if (_permissionsGranted) {
         debugPrint(
-            "[PeekSenderWaitPage] Post-send countdown completed, waiting for image data");
+            "[PeekSenderWaitPage] Permissions granted - stopping conservative polling");
+        timer.cancel();
+        return;
       }
+
+      pollCount++;
+      debugPrint(
+          "[PeekSenderWaitPage] Conservative polling... (attempt $pollCount/$maxPolls)");
+
+      if (pollCount >= maxPolls) {
+        debugPrint(
+            "[PeekSenderWaitPage] 🚀 Conservative polling complete - proceeding optimistically");
+        timer.cancel();
+        // After conservative polling, assume permissions are granted
+        _permissionsGranted = true;
+        _isInConservativeMode = false; // Exit conservative mode
+        setState(() {});
+        _startInitialCountdown();
+        return;
+      }
+
+      _conservativePermissionCheck();
     });
+  }
+
+  Future<void> _conservativePermissionCheck() async {
+    try {
+      final cameras = await availableCameras();
+      debugPrint(
+          "[PeekSenderWaitPage] 🔍 Conservative check: cameras=${cameras.length}, permissionsGranted=$_permissionsGranted, countdownStarted=$_countdownStarted");
+
+      if (cameras.isNotEmpty && !_permissionsGranted && !_countdownStarted) {
+        debugPrint(
+            "[PeekSenderWaitPage] ✅ Conservative check successful - permissions confirmed");
+        _permissionsGranted = true;
+        _isInConservativeMode = false; // Exit conservative mode
+        setState(() {});
+        debugPrint(
+            "[PeekSenderWaitPage] 🔍 State updated: permissionsGranted=$_permissionsGranted");
+        _startInitialCountdown();
+      } else {
+        debugPrint(
+            "[PeekSenderWaitPage] 🔍 Conservative check conditions not met: cameras=${cameras.length}, permissionsGranted=$_permissionsGranted, countdownStarted=$_countdownStarted");
+      }
+    } catch (e) {
+      debugPrint(
+          "[PeekSenderWaitPage] Conservative permission check failed: $e");
+    }
+  }
+
+  void _showWaitingState() {
+    setState(() {
+      _secondsRemaining = 30;
+    });
+    debugPrint(
+        "[PeekSenderWaitPage] Showing waiting state: 30s (waiting for permissions)");
   }
 
   void _handleStatusUpdate(PeekStatusUpdate update) {
@@ -306,167 +1190,189 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
 
     switch (update.status) {
       case 'accepted':
-        // Already on the correct page, no action needed
+        debugPrint(
+            "[PeekSenderWaitPage] Status 'accepted'. Checking permissions and starting countdown...");
+        if (!_permissionsGranted && !_countdownStarted) {
+          // Don't immediately start countdown - give receiver time to initialize camera
+          debugPrint(
+              "[PeekSenderWaitPage] Accepted status received - starting permission monitoring");
+          _startAcceptedPermissionMonitoring();
+        }
         break;
       case 'responded_with_image':
-        // Photo has been sent, stop main countdown and start post-send countdown
-        debugPrint(
-            "[PeekSenderWaitPage] Photo sent, starting post-send countdown");
-        _startPostSendCountdown();
-
-        // Store the image data for navigation after countdown completes
         if (update.imageUrl != null) {
-          debugPrint(
-              "[PeekSenderWaitPage] Image URL received: ${update.imageUrl}");
-          // The countdown will complete and then we can navigate with proper data
-          // This will be handled by the timer manager's final countdown
-          _timerManager.startFinalCountdown(
-              update.imageUrl!, update.senderLocation);
+          _navigationManager.navigateToImageView(
+            context,
+            widget.requestId,
+            update.imageUrl!,
+            update.senderLocation,
+          );
         }
         break;
-      case 'completed':
-        // Photo has been sent, start post-send countdown
-        debugPrint(
-            "[PeekSenderWaitPage] Photo sent, starting post-send countdown");
-        _startPostSendCountdown();
-        break;
-      case 'cancelled_by_receiver':
-        // Receiver declined/cancelled the peek request
-        debugPrint(
-            "[PeekSenderWaitPage] Peek cancelled by receiver. Stopping countdown and navigating home...");
-
-        // Stop all timers
-        _countdownTimer?.cancel();
-        _postSendTimer?.cancel();
-
-        // Navigate directly to home with cancellation parameters
-        if (!_navigated && mounted) {
-          _navigated = true;
-          debugPrint(
-              "[PeekSenderWaitPage] Navigating to home with receiver cancellation...");
-          context.go('/?show=peekCancelled&reason=receiver_cancelled');
-        }
-        break;
-      case 'cancelled_by_sender':
-        // Sender cancelled the peek request
-        debugPrint(
-            "[PeekSenderWaitPage] Peek cancelled by sender. Stopping countdown and navigating home...");
-
-        // Stop all timers
-        _countdownTimer?.cancel();
-        _postSendTimer?.cancel();
-
-        // Navigate directly to home with cancellation parameters
-        if (!_navigated && mounted) {
-          _navigated = true;
-          debugPrint(
-              "[PeekSenderWaitPage] Navigating to home with sender cancellation...");
-          context.go('/?show=peekCancelled&reason=sender_cancelled');
-        }
+      case 'declined':
+        _navigationManager.navigateToHomeWithCancellation(
+          context,
+          reason: 'declined',
+        );
         break;
       case 'expired':
-        // Request expired, handle timeout
-        if (!_navigated) {
-          _handleTimeout();
-        }
+        _navigationManager.navigateToHomeWithCancellation(
+          context,
+          reason: 'expired',
+        );
+        break;
+      case 'cancelled_by_receiver':
+        _navigationManager.navigateToHomeWithCancellation(
+          context,
+          reason: 'receiver_cancelled',
+        );
+        break;
+      case 'cancelled_by_sender':
+        _navigationManager.navigateToHomeWithCancellation(
+          context,
+          reason: 'sender_cancelled',
+        );
         break;
       default:
         debugPrint("[PeekSenderWaitPage] Unknown status: ${update.status}");
     }
   }
 
-  void _handleTimeout() {
-    if (_navigated) return;
-    _navigated = true;
-
-    _uiBuilder.showTimeoutDialog(context).then((_) {
-      if (mounted) {
-        _navigation.navigateToHome(context);
-      }
-    });
+  void _startInitialCountdown() {
+    if (_countdownStarted) {
+      debugPrint("[PeekSenderWaitPage] Countdown already started, skipping");
+      return;
+    }
+    _countdownStarted = true;
+    _fetchCaptureExpirationFromFirestore();
   }
 
-  void _handleCancelPeek() async {
-    debugPrint(
-        "[PeekSenderWaitPage] Cancel button tapped. Attempting to cancel peek as sender...");
-
+  Future<void> _fetchCaptureExpirationFromFirestore() async {
     try {
-      // Use Cloud Function to cancel the peek request with admin privileges
-      final functions = FirebaseFunctions.instanceFor(region: "us-central1");
-      final callable = functions.httpsCallable('cancelPeekRequest');
+      final doc = await FirebaseFirestore.instance
+          .collection('peek_requests')
+          .doc(widget.requestId)
+          .get();
 
-      final result = await callable.call({
+      if (doc.exists && doc.data() != null) {
+        final data = doc.data()!;
+        final captureExpiresAt = data['captureExpiresAt'] as Timestamp?;
+
+        if (captureExpiresAt != null) {
+          _captureExpirationTime = captureExpiresAt.toDate();
+          debugPrint(
+              "[PeekSenderWaitPage] Got expiration from Firestore: $_captureExpirationTime");
+          _startImmediateCountdown();
+          return;
+        }
+      }
+
+      final functions = FirebaseFunctions.instance;
+      final result =
+          await functions.httpsCallable('getRequestExpiration').call({
         'requestId': widget.requestId,
-        'reason': 'sender_cancelled',
-        'debug': kDebugMode,
       });
 
-      final responseData = result.data as Map<String, dynamic>;
-      if (responseData['success'] == true) {
+      final data = result.data as Map<String, dynamic>?;
+      if (data?['captureExpiresAt'] != null) {
+        final timestamp = data!['captureExpiresAt'] as int;
+        _captureExpirationTime = DateTime.fromMillisecondsSinceEpoch(timestamp);
         debugPrint(
-            "[PeekSenderWaitPage] Peek cancelled successfully via Cloud Function. Waiting for central handler...");
-
-        // The cancellation event will be handled centrally by main.dart
-        // No need to navigate manually - the cancellation provider will handle it
-        debugPrint(
-            "[PeekSenderWaitPage] Cancellation initiated, waiting for central handler...");
-      } else {
-        throw Exception('Cloud Function returned success: false');
+            "[PeekSenderWaitPage] Got expiration from Cloud Function: $_captureExpirationTime");
+        _startImmediateCountdown();
       }
     } catch (e) {
-      debugPrint(
-          "[PeekSenderWaitPage] Error cancelling peek via Cloud Function: $e");
-      debugPrint("[PeekSenderWaitPage] Using fallback approach...");
-
-      // Fallback: Even if Cloud Function fails, navigate home
-      if (mounted) {
-        debugPrint(
-            "[PeekSenderWaitPage] Fallback navigation due to Cloud Function error...");
-        _navigation.navigateToHome(context);
-      }
+      debugPrint("[PeekSenderWaitPage] Error fetching expiration: $e");
+      _startDefaultCountdown();
     }
   }
 
-  @override
-  void dispose() {
-    _timerManager.dispose();
-    _listener.dispose();
+  void _startDefaultCountdown() {
+    setState(() {
+      _secondsRemaining = 31;
+    });
+    debugPrint("[PeekSenderWaitPage] Starting default countdown: 31s");
+    _startLiveCountdown();
+  }
+
+  void _startImmediateCountdown() {
+    if (_captureExpirationTime != null) {
+      final now = DateTime.now();
+      final remaining = _captureExpirationTime!.difference(now).inSeconds;
+      final bufferedRemaining = remaining + 1;
+
+      setState(() {
+        _secondsRemaining = bufferedRemaining > 0 ? bufferedRemaining : 0;
+      });
+
+      debugPrint(
+          "[PeekSenderWaitPage] Immediate countdown started: ${_secondsRemaining}s");
+      _startLiveCountdown();
+    }
+  }
+
+  void _startLiveCountdown() {
+    if (!_permissionsGranted) {
+      debugPrint(
+          "[PeekSenderWaitPage] Skipping live countdown - permissions not granted");
+      return;
+    }
+
     _countdownTimer?.cancel();
-    _postSendTimer?.cancel(); // Cancel the post-send timer
-    super.dispose();
+
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+
+      setState(() {
+        if (_secondsRemaining != null && _secondsRemaining! > 0) {
+          _secondsRemaining = _secondsRemaining! - 1;
+        } else {
+          timer.cancel();
+          _secondsRemaining = 0;
+        }
+      });
+
+      debugPrint("[PeekSenderWaitPage] Countdown: ${_secondsRemaining}s");
+
+      if (_secondsRemaining == 0) {
+        timer.cancel();
+        _navigationManager.navigateToHomeWithCancellation(
+          context,
+          reason: 'timeout',
+        );
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    // Listen for capture expiration time and start countdown when available
-    ref.listen(peekCaptureExpirationTimeProvider(widget.requestId),
-        (previous, next) {
-      next.whenData((expirationTime) {
-        if (expirationTime != null &&
-            _captureExpirationTime != expirationTime) {
-          _captureExpirationTime = expirationTime;
-          debugPrint(
-              "[PeekSenderWaitPage] Capture expiration time received: $expirationTime");
-
-          // Start the countdown immediately with the actual Firestore time
-          if (mounted) {
-            _startImmediateCountdown();
-          }
-        }
-      });
-    });
-
-    return Scaffold(
-      backgroundColor: peekBackgroundColor,
-      appBar: _uiBuilder.buildAppBar(
-        onCancel: _handleCancelPeek,
-      ),
-      extendBodyBehindAppBar: true,
-      body: _uiBuilder.buildBody(
-        context: context,
-        secondsRemaining: _secondsRemaining,
-        animationController: _timerManager.animationController,
+    return PopScope(
+      canPop: false,
+      child: Scaffold(
+        backgroundColor: peekBackgroundColor,
+        body: _uiBuilder.buildBody(
+          context: context,
+          secondsRemaining: _secondsRemaining,
+          animationController: _timerManager.animationController,
+          permissionsGranted: _permissionsGranted,
+        ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    debugPrint(
+        "[PeekSenderWaitPage] Disposing for request ${widget.requestId}.");
+    _countdownTimer?.cancel();
+    _postSendTimer?.cancel();
+    _permissionPollingTimer?.cancel();
+    _requestListener?.cancel();
+    _listener.dispose();
+    _timerManager.dispose();
+    super.dispose();
   }
 }

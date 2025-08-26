@@ -95,17 +95,16 @@ final sessionAwarePendingRequestsProvider = StreamProvider.autoDispose<
     List<QueryDocumentSnapshot<Map<String, dynamic>>>>((ref) {
   // Watch both the base pending requests and session state
   final pendingRequestsAsync = ref.watch(pendingPeekRequestsProvider);
+  final isInSession = ref.watch(isInSessionProvider);
+  final canReceivePeeks = ref.watch(canReceivePeeksProvider);
 
   return pendingRequestsAsync.when(
     data: (requests) {
-      // 🔒 ENHANCED: Check session exclusivity before allowing requests through
-      final sessionManager = ref.read(sessionManagerProvider);
-      final canReceivePeeks = ref.read(canReceivePeeksProvider);
-
-      // If user is in session or cannot receive peeks, return empty list
-      if (sessionManager.isInSession || !canReceivePeeks) {
+      // 🔒 FIX: Use Riverpod providers instead of reading directly from SessionManager
+      // This ensures the provider automatically updates when session state changes
+      if (isInSession || !canReceivePeeks) {
         debugPrint(
-            "[sessionAwarePendingRequestsProvider] 🔒 User in session (${sessionManager.isInSession}) or cannot receive peeks ($canReceivePeeks), filtering out ${requests.length} requests");
+            "[sessionAwarePendingRequestsProvider] 🔒 User in session ($isInSession) or cannot receive peeks ($canReceivePeeks), filtering out ${requests.length} requests");
         return Stream.value(<QueryDocumentSnapshot<Map<String, dynamic>>>[]);
       }
 

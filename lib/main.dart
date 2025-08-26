@@ -1,4 +1,5 @@
 // main.dart
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -66,7 +67,28 @@ class _PeekAppState extends ConsumerState<PeekApp> {
     // Initialize session manager
     _sessionManager = ref.read(sessionManagerProvider);
 
-    // 🔒 NEW: Set up callback to automatically update providers when session state changes
+    // 🔒 FIX: Set up callback to automatically update providers when session state changes
+    _setupSessionManagerCallback();
+
+    await _sessionManager.initialize();
+
+    // 🔒 FIX: Check for stale sessions and clean them up immediately
+    await _checkAndCleanupStaleSessions();
+
+    // Update session state providers with initial state
+    ref.read(sessionStateProvider.notifier).state =
+        _sessionManager.currentState;
+    ref.read(sessionRequestIdProvider.notifier).state =
+        _sessionManager.currentRequestId;
+    ref.read(isInSessionProvider.notifier).state = _sessionManager.isInSession;
+    ref.read(canReceivePeeksProvider.notifier).state =
+        _sessionManager.canReceivePeekRequests();
+
+    debugPrint('🔒 [PeekApp] SessionManager initialized');
+  }
+
+  /// 🔒 FIX: Set up SessionManager callback with hot-reload recovery
+  void _setupSessionManagerCallback() {
     _sessionManager.setStateChangeCallback(
         (state, requestId, isInSession, canReceivePeeks) {
       debugPrint(
@@ -79,18 +101,71 @@ class _PeekAppState extends ConsumerState<PeekApp> {
       ref.read(canReceivePeeksProvider.notifier).state = canReceivePeeks;
     });
 
-    await _sessionManager.initialize();
+    // 🔒 FIX: Add periodic callback verification to recover from hot-reload
+    Timer.periodic(const Duration(seconds: 10), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
 
-    // Update session state providers with initial state
-    ref.read(sessionStateProvider.notifier).state =
-        _sessionManager.currentState;
-    ref.read(sessionRequestIdProvider.notifier).state =
-        _sessionManager.currentRequestId;
-    ref.read(isInSessionProvider.notifier).state = _sessionManager.isInSession;
-    ref.read(canReceivePeeksProvider.notifier).state =
-        _sessionManager.canReceivePeekRequests();
+      // 🔒 FIX: Force re-establish callback periodically to ensure it's always active
+      // This helps recover from hot-reload scenarios where the callback might be lost
+      debugPrint('🔒 [PeekApp] Verifying SessionManager callback is active...');
+      _sessionManager.setStateChangeCallback(
+          (state, requestId, isInSession, canReceivePeeks) {
+        debugPrint(
+            '🔒 [PeekApp] Session state changed: $state, canReceivePeeks: $canReceivePeeks');
 
-    debugPrint('🔒 [PeekApp] SessionManager initialized');
+        // Update all session state providers
+        ref.read(sessionStateProvider.notifier).state = state;
+        ref.read(sessionRequestIdProvider.notifier).state = requestId;
+        ref.read(isInSessionProvider.notifier).state = isInSession;
+        ref.read(canReceivePeeksProvider.notifier).state = canReceivePeeks;
+      });
+    });
+  }
+
+  /// 🔒 FIX: Check for stale sessions and clean them up on app initialization
+  Future<void> _checkAndCleanupStaleSessions() async {
+    try {
+      debugPrint('🔒 [PeekApp] Checking for stale sessions...');
+
+      // Check if the current session state is stale (e.g., from a previous app session)
+      if (_sessionManager.isInSession) {
+        final currentState = _sessionManager.currentState;
+        final currentRequestId = _sessionManager.currentRequestId;
+
+        debugPrint(
+            '🔒 [PeekApp] Found active session - State: $currentState, RequestId: $currentRequestId');
+
+        // Check if this is a stale session that should be cleaned up
+        if (currentState == 'photo_capture' ||
+            currentState == 'waiting_for_response') {
+          debugPrint(
+              '🔒 [PeekApp] Detected stale session state: $currentState - cleaning up immediately');
+
+          // Force cleanup the stale session
+          await _sessionManager.forceResetSession();
+
+          debugPrint('🔒 [PeekApp] Stale session cleaned up successfully');
+        } else {
+          debugPrint('🔒 [PeekApp] Session state appears valid: $currentState');
+        }
+      } else {
+        debugPrint('🔒 [PeekApp] No active session found - no cleanup needed');
+      }
+    } catch (e) {
+      debugPrint('❌ [PeekApp] Error checking for stale sessions: $e');
+
+      // On error, force reset session to be safe
+      try {
+        await _sessionManager.forceResetSession();
+        debugPrint('🔒 [PeekApp] Forced session reset due to error');
+      } catch (resetError) {
+        debugPrint(
+            '❌ [PeekApp] Error during forced session reset: $resetError');
+      }
+    }
   }
 
   @override

@@ -26,6 +26,7 @@ class PeekSenderWaitUI {
     required BuildContext context,
     required int? secondsRemaining,
     required AnimationController animationController,
+    bool permissionsGranted = true, // 🔒 NEW: Track permission state
   }) {
     return Stack(
       fit: StackFit.expand,
@@ -59,9 +60,9 @@ class PeekSenderWaitUI {
 
                 const SizedBox(height: 32),
 
-                // Title
+                // Title - conditional based on permissions
                 Text(
-                  'Get Ready!',
+                  permissionsGranted ? 'Get Ready!' : 'Wait',
                   style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                         fontSize: 32,
                         color: peekWhiteColor,
@@ -71,9 +72,11 @@ class PeekSenderWaitUI {
 
                 const SizedBox(height: 15),
 
-                // Subtitle
+                // Subtitle - conditional based on permissions
                 Text(
-                  'Your Peek is on its way...',
+                  permissionsGranted
+                      ? 'Your Peek is on its way...'
+                      : 'Waiting for permissions...',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         color: peekWhiteColor.withValues(alpha: 0.85),
                       ),

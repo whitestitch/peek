@@ -86,6 +86,15 @@ class SessionManager {
         await _verifySessionIntegrity();
       }
 
+      // 🔒 FIX: Additional safety - check for stale sessions that should be cleaned up immediately
+      if (isInSession &&
+          (_currentState == 'photo_capture' ||
+              _currentState == 'waiting_for_response')) {
+        debugPrint(
+            '🔒 [SessionManager] Detected potentially stale session state: $_currentState - forcing cleanup');
+        await _forceCleanupSession();
+      }
+
       // 🔒 NEW: Start periodic validation if session is active
       _startPeriodicValidation();
 
@@ -461,5 +470,18 @@ class SessionManager {
 
     // Notify state change
     _notifyStateChanged();
+  }
+
+  /// 🔒 NEW: Force clear Firestore session state (for stuck sessions)
+  Future<void> forceClearFirestoreSession() async {
+    debugPrint('🔒 [SessionManager] Force clearing Firestore session state');
+
+    try {
+      await _clearSessionFromFirestore();
+      debugPrint(
+          '🔒 [SessionManager] Firestore session state cleared successfully');
+    } catch (e) {
+      debugPrint('❌ [SessionManager] Error clearing Firestore session: $e');
+    }
   }
 }

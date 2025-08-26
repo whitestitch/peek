@@ -40,11 +40,8 @@ Keep code consistent and safe across the repo.
 - Always think about what other methods and areas of code might be affected by code changes
 
 ## Output:
-- Clear explanation of the cause.
+- short explanation of the cause.
 - Do not re-generate full code, updated code only for the affected sections.
-
-## Context
-- The app-lib-folder-structure.txt file can be attach any time if you request - so you have full visibility into the Flutter project’s code organization.
 
 ## Goal
 - Use this structure to quickly pinpoint which file(s) you need to review in order to debug or implement the next change.

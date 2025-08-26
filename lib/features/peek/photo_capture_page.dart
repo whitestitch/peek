@@ -61,6 +61,7 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
   bool _isInitializing = true;
   bool _isProcessingAction = false;
   bool _isButtonPressed = false;
+  bool _isCountdownReady = false; // 🔒 Track when countdown can start
 
   // Status listener
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _statusListener;
@@ -72,20 +73,38 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
     _setupAnimation();
     _initializeCapture();
 
-    // 🔒 NEW: Update session state to photo capture mode
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _updateSessionState();
-    });
+    // 🔒 FIX: Don't set session state here - wait for full initialization
+    // Session state will be set after all permissions and camera are ready
   }
 
   /// Update session state to reflect current mode
-  void _updateSessionState() {
+  Future<void> _updateSessionState() async {
     try {
       final sessionManager = ref.read(sessionManagerProvider);
+
+      // 🔒 FIX: Enhanced debugging to track session state changes
+      debugPrint(
+          '🔒 [PhotoCapturePage] Updating session state - Mode: ${widget.mode}, RequestId: ${widget.requestId}');
+      debugPrint(
+          '🔒 [PhotoCapturePage] Before update - State: ${sessionManager.currentState}, IsInSession: ${sessionManager.isInSession}');
+
+      // 🔒 FIX: Check current provider state for debugging
+      final currentProviderState = ref.read(sessionStateProvider);
+      final currentProviderIsInSession = ref.read(isInSessionProvider);
+      final currentProviderCanReceivePeeks = ref.read(canReceivePeeksProvider);
+      debugPrint(
+          '🔒 [PhotoCapturePage] Provider state - State: $currentProviderState, IsInSession: $currentProviderIsInSession, CanReceivePeeks: $currentProviderCanReceivePeeks');
+
+      // 🔒 FIX: Force reset any existing session before starting new one
+      if (sessionManager.isInSession) {
+        debugPrint(
+            '🔒 [PhotoCapturePage] Force resetting existing session before starting new one');
+        await sessionManager.forceResetSession();
+      }
+
       if (widget.mode == 'response') {
         // User is responding to a peek request
-        // 🔒 FIX: Start session first, then update state
-        sessionManager.startSession(widget.requestId, 'photo_capture');
+        await sessionManager.startSession(widget.requestId, 'photo_capture');
         ref.read(sessionStateProvider.notifier).state =
             sessionManager.currentState;
         ref.read(sessionRequestIdProvider.notifier).state =
@@ -98,7 +117,7 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
             '🔒 [PhotoCapturePage] Session started for photo capture (response mode)');
       } else {
         // User is sending a peek request
-        sessionManager.startSession(widget.requestId, 'photo_capture');
+        await sessionManager.startSession(widget.requestId, 'photo_capture');
         ref.read(sessionStateProvider.notifier).state =
             sessionManager.currentState;
         ref.read(sessionRequestIdProvider.notifier).state =
@@ -110,6 +129,10 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
         debugPrint(
             '🔒 [PhotoCapturePage] Session started for photo capture (send mode)');
       }
+
+      // 🔒 FIX: Log final state after update
+      debugPrint(
+          '🔒 [PhotoCapturePage] After update - State: ${sessionManager.currentState}, IsInSession: ${sessionManager.isInSession}, CanReceivePeeks: ${sessionManager.canReceivePeekRequests()}');
     } catch (e) {
       debugPrint('❌ [PhotoCapturePage] Error updating session state: $e');
     }
@@ -144,17 +167,32 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
           debugPrint("[PhotoCapturePage] Periodic status check error: $error");
         });
       });
+
+      // 🔒 NEW: Periodic check for countdown readiness
+      Timer.periodic(const Duration(seconds: 2), (timer) async {
+        if (!mounted || _isCountdownReady) {
+          timer.cancel();
+          return;
+        }
+
+        // Check if we can start countdown now
+        await _checkAndStartCountdown();
+      });
     }
   }
 
   /// Initialize all manager components
   void _initializeManagers() {
+    // 🔒 FIX: SessionManager callback is now handled globally in main.dart
+    // No need to set it up here anymore
+
     // Initialize with empty cameras list - will be recreated in _initializeCapture
     _cameraManager = CameraControllerManager(
       cameras: [],
-      onCameraInitialized: () {
-        _triggerCountdownStart();
+      onCameraInitialized: () async {
+        // 🔒 FIX: Check countdown readiness when camera is ready
         setState(() {});
+        await _checkAndStartCountdown();
       },
       onError: _handleError,
       onCameraChanged: () => setState(() {}),
@@ -176,6 +214,13 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
       onLocationSuccess: (location) {
         _currentLocation = location;
         setState(() {});
+
+        // 🔒 NEW: Check if we can start countdown now that location is ready
+        // Use unawaited to avoid blocking the callback
+        _checkAndStartCountdown().catchError((e) {
+          debugPrint(
+              '[PhotoCapturePage] Error checking countdown readiness: $e');
+        });
       },
     );
 
@@ -225,13 +270,30 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
       // Get location if user shares location
       if (_userSettings.shouldShareLocation()) {
         await _locationService.getCurrentUserCity();
+      } else {
+        debugPrint(
+            "[PhotoCapturePage] Location sharing disabled - marked as ready");
       }
 
       // Initialize camera
       await _cameraManager.initialize();
 
-      // Start listening for countdown
+      // Start listening for countdown deadline
       _countdownManager.listenForCaptureDeadline(widget.requestId);
+
+      // 🔒 FIX: Check if user is returning user with permissions, if so start countdown immediately
+      final isReturningUser = await _checkIfReturningUser();
+      if (isReturningUser) {
+        debugPrint(
+            "[PhotoCapturePage] 🚀 Returning user detected - starting immediate countdown");
+        // For returning users, start countdown immediately once camera is ready
+        await _checkAndStartCountdown();
+      } else {
+        debugPrint("[PhotoCapturePage] New user - showing waiting state first");
+        // For new users, show waiting state first
+        _countdownManager.showWaitingForPermissions();
+        await _checkAndStartCountdown();
+      }
 
       // Start listening for status changes (including cancellations)
       // _startStatusListener(); // This line is now handled in didChangeDependencies
@@ -706,17 +768,92 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
     });
   }
 
+  /// Check if user is a returning user with camera permissions
+  Future<bool> _checkIfReturningUser() async {
+    try {
+      // Method 1: Try availableCameras() to detect existing permissions
+      final cameras = await availableCameras();
+      final hasActiveCameras = cameras.isNotEmpty;
+      debugPrint(
+          "[PhotoCapturePage] Permission check - availableCameras: $hasActiveCameras (${cameras.length} cameras)");
+
+      if (hasActiveCameras) {
+        return true;
+      }
+
+      // Method 2: Check if camera is already initialized (very strong signal)
+      if (_cameraManager.isCameraInitialized) {
+        debugPrint(
+            "[PhotoCapturePage] Permission check - camera already initialized");
+        return true;
+      }
+
+      return false;
+    } catch (e) {
+      debugPrint("[PhotoCapturePage] Error checking returning user status: $e");
+      return false;
+    }
+  }
+
+  /// Check if all conditions are met and start countdown if ready
+  Future<void> _checkAndStartCountdown() async {
+    if (_isCountdownReady || !mounted) return;
+
+    // 🔒 FIX: Check if camera is initialized and session is ready
+    final bool cameraReady = _cameraManager.isCameraInitialized;
+    final bool locationReady =
+        true; // Location is handled asynchronously, assume ready
+
+    // 🔒 FIX: Session should be active for photo capture, so check if it's the right session
+    final sessionManager = ref.read(sessionManagerProvider);
+    final bool sessionReady = !sessionManager.isInSession ||
+        (sessionManager.isInSession &&
+            sessionManager.currentRequestId == widget.requestId);
+
+    // 🔒 FIX: Enhanced debugging to see exact state
+    debugPrint(
+        "[PhotoCapturePage] 🔒 Countdown readiness check - CameraInit: ${_cameraManager.isCameraInitialized}, LocationReady: $locationReady, Session: $sessionReady");
+    debugPrint(
+        "[PhotoCapturePage] 🔒 Session details - State: ${sessionManager.currentState}, IsInSession: ${sessionManager.isInSession}, RequestId: ${sessionManager.currentRequestId}");
+
+    if (cameraReady && locationReady && sessionReady) {
+      debugPrint(
+          "[PhotoCapturePage] 🔒 All conditions met - starting countdown now");
+      await _triggerCountdownStart();
+    } else {
+      debugPrint(
+          "[PhotoCapturePage] ⚠️ Waiting for conditions - Camera: $cameraReady, Location: $locationReady, Session: $sessionReady");
+    }
+  }
+
   /// Trigger countdown start
-  void _triggerCountdownStart() {
+  Future<void> _triggerCountdownStart() async {
     // Ensure this is only called once (match original logic)
     if (!mounted) return;
 
-    debugPrint(
-        "[PhotoCapturePage] Camera is ready, triggering countdown start.");
+    // 🔒 FIX: Prevent multiple countdown starts
+    if (_isCountdownReady) {
+      debugPrint("[PhotoCapturePage] Countdown already started, skipping");
+      return;
+    }
+
+    debugPrint("[PhotoCapturePage] 🔒 Starting countdown - camera ready");
+    _isCountdownReady = true;
     _pulseController.repeat(reverse: true);
 
-    // Start the 30-second countdown manually
-    _countdownManager.startManualCountdown(durationSeconds: 30);
+    // 🔒 FIX: Set session state NOW that we're actually ready
+    await _updateSessionState();
+
+    // 🔒 FIX: Check if user is returning user to determine countdown method
+    final isReturningUser = await _checkIfReturningUser();
+    if (isReturningUser) {
+      debugPrint(
+          "[PhotoCapturePage] Using immediate countdown for returning user");
+      _countdownManager.startImmediateCountdown(durationSeconds: 30);
+    } else {
+      debugPrint("[PhotoCapturePage] Using manual countdown for new user");
+      _countdownManager.startManualCountdown(durationSeconds: 30);
+    }
   }
 
   /// Handle close action for the close button
@@ -779,18 +916,31 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
     _countdownManager.dispose();
     _statusListener?.cancel(); // Cancel the listener
 
-    // 🔒 NEW: Immediate session cleanup when leaving photo capture
+    // 🔒 FIX: Clean up session state when leaving photo capture
     _cleanupSessionOnDispose();
 
     super.dispose();
   }
 
-  /// 🔒 NEW: Clean up session when PhotoCapturePage is disposed
+  /// 🔒 FIX: Clean up session when PhotoCapturePage is disposed
   void _cleanupSessionOnDispose() {
     try {
-      // 🔒 FIX: Don't use ref after dispose - just log the cleanup attempt
+      // 🔒 FIX: Reset session state to allow receiving new peeks
+      final sessionManager = ref.read(sessionManagerProvider);
       debugPrint(
-          '🔒 [PhotoCapturePage] PhotoCapturePage disposed - session cleanup will happen via periodic validation');
+          '🔒 [PhotoCapturePage] Dispose cleanup - Current session state: ${sessionManager.currentState}, IsInSession: ${sessionManager.isInSession}');
+
+      if (sessionManager.isInSession) {
+        debugPrint(
+            '🔒 [PhotoCapturePage] Force cleaning up session on dispose');
+        sessionManager.forceResetSession();
+
+        // 🔒 FIX: Providers will be updated via the callback, no need to manually update here
+        debugPrint(
+            '🔒 [PhotoCapturePage] Session reset completed via callback');
+      } else {
+        debugPrint('🔒 [PhotoCapturePage] No active session to clean up');
+      }
     } catch (e) {
       debugPrint('❌ [PhotoCapturePage] Error in dispose cleanup: $e');
     }
@@ -859,12 +1009,26 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
 
   /// Build loading screen
   Widget _buildLoadingScreen() {
-    return const Scaffold(
+    return Scaffold(
       backgroundColor: Colors.black,
       body: Center(
-        child: PeekLoadingIndicator.medium(
-          logoColor: Colors.white,
-          loadingText: "Initializing camera...",
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const PeekLoadingIndicator.medium(
+              logoColor: Colors.white,
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              "Setting up camera...",
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w500,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
         ),
       ),
     );

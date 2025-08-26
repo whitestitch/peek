@@ -145,64 +145,76 @@ class PeekDialogManager {
     debugPrint('✅ [PeekDialogManager] Dialog overlay displayed successfully');
   }
 
-  /// Build the dialog content widget - restored to original full-height layout
+  /// Build the dialog content widget - fixed z-index and context issues
   Widget _buildDialogContent(String requestId) {
     return Material(
       type: MaterialType.transparency,
       child: Container(
+        width: double.infinity,
+        height: double.infinity,
         color: Colors.black54, // Barrier color
-        child: SafeArea(
-          child: AlertDialog(
-            title: const Text(
-              'New Peek Request!',
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-                color: peekWhiteColor,
-                letterSpacing: 0.5,
-                fontSize: 26,
+        child: Center(
+          child: Container(
+            margin: const EdgeInsets.all(24.0),
+            child: AlertDialog(
+              backgroundColor: peekBackgroundColor,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
               ),
-            ),
-            content: Text(
-              'Someone wants to share a peek with you. Accept?',
-              style: TextStyle(
-                color: peekWhiteColor.withValues(alpha: 1),
-                height: 1.55,
-                fontSize: 17,
-                fontWeight: FontWeight.w400,
-              ),
-            ),
-            actionsAlignment: MainAxisAlignment.spaceBetween,
-            actions: <Widget>[
-              TextButton(
-                style: TextButton.styleFrom(
-                  foregroundColor: peekOnBackgroundColor.withValues(alpha: 0.7),
-                  textStyle: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                  ),
+              title: const Text(
+                'New Peek Request!',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: peekWhiteColor,
+                  letterSpacing: 0.5,
+                  fontSize: 26,
                 ),
-                onPressed: () {
-                  debugPrint('🎭 [PeekDialogManager] Decline button pressed');
-                  _closeDialogOverlay();
-                  _declinePeekRequest(requestId);
-                },
-                child: const Text('Decline'),
               ),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(30),
-                  ),
+              content: Text(
+                'Someone wants to share a peek with you. Accept?',
+                style: TextStyle(
+                  color: peekWhiteColor.withValues(alpha: 1),
+                  height: 1.55,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w400,
                 ),
-                onPressed: () {
-                  debugPrint('🎭 [PeekDialogManager] Accept button pressed');
-                  _closeDialogOverlay();
-                  _acceptPeekRequest(requestId);
-                },
-                child: const Text('Accept'),
               ),
-            ],
+              actionsAlignment: MainAxisAlignment.spaceBetween,
+              actions: <Widget>[
+                TextButton(
+                  style: TextButton.styleFrom(
+                    foregroundColor:
+                        peekOnBackgroundColor.withValues(alpha: 0.7),
+                    textStyle: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  onPressed: () {
+                    debugPrint('🎭 [PeekDialogManager] Decline button pressed');
+                    _closeDialogOverlay();
+                    _declinePeekRequest(requestId);
+                  },
+                  child: const Text('Decline'),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: peekPrimaryColor,
+                    foregroundColor: peekSurfaceColor,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(30),
+                    ),
+                  ),
+                  onPressed: () {
+                    debugPrint('🎭 [PeekDialogManager] Accept button pressed');
+                    _closeDialogOverlay();
+                    _acceptPeekRequest(requestId);
+                  },
+                  child: const Text('Accept'),
+                ),
+              ],
+            ),
           ),
         ),
       ),

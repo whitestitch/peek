@@ -26,6 +26,7 @@ class CountdownManager {
   bool get isTimeoutHandled => _isTimeoutHandled;
 
   /// Listen for capture deadline from Firestore
+  /// 🔒 FIX: Don't auto-start countdown - wait for manual trigger
   void listenForCaptureDeadline(String requestId) {
     FirebaseFirestore.instance
         .collection('peek_requests')
@@ -37,18 +38,25 @@ class CountdownManager {
       final data = snapshot.data();
       if (data == null) return;
 
-      // Check for capture deadline
+      // Check for capture deadline but don't start automatically
       final captureExpiresAt = data['captureExpiresAt'] as Timestamp?;
       if (captureExpiresAt != null && !_countdownHasBeenTriggered) {
-        _countdownHasBeenTriggered = true;
-        _startCountdown(captureExpiresAt.toDate());
+        // Store the deadline but don't start countdown yet
+        // It will be started manually when permissions are ready
+        debugPrint(
+            "[CountdownManager] Firestore deadline received, waiting for manual start");
       }
     });
   }
 
   /// Start countdown manually (when camera is ready)
   void startManualCountdown({int durationSeconds = 30}) {
-    if (_countdownHasBeenTriggered) return;
+    // 🔒 FIX: Allow starting countdown even if showWaitingForPermissions was called
+    // but prevent multiple actual countdown timers
+    if (_countdownTimer?.isActive ?? false) {
+      debugPrint("[CountdownManager] Countdown already active, skipping");
+      return;
+    }
 
     _countdownHasBeenTriggered = true;
     final deadline = DateTime.now().add(Duration(seconds: durationSeconds));
@@ -114,6 +122,35 @@ class CountdownManager {
     _countdownTimer?.cancel();
     _countdownTimer = null;
     debugPrint("[CountdownManager] Countdown cancelled");
+  }
+
+  /// Show waiting state (30s) until permissions are ready
+  /// 🔒 NEW: Display 30s countdown but don't actually count down
+  void showWaitingForPermissions() {
+    // 🔒 FIX: Don't check _countdownHasBeenTriggered here - this is just showing waiting state
+    // The actual countdown will be started later with startManualCountdown()
+
+    _secondsRemaining = 30;
+    onCountdownUpdate?.call(_secondsRemaining!);
+    debugPrint(
+        "[CountdownManager] Showing waiting state: 30s (waiting for permissions)");
+  }
+
+  /// Start countdown immediately for returning users (bypass waiting state)
+  void startImmediateCountdown({int durationSeconds = 30}) {
+    // 🔒 FIX: For returning users, start countdown immediately without showing waiting state
+    debugPrint(
+        "[CountdownManager] Starting immediate countdown for returning user: ${durationSeconds}s");
+
+    // Cancel any existing timer
+    cancelCountdown();
+
+    // Reset state
+    _countdownHasBeenTriggered = false;
+    _isTimeoutHandled = false;
+
+    // Start countdown directly
+    startManualCountdown(durationSeconds: durationSeconds);
   }
 
   /// Reset countdown state
