@@ -34,12 +34,11 @@ class _PeekWaitPageState extends ConsumerState<PeekWaitPage> {
   @override
   void initState() {
     super.initState();
-    // 🎯 SYNC FIX: Use 5 seconds + 1s buffer for sender (6s total)
-    // This ensures User B (receiver) times out first at 5s, then User A at 6s
-    _timeoutTimer = Timer(const Duration(seconds: 6), _onTimeout);
+    // 🎯 SYNC FIX: Use 5 seconds + 1s buffer for sender (16s total)
+    _timeoutTimer = Timer(const Duration(seconds: 61), _onTimeout);
     _listenForPeek(); // Start listening for updates on the peek request
     material.debugPrint(
-        "[PeekWaitPage] Initialized for request ${widget.requestId} with 6s sender timeout");
+        "[PeekWaitPage] Initialized for request ${widget.requestId} with 61s sender timeout");
   }
 
   /// Listens to the Firestore document for status changes ('accepted', 'rejected', 'timeout').

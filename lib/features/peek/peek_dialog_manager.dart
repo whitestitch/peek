@@ -482,8 +482,7 @@ class PeekDialogManager {
           '⏰ [PeekDialogManager] Starting 5s expiration timer for request: $requestId');
 
       // 🎯 SYNC FIX: Use 5 seconds for receiver (testing phase - will be 60s later)
-      // This ensures User B (receiver) times out first, then User A (sender) at 6s
-      _expirationTimer = Timer(const Duration(seconds: 5), () {
+      _expirationTimer = Timer(const Duration(seconds: 60), () {
         debugPrint(
             '⏰ [PeekDialogManager] 5s timer fired for request: $requestId');
         if (_currentRequestId == requestId &&

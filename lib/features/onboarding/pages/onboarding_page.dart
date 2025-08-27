@@ -28,9 +28,9 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
       'logo': 'assets/images/peekio_logo.svg',
       'image': 'assets/images/onboarding_01.png',
       'isHeroFullWidth': true,
-      'title': 'View the world as another does.',
+      'title': 'See What They See.',
       'subtitle': 'Instant, real, anonymous.',
-      'text': null,
+      'text': 'Step into another moment. A raw view, through different eyes.',
       'background': 'assets/images/onboarding_bg_01.jpg',
     },
     {
@@ -136,7 +136,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
     return userDocAsync.when(
       loading: () => const Scaffold(
         backgroundColor: peekBackgroundColor,
-        body: const Center(child: PeekLoadingIndicator.medium()),
+        body: Center(child: PeekLoadingIndicator.medium()),
       ),
       error: (err, stack) => Scaffold(
         backgroundColor: peekBackgroundColor,
@@ -246,7 +246,11 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
       },
       child: Padding(
         key: ValueKey<int>(_currentPage),
-        padding: const EdgeInsets.symmetric(horizontal: 35.0, vertical: 20.0),
+        padding: EdgeInsets.symmetric(
+          horizontal: 32.0,
+          // 🔒 FIX: Reduce top padding for first slide to improve text positioning
+          vertical: _currentPage == 0 ? 20.0 : 24.0,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.center,
@@ -255,32 +259,34 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
               slideData['title']!,
               textAlign: TextAlign.center,
               style: textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w700,
                 color: peekWhiteColor,
-                letterSpacing: 0.5,
-                fontSize: 34,
+                letterSpacing: 0.3,
+                fontSize: MediaQuery.of(context).size.width < 400 ? 30 : 34,
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
             Text(
               slideData['subtitle']!,
               textAlign: TextAlign.center,
               style: textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w500,
-                color: peekOnBackgroundColor.withValues(alpha: 0.85),
-                fontSize: 20,
+                fontWeight: FontWeight.w600,
+                color: peekOnBackgroundColor.withValues(alpha: 0.9),
+                fontSize: MediaQuery.of(context).size.width < 400 ? 16 : 18,
+                letterSpacing: 0.2,
               ),
             ),
             if (slideData['text'] != null) ...[
-              const SizedBox(height: 20),
+              const SizedBox(height: 24),
               Text(
                 slideData['text']!,
                 textAlign: TextAlign.center,
                 style: textTheme.bodyMedium?.copyWith(
-                  color: peekWhiteColor.withValues(alpha: 1),
-                  height: 1.55,
-                  fontSize: 17,
+                  color: peekWhiteColor.withValues(alpha: 0.95),
+                  height: 1.6,
+                  fontSize: MediaQuery.of(context).size.width < 400 ? 15 : 17,
                   fontWeight: FontWeight.w400,
+                  letterSpacing: 0.1,
                 ),
               ),
             ],
@@ -293,10 +299,23 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
   Widget _buildLocationPermissionControls() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 10, 20, 40),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
+          // Left button - "Later"
+          TextButton(
+            onPressed: _isRequestingPermission ? null : _finishOnboarding,
+            style: TextButton.styleFrom(
+              foregroundColor: peekOnBackgroundColor.withValues(alpha: 0.7),
+              textStyle: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            child: const Text('Later'),
+          ),
+
+          // Right button - "Enable"
           ElevatedButton(
             onPressed: _isRequestingPermission
                 ? null
@@ -309,21 +328,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                       logoColor: peekSurfaceColor,
                     ),
                   )
-                : const Text('Enable Location'),
-          ),
-          const SizedBox(height: 8),
-          TextButton(
-            onPressed: _isRequestingPermission ? null : _finishOnboarding,
-            // Style
-            style: TextButton.styleFrom(
-              foregroundColor: peekOnBackgroundColor.withValues(alpha: 0.7),
-              textStyle: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            child: const Text('Maybe Later'),
-            // color: peekOnBackgroundColor,
+                : const Text('Enable'),
           ),
         ],
       ),
