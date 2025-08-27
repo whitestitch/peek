@@ -27,6 +27,7 @@ class PeekSenderWaitUI {
     required int? secondsRemaining,
     required AnimationController animationController,
     bool permissionsGranted = true, // 🔒 NEW: Track permission state
+    required VoidCallback onClose, // 🔒 NEW: Add close callback
   }) {
     return Stack(
       fit: StackFit.expand,
@@ -104,6 +105,21 @@ class PeekSenderWaitUI {
                     ),
                   ),
               ],
+            ),
+          ),
+        ),
+
+        // 🔒 NEW: Close button overlay (reusing Photo Capture design)
+        Positioned(
+          top: MediaQuery.of(context).padding.top + 50,
+          right: 20,
+          child: CircleAvatar(
+            radius: 20,
+            backgroundColor: Colors.black.withValues(alpha: 0.4),
+            child: IconButton(
+              onPressed: onClose,
+              icon: const Icon(Icons.close, color: Colors.white, size: 24),
+              padding: EdgeInsets.zero,
             ),
           ),
         ),

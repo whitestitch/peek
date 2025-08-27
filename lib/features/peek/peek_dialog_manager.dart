@@ -479,14 +479,13 @@ class PeekDialogManager {
       _expirationTimer?.cancel();
 
       debugPrint(
-          '⏰ [PeekDialogManager] Starting backup expiration timer for request: $requestId');
+          '⏰ [PeekDialogManager] Starting 5s expiration timer for request: $requestId');
 
-      // Note: Shared timer listener removed due to ref.listen constraints
-      // Backup timer will handle expiration reliably
-      // Keep backup timer as safety net (60 seconds - exactly matching peek request timer)
-      _expirationTimer = Timer(const Duration(seconds: 60), () {
+      // 🎯 SYNC FIX: Use 5 seconds for receiver (testing phase - will be 60s later)
+      // This ensures User B (receiver) times out first, then User A (sender) at 6s
+      _expirationTimer = Timer(const Duration(seconds: 5), () {
         debugPrint(
-            '⏰ [PeekDialogManager] Backup timer fired for request: $requestId');
+            '⏰ [PeekDialogManager] 5s timer fired for request: $requestId');
         if (_currentRequestId == requestId &&
             ref.read(activePeekRequestDialogProvider) == requestId) {
           _handleDialogExpiration(requestId);

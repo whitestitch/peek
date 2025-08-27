@@ -203,7 +203,8 @@ exports.initiatePeekRequest = onCall(
           status: "pending_acceptance",
           createdAt: FieldValue.serverTimestamp(),
           expiresAt: Timestamp.fromMillis(
-              Date.now() + 60 * 1000, // 60 seconds for peek request phase
+              // 🎯 SYNC FIX: 5 seconds for testing phase (will be 60s later)
+              Date.now() + 5 * 1000,
           ),
         };
 

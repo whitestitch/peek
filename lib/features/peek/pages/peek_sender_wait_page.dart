@@ -11,6 +11,8 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:camera/camera.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:go_router/go_router.dart';
+import 'package:flutter/foundation.dart';
 
 class PeekSenderWaitPage extends ConsumerStatefulWidget {
   final String requestId;
@@ -1300,6 +1302,49 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
     });
   }
 
+  /// 🔒 NEW: Handle close action for the close button (reusing Photo Capture logic)
+  void _handleCloseAction() async {
+    debugPrint(
+        "[PeekSenderWaitPage] Close button tapped. Attempting to cancel peek as sender...");
+
+    try {
+      // Use Cloud Function to cancel the peek request with admin privileges
+      final functions = FirebaseFunctions.instanceFor(region: "us-central1");
+      final callable = functions.httpsCallable('cancelPeekRequest');
+
+      final result = await callable.call({
+        'requestId': widget.requestId,
+        'reason': 'sender_cancelled',
+        'debug': kDebugMode,
+      });
+
+      final responseData = result.data as Map<String, dynamic>;
+      if (responseData['success'] == true) {
+        debugPrint(
+            "[PeekSenderWaitPage] Peek cancelled successfully via Cloud Function. Navigating home...");
+
+        // Navigate directly to home with cancellation parameters
+        if (mounted) {
+          debugPrint(
+              "[PeekSenderWaitPage] Navigating to home with sender cancellation...");
+          context.go('/?show=peekCancelled&reason=sender_cancelled');
+        }
+      } else {
+        throw Exception('Cloud Function returned success: false');
+      }
+    } catch (e) {
+      debugPrint(
+          "[PeekSenderWaitPage] Error cancelling peek via Cloud Function: $e");
+
+      // Fallback: Even if Cloud Function fails, navigate home
+      if (mounted) {
+        debugPrint(
+            "[PeekSenderWaitPage] Fallback navigation due to Cloud Function error...");
+        context.go('/');
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -1311,6 +1356,7 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
           secondsRemaining: _secondsRemaining,
           animationController: _timerManager.animationController,
           permissionsGranted: _permissionsGranted,
+          onClose: _handleCloseAction, // 🔒 NEW: Pass close callback
         ),
       ),
     );

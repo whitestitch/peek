@@ -37,6 +37,21 @@ class _PeekDeclinedPageState extends material.State<PeekDeclinedPage> {
     });
   }
 
+  /// 🔒 NEW: Handle close action for the close button (redirects to homepage)
+  void _handleCloseAction() {
+    material.debugPrint(
+        "[PeekDeclinedPage] Close button tapped. Navigating to homepage...");
+
+    // Cancel the auto-navigation timer since user is manually navigating
+    _navigationTimer?.cancel();
+
+    // Navigate directly to homepage
+    if (mounted) {
+      material.debugPrint("[PeekDeclinedPage] Navigating to homepage...");
+      context.go('/');
+    }
+  }
+
   @override
   void dispose() {
     material.debugPrint("[PeekDeclinedPage] Disposing.");
@@ -125,6 +140,22 @@ class _PeekDeclinedPageState extends material.State<PeekDeclinedPage> {
                     ),
                   ),
                 ],
+              ),
+            ),
+          ),
+
+          // 🔒 NEW: Close button overlay (reusing existing style/logic)
+          material.Positioned(
+            top: material.MediaQuery.of(context).padding.top + 50,
+            right: 20,
+            child: material.CircleAvatar(
+              radius: 20,
+              backgroundColor: material.Colors.black.withValues(alpha: 0.4),
+              child: material.IconButton(
+                onPressed: _handleCloseAction,
+                icon: const material.Icon(material.Icons.close,
+                    color: material.Colors.white, size: 24),
+                padding: material.EdgeInsets.zero,
               ),
             ),
           ),
