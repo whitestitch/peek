@@ -204,7 +204,7 @@ exports.initiatePeekRequest = onCall(
           createdAt: FieldValue.serverTimestamp(),
           expiresAt: Timestamp.fromMillis(
               // 🎯 SYNC FIX: 5 seconds for testing phase (will be 60s later)
-              Date.now() + 5 * 1000,
+              Date.now() + 60 * 1000,
           ),
         };
 
