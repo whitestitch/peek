@@ -52,9 +52,9 @@ class UpgradePromptDialog extends StatelessWidget {
             "You've used all your free Peekios for today.\nUpgrade to Premium for unlimited access and more:";
         break;
       case UpgradeReason.periodic:
-        titleText = "Enjoying Peekio?";
+        titleText = "More Peeks.\nLess Limits.";
         contentText =
-            "Enjoying Peekio? Upgrade to Premium and enjoy these benefits:";
+            "Upgrade — unlock more eyes, skip the waits, expand your view.";
         break;
       case UpgradeReason.anonymous:
         titleText = 'Account Required';
@@ -68,62 +68,72 @@ class UpgradePromptDialog extends StatelessWidget {
     }
 
     return AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.0)),
-      title: Center(
-        child: Text(
-          titleText,
-          style: Theme.of(
-            context,
-          ).textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w600,
-                color: peekWhiteColor,
-                letterSpacing: 0.5,
-                fontSize: 36,
-              ),
-        ),
+      // 🔒 FIX: Enlarge dialog and use consistent styling
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20.0)),
+      backgroundColor: peekBackgroundColor,
+      title: Text(
+        titleText,
+        textAlign: TextAlign.left,
+        style: Theme.of(
+          context,
+        ).textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w600,
+              color: peekWhiteColor,
+              letterSpacing: 0.5,
+              // 🔒 FIX: Make text size responsive
+              fontSize: MediaQuery.of(context).size.width < 400 ? 28 : 32,
+            ),
       ),
 
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Center(child: Text(contentText, textAlign: TextAlign.left)),
+          Center(
+            child: Text(
+              contentText,
+              textAlign: TextAlign.left,
+              style: TextStyle(
+                color: peekWhiteColor.withValues(alpha: 0.9),
+                fontSize: MediaQuery.of(context).size.width < 400 ? 15 : 17,
+                height: 1.9,
+              ),
+            ),
+          ),
           const SizedBox(height: 20),
-          // *** FIX: Call the public BenefitRow constructor ***
+          // 🔒 FIX: Shorten long feature names to prevent overflow
           const BenefitRow(
             icon: Icons.all_inclusive,
-            text: "Unlimited Daily Peekios",
+            text: "Unlimited Peekios",
           ),
           const BenefitRow(
             icon: Icons.flash_on,
-            text: "No Cooldowns Between Peekios",
+            text: "No waiting.",
           ),
           const BenefitRow(
             icon: Icons.bar_chart,
-            text: "Access Your Peekios Stats",
+            text: "Peek Stats unlocked.",
           ),
           const Divider(height: 20, color: Colors.white24),
           const BenefitRow(
             icon: Icons.drive_file_rename_outline,
-            text: "Set a Custom Display Name",
+            text: "Custom display name.",
           ),
           const BenefitRow(
             icon: Icons.visibility_outlined,
-            text: "Reveal Who Peekio'd You",
+            text: "See who Peek’d you.",
           ),
           const BenefitRow(
             icon: Icons.location_on_outlined,
-            text: "See Sender's General Location",
+            text: "Sender’s location hint.",
           ),
           const Divider(height: 20, color: Colors.white24),
           const BenefitRow(
             icon: Icons.chat_outlined,
-            text: "Anonymous Chat",
+            text: "Anonymous Chat (soon).",
             isAvailable: false, // This will style it as a "coming soon" feature
           ),
-          // Ensure BenefitRow definition below handles text correctly
-          // const BenefitRow(text: 'More features coming soon...'),
-          // *** END OF FIX ***
         ],
       ),
       actionsPadding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
@@ -134,10 +144,11 @@ class UpgradePromptDialog extends StatelessWidget {
         TextButton(
           onPressed: () => Navigator.of(context).pop(false),
           style: TextButton.styleFrom(
-            foregroundColor: peekOnBackgroundColor.withValues(alpha: 0.7),
-            textStyle: const TextStyle(
-              // fontSize: 16,
-              fontWeight: FontWeight.w700,
+            foregroundColor: peekWhiteColor.withValues(alpha: 0.7),
+            textStyle: TextStyle(
+              // 🔒 FIX: Make text size responsive
+              fontSize: MediaQuery.of(context).size.width < 400 ? 15 : 17,
+              fontWeight: FontWeight.w600,
             ),
           ),
           child: const Text('Maybe Later'),
@@ -148,10 +159,9 @@ class UpgradePromptDialog extends StatelessWidget {
           label: const Text('Upgrade'),
           style: ElevatedButton.styleFrom(
             elevation: 2,
-            backgroundColor: Theme.of(context).colorScheme.primary,
-            foregroundColor: Theme.of(context).colorScheme.onPrimary,
+            backgroundColor: peekPrimaryColor,
+            foregroundColor: peekSurfaceColor,
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-            // padding: const EdgeInsets.fromLTRB(20, 10, 20, 40),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(30),
             ),
@@ -205,28 +215,35 @@ class BenefitRow extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6.0),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(icon, color: iconColor, size: 22),
           const SizedBox(width: 14),
           Expanded(
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                   text,
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodyMedium
-                      ?.copyWith(color: textColor),
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: textColor,
+                        // 🔒 FIX: Make text size responsive
+                        fontSize:
+                            MediaQuery.of(context).size.width < 400 ? 13 : 15,
+                      ),
                 ),
-                if (!isAvailable)
-                  Text(
-                    " (Coming Soon)",
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: unavailableColor,
-                          fontStyle: FontStyle.italic,
-                        ),
-                  ),
+                // if (!isAvailable)
+                //   Text(
+                //     " (Coming Soon)",
+                //     style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                //           color: unavailableColor,
+                //           fontStyle: FontStyle.italic,
+                //           // 🔒 FIX: Make text size responsive
+                //           fontSize:
+                //               MediaQuery.of(context).size.width < 400 ? 11 : 13,
+                //         ),
+                //   ),
               ],
             ),
           ),

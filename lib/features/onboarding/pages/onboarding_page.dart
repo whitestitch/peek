@@ -37,20 +37,19 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
       'logo': 'assets/images/peekio_logo.svg',
       'image': 'assets/animations/onboarding_pulse_eye.riv',
       'isHeroFullWidth': false,
-      'title': 'Just tap Peek',
+      'title': 'Just Tap Peekio',
       'subtitle': 'No names. No profiles.',
-      'text':
-          'We ping someone, they snap a photo. You see their world for 5 seconds.\nNo profiles. Just pure reality.',
+      'text': 'Ping someone. They snap a photo. See their world — 5 seconds.',
       'background': 'assets/images/onboarding_bg_02.jpg',
     },
     {
       'logo': 'assets/images/peekio_logo.svg',
       'image': 'assets/images/onboarding_03.png',
       'isHeroFullWidth': false,
-      'title': 'Think Fast: 30 Sec!',
-      'subtitle': 'Ready, Set, Peek',
+      'title': 'One Shot. 30s.',
+      'subtitle': 'Capture fast. Share raw.',
       'text':
-          'You have 30 seconds to capture your moment. Share your world instantly.',
+          'You’ve got 30 seconds to snap your reality. One glimpse, then it’s gone.',
       'background': 'assets/images/onboarding_bg_03.jpg',
     },
     {
@@ -58,9 +57,9 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
       'image': 'assets/images/onboarding_05.png',
       'isHeroFullWidth': false,
       'title': '100% Private',
-      'subtitle': 'No Data Saved.',
+      'subtitle': 'No data. No trace.',
       'text':
-          'Peek is fully anonymous and safe. RYour camera, your world — shared\nin the moment only.',
+          'Peek is anonymous, safe. Your world is shared once — then it’s gone forever.',
       'background': 'assets/images/onboarding_bg_04.jpg',
     },
     {
@@ -68,8 +67,8 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
       'image': 'assets/images/onboarding_04.png',
       'isHeroFullWidth': false,
       'title': 'Enable Location',
-      'subtitle': 'See where Peekios come from',
-      'text': "Enable location to see the city of the Peekios you receive.",
+      'subtitle': 'See where peeks come from.',
+      'text': "Turn on location to view the city behind each glimpse.",
       'background': 'assets/images/onboarding_bg_02.jpg',
       'isLocationSlide': true,
     },

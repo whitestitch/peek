@@ -264,18 +264,18 @@ class _StatsPageState extends ConsumerState<StatsPage> {
                       ),
                       const Spacer(flex: 10),
                       Text(
-                        "Peekio Stats are a Premium Feature",
+                        "Peekio stats",
                         textAlign: TextAlign.center,
                         style:
                             Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                  fontSize: 30,
+                                  fontSize: 32,
                                   fontWeight: FontWeight.w600,
                                   color: peekWhiteColor,
                                 ),
                       ),
                       const SizedBox(height: 12),
                       Text(
-                        "Upgrade to see how others react to your Peeks!",
+                        "Unlock insights and see how others react to your Peeks!",
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                               color: peekWhiteColor.withValues(alpha: 1),
