@@ -307,6 +307,8 @@ class _PeekAppState extends ConsumerState<PeekApp> {
   Widget build(BuildContext context) {
     final router = ref.watch(routerProvider);
 
+    debugPrint('🔍 [PeekApp] Building MaterialApp.router');
+
     // 🔒 ENHANCED: Listen for session-aware peek request changes and handle dialogs
     // This provider will automatically filter out requests when user is in session
     ref.listen<AsyncValue<List<QueryDocumentSnapshot<Map<String, dynamic>>>>>(
@@ -332,6 +334,31 @@ class _PeekAppState extends ConsumerState<PeekApp> {
 
             debugPrint(
                 '🔒 [PeekApp] Status change detected: $requestId -> $status');
+
+            // Only show panels for requests that are relevant to current session
+            final currentRequestId = ref.read(sessionRequestIdProvider);
+            final isInSession = ref.read(isInSessionProvider);
+
+            // Skip if this is not the current active request or user is not in session
+            if (currentRequestId != requestId || !isInSession) {
+              debugPrint(
+                  '🔒 [PeekApp] Skipping status change - not current session (current: $currentRequestId, inSession: $isInSession)');
+              continue;
+            }
+
+            // Additional check: Skip if this is a very old status change (more than 5 minutes old)
+            final statusUpdatedAt = data['statusUpdatedAt'] as Timestamp?;
+            if (statusUpdatedAt != null) {
+              final now = DateTime.now();
+              final statusTime = statusUpdatedAt.toDate();
+              final timeDiff = now.difference(statusTime);
+
+              if (timeDiff.inMinutes > 5) {
+                debugPrint(
+                    '🔒 [PeekApp] Skipping old status change - ${timeDiff.inMinutes} minutes old');
+                continue;
+              }
+            }
 
             // Show appropriate panel based on status
             if (status == 'cancelled_by_sender') {
@@ -378,6 +405,13 @@ class _PeekAppState extends ConsumerState<PeekApp> {
       debugShowCheckedModeBanner: false,
       routerConfig: router,
       theme: _buildAppTheme(),
+      builder: (context, child) {
+        // Ensure consistent background color and eliminate any flash
+        return Container(
+          color: peekBackgroundColor,
+          child: child,
+        );
+      },
     );
   }
 

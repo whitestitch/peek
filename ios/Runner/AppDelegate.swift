@@ -1,17 +1,5 @@
 import Flutter
 import UIKit
-import FirebaseCore
-
-import FirebaseAppCheck
-// A new class that provides the debug provider in debug builds
-class MyAppCheckProviderFactory: NSObject, AppCheckProviderFactory {
-  func createProvider(with app: FirebaseApp) -> AppCheckProvider? {
-
-      // Use the debug provider for debug builds.
-      return AppCheckDebugProvider(app: app)
-  }
-}
-
 import FirebaseMessaging
 
 @main
@@ -23,12 +11,8 @@ import FirebaseMessaging
   ) -> Bool {
     print("🚀 [AppDelegate] CUSTOM APPDELEGATE STARTED - didFinishLaunchingWithOptions called")
 
-     // CRITICAL: FirebaseApp.configure() MUST be called before any other
-    // Firebase service is configured.
-    FirebaseApp.configure()
-
-    let providerFactory = MyAppCheckProviderFactory()
-    AppCheck.setAppCheckProviderFactory(providerFactory)
+     // Firebase initialization is handled by Flutter
+    // AppCheck will be initialized by Flutter as well
 
     GeneratedPluginRegistrant.register(with: self)
 

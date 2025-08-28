@@ -45,7 +45,10 @@ class AppInitializer {
           options: DefaultFirebaseOptions.currentPlatform);
     } on FirebaseException catch (e) {
       if (e.code == 'duplicate-app') {
+        // App already exists, just get the reference
         Firebase.app();
+      } else {
+        rethrow;
       }
     }
   }

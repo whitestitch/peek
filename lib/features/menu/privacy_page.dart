@@ -117,7 +117,7 @@ We may update this Privacy Policy from time to time. The "Last Updated" date at 
 
 If you have any questions, concerns, or comments about this Privacy Policy or our data practices, please contact us at:
 
-White Stitch
+Fabio Camilli
 Email: support@peekio.app
 Website: www.peekio.app
 """;

@@ -180,7 +180,7 @@ class AboutPage extends StatelessWidget {
             const SizedBox(height: 32),
             Center(
               child: Text(
-                "Made with ❤️ by White Stitch", // Replace placeholder
+                "Made with ❤️ by Peekio", // Replace placeholder
                 style: textTheme.bodyMedium?.copyWith(
                     color: Colors.grey.shade500, fontStyle: FontStyle.italic),
                 textAlign: TextAlign.center,

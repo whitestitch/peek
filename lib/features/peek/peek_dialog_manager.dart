@@ -173,7 +173,7 @@ class PeekDialogManager {
                           colors: [
                             peekBackgroundColor,
                             peekBackgroundColor.withValues(alpha: 0.95),
-                            peekSurfaceColor.withValues(alpha: 0.3),
+                            peekSurfaceColor.withValues(alpha: 0.5),
                           ],
                         ),
                         borderRadius: BorderRadius.circular(20),

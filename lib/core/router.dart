@@ -1,4 +1,5 @@
 // lib/core/router.dart
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -37,6 +38,9 @@ import 'package:peek/main.dart';
 // Helper provider to ensure sign-in is only triggered once.
 final _signInTriggeredProvider = StateProvider<bool>((ref) => false);
 
+// Helper provider to ensure splash screen shows for minimum duration
+final _splashTimerProvider = StateProvider<bool>((ref) => true);
+
 const List<String> routesInShellWithoutAppBar = ['/settings'];
 
 const List<String> routesInShellWithoutBottomNav = [];
@@ -66,6 +70,7 @@ final shellNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'shell');
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authStateProvider);
+  final splashTimer = ref.watch(_splashTimerProvider);
 
   // Trigger router re-evaluation on auth state changes
   final refreshTick = ValueNotifier<int>(0);
@@ -78,6 +83,13 @@ final routerProvider = Provider<GoRouter>((ref) {
     refreshTick.value++;
   });
 
+  // Start splash timer on first build
+  if (splashTimer) {
+    Timer(const Duration(milliseconds: 2000), () {
+      ref.read(_splashTimerProvider.notifier).state = false;
+    });
+  }
+
   return GoRouter(
     navigatorKey: rootNavigatorKey,
     refreshListenable: refreshTick,
@@ -86,8 +98,23 @@ final routerProvider = Provider<GoRouter>((ref) {
     redirect: (context, state) async {
       final userDocument = ref.read(userDocumentProvider);
 
+      debugPrint(
+          '🔍 [Router] Redirect - Current: ${state.matchedLocation}, Auth loading: ${authState.isLoading}, Splash timer: $splashTimer');
+
+      // Always show splash for minimum duration
+      if (splashTimer) {
+        final redirect =
+            state.matchedLocation == '/splash-start' ? null : '/splash-start';
+        debugPrint('🔍 [Router] Splash timer active - staying on splash');
+        return redirect;
+      }
+
+      // On initial load, immediately show splash while auth loads
       if (authState.isLoading || authState.hasError) {
-        return null;
+        final redirect =
+            state.matchedLocation == '/splash-start' ? null : '/splash-start';
+        debugPrint('🔍 [Router] Auth loading - redirecting to: $redirect');
+        return redirect;
       }
 
       final isLoggedIn = authState.valueOrNull != null;
