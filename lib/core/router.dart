@@ -384,14 +384,6 @@ final routerProvider = Provider<GoRouter>((ref) {
         name: 'info',
         builder: (_, __) => const AboutPage(),
       ),
-      GoRoute(
-        path: '/link',
-        name: 'link',
-        redirect: (context, state) {
-          debugPrint("🔗 [GoRouter] Handling dynamic link: ${state.uri}");
-          return '/';
-        },
-      ),
     ],
   );
 });

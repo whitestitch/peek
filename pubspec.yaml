@@ -2,7 +2,7 @@ name: peek
 description: "Peekio - Anonymous photo request app"
 publish_to: 'none' # private project
 
-version: 1.0.0+18 # 🔧 INCREMENTED: Build number for new icon upload
+version: 1.0.0+20 # 🚀 INCREMENTED: Build number for TestFlight release with splash fixes
 
 environment:
   sdk: '>=3.3.0 <4.0.0' # Keep modern range
@@ -80,10 +80,7 @@ dev_dependencies:
   flutter_launcher_icons: ^0.13.1 # Keep at 0.13.x
   flutter_native_splash: ^2.4.6
 
-# 🔧 Exclude deprecated Firebase Dynamic Links
-dependency_overrides:
-  firebase_dynamic_links: 6.1.10
-  firebase_dynamic_links_platform_interface: 0.2.7+10
+# 🔧 Firebase Dynamic Links removed - deprecated and unused
 
 flutter:
   uses-material-design: true
