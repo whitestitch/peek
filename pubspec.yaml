@@ -2,7 +2,7 @@ name: peek
 description: "Peekio - Anonymous photo request app"
 publish_to: 'none' # private project
 
-version: 1.0.0+20 # 🚀 INCREMENTED: Build number for TestFlight release with splash fixes
+version: 1.0.1+1 # 🚀 NEW VERSION: Created to submit Build 20 with fixes
 
 environment:
   sdk: '>=3.3.0 <4.0.0' # Keep modern range
