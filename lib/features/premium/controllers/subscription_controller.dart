@@ -8,10 +8,12 @@ import 'package:in_app_purchase/in_app_purchase.dart';
 import 'subscription_state.dart';
 
 // Define your actual premium product ID here
-const String premiumProductId =
-    // <<<--- SET YOUR REAL PRODUCT ID HERE
-    'peek.premium.monthly';
-// 'your_peek_premium_product_id';
+// This MUST match the product ID configured in App Store Connect
+const String premiumProductId = 'peek.premium.monthly';
+
+// Additional product IDs for different subscription tiers (if needed)
+const String premiumYearlyProductId = 'peek.premium.yearly';
+const String premiumLifetimeProductId = 'peek.premium.lifetime';
 
 class SubscriptionController extends StateNotifier<SubscriptionState> {
   final Ref ref; // Pass ref if needed to read other providers
@@ -96,10 +98,10 @@ class SubscriptionController extends StateNotifier<SubscriptionState> {
 
     try {
       // Start the purchase flow. The result is handled by the listener in _PeekAppState.
-      final bool purchaseStarted = await InAppPurchase.instance
-          .buyNonConsumable(
-            purchaseParam: purchaseParam,
-          ); // Use non-consumable for subscriptions/unlocks
+      final bool purchaseStarted =
+          await InAppPurchase.instance.buyNonConsumable(
+        purchaseParam: purchaseParam,
+      ); // Use non-consumable for subscriptions/unlocks
       debugPrint(
         "[SubscriptionController] buyNonConsumable returned: $purchaseStarted",
       );
@@ -149,5 +151,5 @@ class SubscriptionController extends StateNotifier<SubscriptionState> {
 /// Provider for the SubscriptionController.
 final subscriptionControllerProvider =
     StateNotifierProvider<SubscriptionController, SubscriptionState>(
-      (ref) => SubscriptionController(ref),
-    );
+  (ref) => SubscriptionController(ref),
+);

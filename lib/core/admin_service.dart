@@ -182,6 +182,60 @@ class AdminService {
       };
     }
   }
+
+  /// Send alert for reports approaching 24-hour deadline
+  Future<void> sendOverdueAlerts() async {
+    try {
+      final overdueReports = await getOverdueReports();
+
+      if (overdueReports.isNotEmpty) {
+        debugPrint(
+            "[AdminService] URGENT: ${overdueReports.length} reports are overdue!");
+
+        // Log critical alert for monitoring systems
+        await _firestore.collection('admin_alerts').add({
+          'type': 'overdue_reports',
+          'count': overdueReports.length,
+          'timestamp': FieldValue.serverTimestamp(),
+          'priority': 'critical',
+          'message':
+              'Apple App Store compliance violation: Reports older than 24 hours',
+          'reportIds': overdueReports.map((r) => r['id']).toList(),
+        });
+      }
+    } catch (e) {
+      debugPrint("[AdminService] Error sending overdue alerts: $e");
+    }
+  }
+
+  /// Auto-escalate reports that are approaching 24-hour deadline
+  Future<void> autoEscalateReports() async {
+    try {
+      final twentyHoursAgo = DateTime.now().subtract(const Duration(hours: 20));
+
+      final approachingDeadline = await _firestore
+          .collection('reports')
+          .where('status', isEqualTo: 'pending_review')
+          .where('reportTimestamp',
+              isLessThan: Timestamp.fromDate(twentyHoursAgo))
+          .get();
+
+      for (final doc in approachingDeadline.docs) {
+        await doc.reference.update({
+          'escalated': true,
+          'escalatedAt': FieldValue.serverTimestamp(),
+          'priority': 'urgent',
+        });
+      }
+
+      if (approachingDeadline.docs.isNotEmpty) {
+        debugPrint(
+            "[AdminService] Escalated ${approachingDeadline.docs.length} reports approaching deadline");
+      }
+    } catch (e) {
+      debugPrint("[AdminService] Error auto-escalating reports: $e");
+    }
+  }
 }
 
 // Provider for AdminService

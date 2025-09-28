@@ -463,6 +463,92 @@ exports.cleanupExpiredPeeks = onSchedule(
     },
 );
 
+// Apple App Store Compliance: 24-hour moderation response
+exports.monitorReportCompliance = onSchedule(
+    {
+      schedule: "every 1 hours",
+      region: "us-central1",
+      timeZone: "Etc/UTC",
+    },
+    async (event) => {
+      logger.info("🛡️ Monitoring report compliance for Apple App Store...");
+
+      const twentyFourHoursAgo = Timestamp.fromMillis(
+          Date.now() - (24 * 60 * 60 * 1000),
+      );
+
+      // Find reports older than 24 hours that are still pending
+      const overdueReports = await db.collection("reports")
+          .where("status", "==", "pending_review")
+          .where("reportTimestamp", "<=", twentyFourHoursAgo)
+          .get();
+
+      if (!overdueReports.empty) {
+        logger.error(
+            `🚨 CRITICAL: ${overdueReports.size} reports are overdue! ` +
+            `Apple App Store compliance violation detected.`,
+        );
+
+        // Create critical alert
+        await db.collection("admin_alerts").add({
+          type: "compliance_violation",
+          severity: "critical",
+          count: overdueReports.size,
+          // eslint-disable-next-line max-len
+          message: "Reports older than 24 hours detected - Apple compliance violation",
+          timestamp: FieldValue.serverTimestamp(),
+          reportIds: overdueReports.docs.map((doc) => doc.id),
+        });
+
+        // Auto-escalate all overdue reports
+        const batch = db.batch();
+        overdueReports.forEach((doc) => {
+          batch.update(doc.ref, {
+            escalated: true,
+            escalatedAt: FieldValue.serverTimestamp(),
+            priority: "critical_overdue",
+            complianceViolation: true,
+          });
+        });
+
+        await batch.commit();
+        logger.info(`⚡ Auto-escalated ${overdueReports.size} overdue reports`);
+      } else {
+        logger.info("✅ All reports within 24-hour compliance window");
+      }
+
+      // Check for reports approaching 20-hour mark (4-hour warning)
+      const twentyHoursAgo = Timestamp.fromMillis(
+          Date.now() - (20 * 60 * 60 * 1000),
+      );
+
+      const approachingDeadline = await db.collection("reports")
+          .where("status", "==", "pending_review")
+          .where("reportTimestamp", "<=", twentyHoursAgo)
+          .where("escalated", "!=", true)
+          .get();
+
+      if (!approachingDeadline.empty) {
+        logger.warn(
+            // eslint-disable-next-line max-len
+            `⚠️ WARNING: ${approachingDeadline.size} reports approaching 24-hour deadline`,
+        );
+
+        // Create warning alert
+        await db.collection("admin_alerts").add({
+          type: "deadline_warning",
+          severity: "warning",
+          count: approachingDeadline.size,
+          message: "Reports approaching 24-hour deadline - action needed soon",
+          timestamp: FieldValue.serverTimestamp(),
+          reportIds: approachingDeadline.docs.map((doc) => doc.id),
+        });
+      }
+
+      return null;
+    },
+);
+
 // When a receiver creates a reaction document, update sender stats and notify.
 
 exports.onReactionCreated = onDocumentCreated(

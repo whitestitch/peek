@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-/// Manages content moderation features (report, block)
+/// Enhanced content moderation manager for Apple App Store compliance
+/// Implements all required safety measures for user-generated content
 class ModerationManager {
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   // State
   bool _isProcessingAction = false;
@@ -206,6 +208,127 @@ class ModerationManager {
                 reportPeek();
               },
               child: const Text('Report'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// Immediately remove content from feed (Apple requirement)
+  Future<void> removeContentFromFeed({
+    String reason = 'user_requested_removal',
+  }) async {
+    if (_isProcessingAction) return;
+
+    final currentUser = _auth.currentUser;
+    if (currentUser == null) {
+      onError?.call("Must be logged in to remove content");
+      return;
+    }
+
+    _isProcessingAction = true;
+    onActionStarted?.call();
+
+    try {
+      debugPrint(
+          "[Moderation] Removing content from feed - Request: $requestId");
+
+      // Update the peek request to mark as removed
+      await _firestore.collection('peek_requests').doc(requestId).update({
+        'removedFromFeed': true,
+        'removedAt': FieldValue.serverTimestamp(),
+        'removedBy': currentUser.uid,
+        'removalReason': reason,
+        'status': 'removed_by_user',
+      });
+
+      // Add removal record for admin tracking
+      await _firestore.collection('content_removals').add({
+        'requestId': requestId,
+        'removedBy': currentUser.uid,
+        'reason': reason,
+        'timestamp': FieldValue.serverTimestamp(),
+        'type': 'user_initiated',
+      });
+
+      debugPrint("[Moderation] Content removed from feed successfully");
+      onSuccess?.call("Content removed from your feed immediately.");
+    } catch (e) {
+      debugPrint("[Moderation] Error removing content from feed: $e");
+      onError?.call("Failed to remove content. Please try again.");
+    } finally {
+      _isProcessingAction = false;
+      onActionCompleted?.call();
+    }
+  }
+
+  /// Show enhanced report dialog with multiple reason options
+  void showEnhancedReportDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Report Content'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Why are you reporting this content?'),
+              const SizedBox(height: 16),
+              _buildReportOption(
+                  context, 'inappropriate_content', 'Inappropriate Content'),
+              _buildReportOption(
+                  context, 'harassment', 'Harassment or Bullying'),
+              _buildReportOption(context, 'spam', 'Spam or Unwanted Content'),
+              _buildReportOption(
+                  context, 'violence', 'Violence or Harmful Content'),
+              _buildReportOption(context, 'adult_content', 'Adult Content'),
+              _buildReportOption(context, 'other', 'Other Violation'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildReportOption(BuildContext context, String reason, String label) {
+    return ListTile(
+      title: Text(label),
+      onTap: () {
+        Navigator.of(context).pop();
+        reportPeek(reason: reason);
+      },
+    );
+  }
+
+  /// Show content removal confirmation dialog
+  void showRemovalDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Remove Content'),
+          content: const Text(
+            'Remove this content from your feed immediately? This action cannot be undone.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                removeContentFromFeed();
+              },
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('Remove'),
             ),
           ],
         );
