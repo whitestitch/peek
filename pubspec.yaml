@@ -2,7 +2,7 @@ name: peek
 description: "Peekio - Anonymous photo request app"
 publish_to: 'none' # private project
 
-version: 1.0.1+1 # 🚀 NEW VERSION: Created to submit Build 20 with fixes
+version: 1.0.1+2 # 🚀 Apple Review Fix: Enhanced safety features + IAP compliance
 
 environment:
   sdk: '>=3.3.0 <4.0.0' # Keep modern range
