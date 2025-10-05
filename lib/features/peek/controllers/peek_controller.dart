@@ -144,13 +144,48 @@ class PeekController extends StateNotifier<PeekControllerState> {
       debugPrint("[PeekController] expirePeek: requestId is empty.");
       return;
     }
+
+    final currentUser = _auth.currentUser;
+    if (currentUser == null) {
+      debugPrint("[PeekController] Cannot refund peek: User is null.");
+      return;
+    }
+
     try {
+      // First, get the request to check if user is premium (premium users don't need refund)
+      final requestDoc =
+          await _firestore.collection('peek_requests').doc(requestId).get();
+
+      final requestData = requestDoc.data();
+      final senderUid = requestData?['senderUid'] as String?;
+
+      // Verify this request belongs to the current user
+      if (senderUid != currentUser.uid) {
+        debugPrint("[PeekController] Request doesn't belong to current user");
+      } else {
+        // Check if user is premium
+        final userDoc =
+            await _firestore.collection('users').doc(currentUser.uid).get();
+        final userData = userDoc.data();
+        final isPremium = userData?['isPremium'] == true;
+
+        // Only refund peek count for non-premium users
+        if (!isPremium) {
+          await _repo.refundPeekCount(currentUser.uid);
+          debugPrint(
+              "[PeekController] ✅ Refunded peek count for timeout/expiry");
+        } else {
+          debugPrint("[PeekController] Premium user - no refund needed");
+        }
+      }
+
       await _repo.expireRequest(requestId);
 
       await _analytics
           .logEvent(name: 'peek_request_expired_client', parameters: {
         'request_id_partial':
-            requestId.length > 8 ? requestId.substring(0, 8) : requestId
+            requestId.length > 8 ? requestId.substring(0, 8) : requestId,
+        'refunded': 'true',
       });
     } catch (e) {
       debugPrint('[PeekController] Failed to expire peek $requestId: $e');

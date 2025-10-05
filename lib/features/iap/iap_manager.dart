@@ -70,28 +70,45 @@ class IAPManager {
 
   /// Handle successful purchase or restore
   Future<void> _handleSuccessfulPurchase(PurchaseDetails purchase) async {
+    debugPrint(
+        "🛒 [IAPManager] Processing successful purchase: ${purchase.productID}");
+    debugPrint("🛒 [IAPManager] Purchase ID: ${purchase.purchaseID}");
+    debugPrint(
+        "🛒 [IAPManager] Pending complete: ${purchase.pendingCompletePurchase}");
+
     final bool grantSuccess = await _grantPremiumAccess(purchase);
 
     if (purchase.pendingCompletePurchase) {
       if (grantSuccess) {
         try {
+          // Complete the purchase transaction
           await InAppPurchase.instance.completePurchase(purchase);
-          debugPrint("✅ Purchase completed: ${purchase.purchaseID}");
+          debugPrint(
+              "✅ [IAPManager] Purchase transaction completed: ${purchase.purchaseID}");
 
+          // Log analytics event
           await _logPurchaseEvent(purchase);
+
+          // Small delay to ensure Firestore has propagated
+          await Future.delayed(const Duration(milliseconds: 500));
+
+          // Show success dialog
           _showPremiumSuccessDialog(purchase.status == PurchaseStatus.restored);
         } catch (e) {
-          debugPrint("❌ Error completing purchase: $e");
+          debugPrint("❌ [IAPManager] Error completing purchase: $e");
           _showPurchaseErrorDialog(
               "Failed to finalize purchase. Restart app or contact support if status hasn't updated.");
         }
       } else {
         debugPrint(
-            "⚠️ Firestore grant failed, NOT completing purchase: ${purchase.purchaseID}");
+            "⚠️ [IAPManager] Firestore grant failed, NOT completing purchase: ${purchase.purchaseID}");
+        // Don't complete the purchase if grant failed - this allows retry
         _showPurchaseErrorDialog(
-            "Failed to save premium status. Please check connection or contact support.");
+            "Failed to save premium status. Please check connection and try again, or use 'Restore Purchases'.");
       }
     } else {
+      debugPrint(
+          "🛒 [IAPManager] Purchase already completed, no action needed");
       if (purchase.status == PurchaseStatus.restored && grantSuccess) {
         await _logPurchaseEvent(purchase);
         _showRestoreSuccessDialog();
@@ -142,35 +159,52 @@ class IAPManager {
     }
   }
 
-  /// Grant premium access in Firestore
+  /// Grant premium access in Firestore with retry logic
   Future<bool> _grantPremiumAccess(PurchaseDetails purchase) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) {
-      debugPrint("⚠️ Cannot grant premium: User is null during grant attempt.");
+      debugPrint(
+          "⚠️ [IAPManager] Cannot grant premium: User is null during grant attempt.");
       return false;
     }
 
-    try {
-      await FirebaseFirestore.instance.collection('users').doc(uid).set(
-        {
-          'isPremium': true,
-          'premiumPlanId': purchase.productID,
-          'premiumGrantedAt': FieldValue.serverTimestamp(),
-          'lastPurchaseId': purchase.purchaseID,
-          'lastPurchaseTimestamp': purchase.transactionDate != null
-              ? Timestamp.fromMillisecondsSinceEpoch(
-                  int.parse(purchase.transactionDate!))
-              : null,
-        },
-        SetOptions(merge: true),
-      );
-      debugPrint("✅ Premium status updated in Firestore for user $uid");
-      return true;
-    } catch (e) {
-      debugPrint(
-          "❌ Failed to update Firestore for premium grant ${purchase.productID}: $e");
-      return false;
+    // Retry logic: try up to 3 times with delays
+    for (int attempt = 1; attempt <= 3; attempt++) {
+      try {
+        debugPrint(
+            "🛒 [IAPManager] Attempt $attempt/3: Granting premium to user $uid");
+
+        await FirebaseFirestore.instance.collection('users').doc(uid).set(
+          {
+            'isPremium': true,
+            'premiumPlanId': purchase.productID,
+            'premiumGrantedAt': FieldValue.serverTimestamp(),
+            'lastPurchaseId': purchase.purchaseID,
+            'lastPurchaseTimestamp': purchase.transactionDate != null
+                ? Timestamp.fromMillisecondsSinceEpoch(
+                    int.parse(purchase.transactionDate!))
+                : null,
+          },
+          SetOptions(merge: true),
+        );
+
+        debugPrint(
+            "✅ [IAPManager] Premium status updated in Firestore for user $uid (attempt $attempt)");
+        return true;
+      } catch (e) {
+        debugPrint(
+            "❌ [IAPManager] Attempt $attempt/3 failed to update Firestore for premium grant ${purchase.productID}: $e");
+
+        // If this wasn't the last attempt, wait before retrying
+        if (attempt < 3) {
+          await Future.delayed(Duration(seconds: attempt)); // 1s, then 2s delay
+          debugPrint("🔄 [IAPManager] Retrying in ${attempt}s...");
+        }
+      }
     }
+
+    debugPrint("❌ [IAPManager] All 3 attempts failed to grant premium access");
+    return false;
   }
 
   /// Log purchase event to analytics
@@ -203,7 +237,14 @@ class IAPManager {
         content: const Text("🎉 You now have unlimited access to Peek!"),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
+            onPressed: () {
+              Navigator.of(dialogContext).pop(); // Close dialog
+              // Try to pop the premium page if we're on it
+              final currentContext = navigatorKey.currentContext;
+              if (currentContext != null && Navigator.canPop(currentContext)) {
+                Navigator.of(currentContext).pop(); // Go back to previous page
+              }
+            },
             child: const Text("Awesome!"),
           ),
         ],

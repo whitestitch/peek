@@ -60,6 +60,24 @@ class PeekRepository {
     print('[PeekRepository] Expired peek request: $requestId');
   }
 
+  /// Refund a peek count when a request times out or is cancelled before being viewed
+  /// This ensures users don't lose free peeks when requests expire
+  Future<void> refundPeekCount(String userId) async {
+    try {
+      final userRef = firestore.collection('users').doc(userId);
+
+      // Decrement the daily peek count (but don't go below 0)
+      await userRef.update({
+        'dailyPeekCount': FieldValue.increment(-1),
+      });
+
+      print('[PeekRepository] Refunded peek count for user: $userId');
+    } catch (e) {
+      print('[PeekRepository] ❌ Failed to refund peek count: $e');
+      // Don't throw - refund failure shouldn't block the expiration
+    }
+  }
+
   // --- *** OPTIMIZED METHOD *** ---
   /// Updates user stats after a successful peek request.
   Future<void> updateUserPeekStats(

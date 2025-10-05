@@ -20,6 +20,7 @@ import 'package:peek/features/stats/pages/stats_page.dart';
 import 'package:peek/core/widgets/app_shell.dart';
 
 import 'package:peek/features/menu/about_page.dart';
+import 'package:peek/features/menu/contact_support_page.dart';
 import '../features/peek/photo_capture_page.dart';
 import '../features/peek/splash_page.dart';
 import '../features/peek/pages/peek_receiver_page.dart';
@@ -383,6 +384,12 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/info',
         name: 'info',
         builder: (_, __) => const AboutPage(),
+      ),
+      // 🚨 APPLE GUIDELINE 1.2 FIX: Add contact support route
+      GoRoute(
+        path: '/contact-support',
+        name: 'contact-support',
+        builder: (_, __) => const ContactSupportPage(),
       ),
     ],
   );

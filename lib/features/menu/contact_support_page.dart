@@ -79,7 +79,7 @@ class ContactSupportPage extends StatelessWidget {
                   title: 'Report Technical Issues',
                   subtitle: 'Report bugs or app problems',
                   icon: Icons.bug_report,
-                  onTap: () => _launchEmail(
+                  onTap: () => _launchEmail(context,
                       'technical-support@peekio.app', 'Technical Issue Report'),
                 ),
                 _buildActionTile(
@@ -87,8 +87,8 @@ class ContactSupportPage extends StatelessWidget {
                   title: 'Report User Behavior',
                   subtitle: 'Report abusive or inappropriate user behavior',
                   icon: Icons.person_off,
-                  onTap: () =>
-                      _launchEmail('safety@peekio.app', 'User Behavior Report'),
+                  onTap: () => _launchEmail(
+                      context, 'safety@peekio.app', 'User Behavior Report'),
                 ),
               ],
             ),
@@ -108,15 +108,15 @@ class ContactSupportPage extends StatelessWidget {
                   subtitle: 'Get help via email (24-48 hour response)',
                   icon: Icons.email,
                   onTap: () => _launchEmail(
-                      'support@peekio.app', 'Peekio Support Request'),
+                      context, 'support@peekio.app', 'Peekio Support Request'),
                 ),
                 _buildActionTile(
                   context,
                   title: 'Emergency Safety Issues',
                   subtitle: 'For urgent safety concerns (immediate response)',
                   icon: Icons.emergency,
-                  onTap: () =>
-                      _launchEmail('safety@peekio.app', 'URGENT: Safety Issue'),
+                  onTap: () => _launchEmail(
+                      context, 'safety@peekio.app', 'URGENT: Safety Issue'),
                 ),
               ],
             ),
@@ -290,19 +290,34 @@ class ContactSupportPage extends StatelessWidget {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Privacy Policy'),
-        content: const Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Your privacy is important to us.'),
-            SizedBox(height: 8),
-            Text('• We collect minimal data needed for app functionality'),
-            Text('• Photos are stored temporarily and deleted after use'),
-            Text('• We never share your personal information'),
-            Text('• You can request data deletion at any time'),
-            SizedBox(height: 16),
-            Text('Full privacy policy available at peekio.app/privacy'),
-          ],
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Your privacy is important to us.'),
+              const SizedBox(height: 8),
+              const Text(
+                  '• We collect minimal data needed for app functionality'),
+              const Text(
+                  '• Photos are stored temporarily and deleted after use'),
+              const Text('• We never share your personal information'),
+              const Text('• You can request data deletion at any time'),
+              const SizedBox(height: 12),
+              // 🔗 Clickable Privacy Policy URL (shorter text)
+              GestureDetector(
+                onTap: () => _launchWebUrl('https://peekio.app/privacy.html'),
+                child: const Text(
+                  'View full Privacy Policy',
+                  style: TextStyle(
+                    color: peekPrimaryColor,
+                    // decoration: TextDecoration.underline,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -314,18 +329,91 @@ class ContactSupportPage extends StatelessWidget {
     );
   }
 
-  Future<void> _launchEmail(String email, String subject) async {
+  /// Launch web URL (for Privacy Policy, Terms, etc.)
+  Future<void> _launchWebUrl(String url) async {
+    final Uri uri = Uri.parse(url);
+
+    try {
+      final bool launched = await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+      );
+
+      if (!launched) {
+        throw 'Could not launch URL';
+      }
+    } catch (e) {
+      debugPrint('Error launching URL: $e');
+    }
+  }
+
+  Future<void> _launchEmail(
+      BuildContext context, String email, String subject) async {
     final Uri emailUri = Uri(
       scheme: 'mailto',
       path: email,
       query: 'subject=${Uri.encodeComponent(subject)}',
     );
 
-    if (await canLaunchUrl(emailUri)) {
-      await launchUrl(emailUri);
-    } else {
-      // Fallback: copy email to clipboard
-      // You can implement clipboard functionality here
+    try {
+      // Try to launch the email client directly
+      await launchUrl(emailUri, mode: LaunchMode.externalApplication);
+    } catch (e) {
+      // If email client can't be opened, show a fallback dialog with email info
+      debugPrint('Could not open email client: $e');
+
+      if (!context.mounted) return;
+
+      // Show dialog so user can copy email address manually
+      showDialog(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Email Client Not Available'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Your device does not have an email app configured.',
+                style: TextStyle(fontSize: 14),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Please email us at:',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              SelectableText(
+                email,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: peekPrimaryColor,
+                  fontSize: 16,
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Subject:',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 4),
+              SelectableText(
+                subject,
+                style: TextStyle(
+                  color: peekOnSurfaceColor.withValues(alpha: 0.8),
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
     }
   }
 }

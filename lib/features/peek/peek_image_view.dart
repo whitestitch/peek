@@ -270,6 +270,107 @@ class _PeekImageViewState extends ConsumerState<PeekImageView> {
     _decideNextNavigation();
   }
 
+  /// 🚨 APPLE GUIDELINE 1.2 FIX: Handle report action
+  Future<void> _handleReportAction() async {
+    final originalSenderId = _permissionsManager.originalSenderId;
+    final currentUser = FirebaseAuth.instance.currentUser;
+
+    if (currentUser == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Must be logged in to report content')),
+        );
+      }
+      return;
+    }
+
+    // Show confirmation dialog
+    if (!mounted) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: peekSurfaceColor,
+          title: const Text('Report Content',
+              style: TextStyle(color: peekWhiteColor)),
+          content: const Text(
+            'Are you sure you want to report this content as inappropriate? '
+            'Our team will review it within 24 hours.',
+            style: TextStyle(color: peekOnSurfaceColor),
+          ),
+          actions: [
+            // 🎨 Buttons wrapper with proper Row layout
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                // CANCEL button - LEFT side
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text('Cancel',
+                      style: TextStyle(color: peekWhiteColor, fontSize: 16)),
+                ),
+                // REPORT button - RIGHT side in RED
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  style: TextButton.styleFrom(foregroundColor: Colors.red),
+                  child: const Text('Report',
+                      style:
+                          TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
+          ],
+          actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+        );
+      },
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    try {
+      // Create report using FirestoreService
+      await FirebaseFirestore.instance.collection('reports').add({
+        'type': 'peek_report',
+        'requestId': widget.requestId,
+        'reportedUserId': originalSenderId ?? 'unknown',
+        'reporterUserId': currentUser.uid,
+        'reason': 'inappropriate_content',
+        'imageUrl': widget.imageUrl,
+        'timestamp': FieldValue.serverTimestamp(),
+        'status': 'pending',
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Content reported. Thank you for helping keep our community safe.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+
+      // Log analytics
+      _analyticsManager.logViewCompleted(reason: 'reported');
+
+      // Navigate away after reporting
+      await Future.delayed(const Duration(seconds: 1));
+      if (mounted) {
+        _decideNextNavigation();
+      }
+    } catch (e) {
+      debugPrint('[PeekImageView] Error reporting content: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to report content. Please try again.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   /// Decide next navigation based on app state
   Future<void> _decideNextNavigation() async {
     if (!mounted) return;
@@ -478,6 +579,9 @@ class _PeekImageViewState extends ConsumerState<PeekImageView> {
           else
             const SizedBox(width: 40),
 
+          // 🎨 Spacer to push close button right
+          const Spacer(),
+
           // Close button (X) - aligned right
           CircleAvatar(
             radius: 20,
@@ -497,10 +601,34 @@ class _PeekImageViewState extends ConsumerState<PeekImageView> {
   Widget _buildBottomControls() {
     return Positioned(
       bottom: MediaQuery.of(context).padding.bottom + 60,
-      left: 0,
-      right: 0,
-      child: Center(
-        child: _buildLocationInfo(),
+      left: 20,
+      right: 20,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          // 🚨 APPLE GUIDELINE 1.2 FIX: Report button moved to BOTTOM-LEFT
+          Tooltip(
+            message: 'Report inappropriate content',
+            child: CircleAvatar(
+              radius: 20,
+              backgroundColor: Colors.red.withValues(alpha: 0.7),
+              child: IconButton(
+                onPressed: _handleReportAction,
+                icon: const Icon(Icons.flag, color: Colors.white, size: 20),
+                padding: EdgeInsets.zero,
+                tooltip: 'Report Content',
+              ),
+            ),
+          ),
+
+          // Center - Location info (if available)
+          Expanded(
+            child: Center(child: _buildLocationInfo()),
+          ),
+
+          // Right spacer to balance layout
+          const SizedBox(width: 40),
+        ],
       ),
     );
   }

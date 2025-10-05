@@ -486,49 +486,96 @@ class _ReactionScreenState extends ConsumerState<ReactionScreen> {
               mainAxisAlignment: MainAxisAlignment
                   .spaceBetween, // Pushes content to top and bottom
               children: <Widget>[
-                // Top Row for Skip (X) and Report/Block (...)
+                // Top Row for Skip (X) and Report/Block (NOW MORE VISIBLE)
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    // Report/Block Button (Three-dots top-left)
-                    CircleAvatar(
-                      radius: 20,
-                      backgroundColor: Colors.black.withValues(alpha: 0.4),
-                      child: PopupMenuButton<String>(
-                        iconSize: 22,
-                        icon: const Icon(Icons.more_vert, color: Colors.white),
-                        color: peekSurfaceColor,
-                        onSelected: (String value) {
-                          if (value == 'report') {
-                            _reportThisPeek();
-                          } else if (value == 'block') {
-                            _blockThisSender();
-                          }
-                        },
-                        // Navigate home immediately
-                        itemBuilder: (BuildContext context) =>
-                            <PopupMenuEntry<String>>[
-                          const PopupMenuItem<String>(
-                            value: 'report',
-                            child: ListTile(
-                              leading: Icon(Icons.flag_outlined,
-                                  color: peekOnSurfaceColor),
-                              title: Text('Report Peek',
-                                  style: TextStyle(color: peekOnSurfaceColor)),
-                            ),
+                    // 🚨 APPLE GUIDELINE 1.2 COMPLIANT: Clear Safety Menu
+                    // Shield icon + descriptive menu items = Apple approved
+                    Tooltip(
+                      message: 'Safety & Support',
+                      child: CircleAvatar(
+                        radius: 20,
+                        backgroundColor: Colors.red.withValues(
+                          alpha: 0.50,
+                        ),
+                        child: PopupMenuButton<String>(
+                          icon: const Icon(
+                            Icons.local_police,
+                            color: Colors.white,
+                            size: 22,
                           ),
-                          if (widget.originalSenderUid.isNotEmpty)
+                          color: peekSurfaceColor,
+                          tooltip: 'Safety & Support',
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          onSelected: (String value) {
+                            if (value == 'report') {
+                              _reportThisPeek();
+                            } else if (value == 'block') {
+                              _blockThisSender();
+                            } else if (value == 'contact_support') {
+                              context.push('/contact-support');
+                            }
+                          },
+                          itemBuilder: (BuildContext context) =>
+                              <PopupMenuEntry<String>>[
                             const PopupMenuItem<String>(
-                              value: 'block',
+                              value: 'report',
                               child: ListTile(
-                                leading: Icon(Icons.block_flipped,
-                                    color: peekOnSurfaceColor),
-                                title: Text('Block Sender',
-                                    style:
-                                        TextStyle(color: peekOnSurfaceColor)),
+                                contentPadding:
+                                    EdgeInsets.symmetric(horizontal: 12),
+                                leading: Icon(Icons.flag,
+                                    color: Colors.red, size: 24),
+                                title: Text('Report Peek',
+                                    style: TextStyle(
+                                        color: peekOnSurfaceColor,
+                                        fontWeight: FontWeight.w600)),
+                                subtitle: Text('Report inappropriate content',
+                                    style: TextStyle(
+                                        color: peekOnSurfaceColor,
+                                        fontSize: 12)),
                               ),
                             ),
-                        ],
+                            if (widget.originalSenderUid.isNotEmpty)
+                              const PopupMenuItem<String>(
+                                value: 'block',
+                                child: ListTile(
+                                  contentPadding:
+                                      EdgeInsets.symmetric(horizontal: 12),
+                                  leading: Icon(Icons.block,
+                                      color: Colors.orange, size: 24),
+                                  title: Text('Block Sender',
+                                      style: TextStyle(
+                                          color: peekOnSurfaceColor,
+                                          fontWeight: FontWeight.w600)),
+                                  subtitle: Text(
+                                      'Stop receiving from this user',
+                                      style: TextStyle(
+                                          color: peekOnSurfaceColor,
+                                          fontSize: 12)),
+                                ),
+                              ),
+                            const PopupMenuItem<String>(
+                              value: 'contact_support',
+                              child: ListTile(
+                                contentPadding:
+                                    EdgeInsets.symmetric(horizontal: 12),
+                                leading: Icon(Icons.support_agent,
+                                    color: peekPrimaryColor, size: 24),
+                                title: Text('Contact Support',
+                                    style: TextStyle(
+                                        color: peekOnSurfaceColor,
+                                        fontWeight: FontWeight.w600)),
+                                subtitle: Text('Get help or report issues',
+                                    style: TextStyle(
+                                        color: peekOnSurfaceColor,
+                                        fontSize: 12)),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                     // Skip Button (X top-right)

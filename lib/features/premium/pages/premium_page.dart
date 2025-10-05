@@ -45,7 +45,7 @@ class PeekPremiumPage extends ConsumerWidget {
       // Optionally, show an error message if the URL can't be launched
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
+          const SnackBar(
             content: Text(
                 'Could not open subscription settings. Please go to App Store > Account > Subscriptions.'),
           ),
@@ -215,13 +215,71 @@ class PeekPremiumPage extends ConsumerWidget {
                     ),
               ),
             ),
+            const SizedBox(height: 8),
+
+            // --- Subscription Duration (REQUIRED by Apple) ---
+            Center(
+              child: Text(
+                "per month", // Shows subscription period
+                style: TextStyle(
+                  color: Colors.grey[400],
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
 
             const SizedBox(height: 20),
 
+            // --- Auto-Renewal Info ---
             Center(
               child: Text(
-                "Subscription auto-renews. Cancel anytime.", // Clearer text
+                "Monthly subscription. Auto-renews. Cancel anytime.",
                 style: TextStyle(color: Colors.grey[500], fontSize: 12),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // --- Terms & Privacy Links (REQUIRED by Apple) ---
+            Center(
+              child: Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 8,
+                children: [
+                  GestureDetector(
+                    onTap: () => _launchUrl(
+                      Uri.parse('https://peekio.app/terms.html'),
+                      context,
+                    ),
+                    child: const Text(
+                      'Terms of Service',
+                      style: TextStyle(
+                        color: peekSecondaryColor,
+                        fontSize: 12,
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    '•',
+                    style: TextStyle(color: Colors.grey[500], fontSize: 12),
+                  ),
+                  GestureDetector(
+                    onTap: () => _launchUrl(
+                      Uri.parse('https://peekio.app/privacy.html'),
+                      context,
+                    ),
+                    child: const Text(
+                      'Privacy Policy',
+                      style: TextStyle(
+                        color: peekSecondaryColor,
+                        fontSize: 12,
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 16),
