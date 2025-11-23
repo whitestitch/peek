@@ -1294,6 +1294,9 @@ class _PeekSenderWaitPageState extends ConsumerState<PeekSenderWaitPage>
 
       if (_secondsRemaining == 0) {
         timer.cancel();
+        // 🍎 APPLE REVIEW: Enhanced logging for review session tracking
+        debugPrint(
+            "[PeekSenderWaitPage] ⏱️ Countdown reached 0 - Timeout triggered. This is expected behavior when no response within 30 seconds.");
         _navigationManager.navigateToHomeWithCancellation(
           context,
           reason: 'timeout',

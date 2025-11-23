@@ -72,8 +72,9 @@ class PeekSenderWaitTimerManager {
 
       if (remaining <= 0) {
         timer.cancel();
+        // 🍎 APPLE REVIEW: Enhanced logging for review session tracking
         debugPrint(
-            "[PeekSenderWaitTimerManager] Countdown finished, calling timeout");
+            "[PeekSenderWaitTimerManager] ⏱️ Countdown finished - Timeout triggered. This is expected behavior when no response within 30 seconds.");
         onTimeout();
       } else {
         debugPrint(
@@ -105,8 +106,9 @@ class PeekSenderWaitTimerManager {
 
   void startWatchdogTimer() {
     _watchdogTimer = Timer(const Duration(seconds: 70), () {
+      // 🍎 APPLE REVIEW: Enhanced logging for review session tracking
       debugPrint(
-          "[PeekSenderWaitTimerManager] Watchdog timer fired. Forcing timeout.");
+          "[PeekSenderWaitTimerManager] ⏱️ Watchdog timer fired - Timeout triggered. This is expected behavior when no response within timeout period.");
       onTimeout();
     });
   }

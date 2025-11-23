@@ -633,7 +633,9 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
   void _handleTimeout() {
     if (!mounted) return;
 
-    debugPrint("[PhotoCapturePage] Capture timeout reached - showing modal");
+    // 🍎 APPLE REVIEW: Enhanced logging for review session tracking
+    debugPrint(
+        "[PhotoCapturePage] ⏱️ Capture timeout reached - This is expected behavior when no photo taken within 30 seconds");
 
     // Use the centralized "Time Up!" panel from peek_dialog_manager.dart
     // This ensures consistency across all timeout scenarios
@@ -673,10 +675,23 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
                       fontSize: 28,
                       fontWeight: FontWeight.w600,
                       color: Colors.white)),
-              const SizedBox(height: 10),
-              const Text("The photo capture window has expired.",
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 16, color: Colors.white70)),
+              const SizedBox(height: 12),
+              // 🍎 APPLE REVIEW: Clearer messaging that this is intentional
+              const Text(
+                "The photo capture window expired after 30 seconds.",
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 16, color: Colors.white70),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                "Try again!",
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                ),
+              ),
               const SizedBox(height: 30),
               SizedBox(
                 width: double.infinity,

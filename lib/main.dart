@@ -241,6 +241,10 @@ class _PeekAppState extends ConsumerState<PeekApp> {
 
   /// 🔒 ENHANCED: Show synchronized timeout panel
   void _showSyncedTimeoutPanel(BuildContext context) {
+    // 🍎 APPLE REVIEW: Log timeout event for review session tracking
+    debugPrint(
+        '[PeekApp] ⏱️ Synced timeout panel shown - This is expected behavior when no response within 30 seconds');
+
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
@@ -274,10 +278,23 @@ class _PeekAppState extends ConsumerState<PeekApp> {
                       fontSize: 28,
                       fontWeight: FontWeight.w600,
                       color: Colors.white)),
-              const SizedBox(height: 10),
-              const Text("The peek request has expired.",
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 16, color: Colors.white70)),
+              const SizedBox(height: 12),
+              // 🍎 APPLE REVIEW: Clearer messaging that this is intentional
+              const Text(
+                "No one responded to your Peek request within 30 seconds.",
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 16, color: Colors.white70),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                "Try again!",
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                ),
+              ),
               const SizedBox(height: 30),
               SizedBox(
                 width: double.infinity,

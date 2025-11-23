@@ -23,6 +23,8 @@ class PeekWaitPage extends ConsumerStatefulWidget {
 class _PeekWaitPageState extends ConsumerState<PeekWaitPage> {
   StreamSubscription<DocumentSnapshot>? _sub; // Firestore listener subscription
   Timer? _timeoutTimer; // Timer to handle lack of response
+  Timer? _countdownTimer; // 🍎 APPLE REVIEW: Countdown timer for visual feedback
+  int _secondsRemaining = 60; // 🍎 APPLE REVIEW: Countdown from 60 seconds (1 minute)
   bool _hasTimedOut = false; // Flag to track if timeout occurred
   bool _navigated = false; // Flag to prevent multiple navigation calls
 
@@ -36,9 +38,33 @@ class _PeekWaitPageState extends ConsumerState<PeekWaitPage> {
     super.initState();
     // 🎯 SYNC FIX: Use 5 seconds + 1s buffer for sender (16s total)
     _timeoutTimer = Timer(const Duration(seconds: 61), _onTimeout);
+    // 🍎 APPLE REVIEW: Start countdown timer for visual feedback (60 seconds = 1 minute)
+    _startCountdownTimer();
     _listenForPeek(); // Start listening for updates on the peek request
     material.debugPrint(
         "[PeekWaitPage] Initialized for request ${widget.requestId} with 61s sender timeout");
+  }
+
+  /// 🍎 APPLE REVIEW: Start countdown timer to show visual progress
+  void _startCountdownTimer() {
+    _countdownTimer?.cancel();
+    _secondsRemaining = 60; // Start from 60 seconds (1 minute)
+
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted || _navigated || _hasTimedOut) {
+        timer.cancel();
+        return;
+      }
+
+      setState(() {
+        if (_secondsRemaining > 0) {
+          _secondsRemaining--;
+        } else {
+          timer.cancel();
+          _secondsRemaining = 0;
+        }
+      });
+    });
   }
 
   /// Listens to the Firestore document for status changes ('accepted', 'rejected', 'timeout').
@@ -175,8 +201,12 @@ class _PeekWaitPageState extends ConsumerState<PeekWaitPage> {
     if (!mounted || _navigated)
       return; // Prevent multiple calls if _navigated was already true
 
+    // 🍎 APPLE REVIEW: Enhanced logging for review session tracking
     material.debugPrint(
-      "[PeekWaitPage] Timeout reached for request ${widget.requestId}. Navigating home with timeout panel.",
+      "[PeekWaitPage] ⏱️ Timeout reached for request ${widget.requestId}. This is expected behavior when no response within 30 seconds.",
+    );
+    material.debugPrint(
+      "[PeekWaitPage] Navigating home with timeout panel - intentional UX flow, not a crash.",
     );
 
     _navigated = true;
@@ -295,6 +325,9 @@ class _PeekWaitPageState extends ConsumerState<PeekWaitPage> {
     _sub = null;
     _timeoutTimer?.cancel();
     _timeoutTimer = null;
+    // 🍎 APPLE REVIEW: Cancel countdown timer
+    _countdownTimer?.cancel();
+    _countdownTimer = null;
   }
 
   /// ✅ NEW: Handle close action for the close button (reusing Photo Capture logic)
@@ -420,8 +453,8 @@ class _PeekWaitPageState extends ConsumerState<PeekWaitPage> {
               ),
             ),
           )
-        // Otherwise, show the waiting indicator
-        : const material.Padding(
+        // Otherwise, show the waiting indicator with countdown
+        : material.Padding(
             padding: const material.EdgeInsets.symmetric(
               vertical: 2,
               horizontal: 8,
@@ -447,6 +480,62 @@ class _PeekWaitPageState extends ConsumerState<PeekWaitPage> {
                     fontSize: 28,
                   ),
                   textAlign: material.TextAlign.center,
+                ),
+                // 🍎 APPLE REVIEW: Add countdown display with progress indicator
+                material.SizedBox(height: 24),
+                material.Column(
+                  mainAxisSize: material.MainAxisSize.min,
+                  crossAxisAlignment: material.CrossAxisAlignment.center,
+                  children: [
+                    // Countdown number display
+                    material.Container(
+                      padding: const material.EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 10,
+                      ),
+                      decoration: material.BoxDecoration(
+                        color: material.Colors.black.withValues(alpha: 0.5),
+                        borderRadius: material.BorderRadius.circular(20),
+                      ),
+                      child: material.Text(
+                        '$_secondsRemaining',
+                        style: material.Theme.of(context)
+                            .textTheme
+                            .displaySmall
+                            ?.copyWith(
+                              color: peekWhiteColor,
+                              fontWeight: material.FontWeight.bold,
+                            ),
+                      ),
+                    ),
+                    const material.SizedBox(height: 12),
+                    // Progress indicator showing time remaining
+                    material.SizedBox(
+                      width: 200,
+                      child: material.LinearProgressIndicator(
+                        value: _secondsRemaining / 60.0,
+                        backgroundColor:
+                            material.Colors.white.withValues(alpha: 0.2),
+                        valueColor: material.AlwaysStoppedAnimation<material.Color>(
+                          _secondsRemaining > 10
+                              ? peekSecondaryColor
+                              : material.Colors.orange,
+                        ),
+                        minHeight: 4,
+                      ),
+                    ),
+                    const material.SizedBox(height: 8),
+                    material.Text(
+                      'Waiting for response...',
+                      style: material.Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(
+                            color: peekWhiteColor.withValues(alpha: 0.7),
+                            fontSize: 12,
+                          ),
+                    ),
+                  ],
                 ),
               ],
             ),

@@ -1,5 +1,6 @@
 // lib/features/peek/pages/managers/peek_sender_wait_ui.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:peek/theme/colors.dart';
 
@@ -85,24 +86,55 @@ class PeekSenderWaitUI {
 
                 const SizedBox(height: 15),
 
-                // Countdown Display
+                // Countdown Display with Progress Indicator
                 if (secondsRemaining != null)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 10,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.5),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      '$secondsRemaining',
-                      style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                            color: peekWhiteColor,
-                            fontWeight: FontWeight.bold,
+                  Column(
+                    children: [
+                      // 🍎 APPLE REVIEW: Enhanced countdown with progress indicator
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.5),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          '$secondsRemaining',
+                          style: Theme.of(context)
+                              .textTheme
+                              .displaySmall
+                              ?.copyWith(
+                                color: peekWhiteColor,
+                                fontWeight: FontWeight.bold,
+                              ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      // Progress indicator showing time remaining
+                      SizedBox(
+                        width: 200,
+                        child: LinearProgressIndicator(
+                          value: secondsRemaining / 30.0,
+                          backgroundColor: Colors.white.withValues(alpha: 0.2),
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            secondsRemaining > 10
+                                ? peekSecondaryColor
+                                : Colors.orange,
                           ),
-                    ),
+                          minHeight: 4,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Waiting for response...',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: peekWhiteColor.withValues(alpha: 0.7),
+                              fontSize: 12,
+                            ),
+                      ),
+                    ],
                   ),
               ],
             ),
@@ -128,6 +160,10 @@ class PeekSenderWaitUI {
   }
 
   Future<void> showTimeoutDialog(BuildContext context) {
+    // 🍎 APPLE REVIEW: Log timeout event for review session tracking
+    debugPrint(
+        "[PeekSenderWaitUI] ⏱️ Timeout dialog shown - This is expected behavior when no response within 30 seconds");
+
     return showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
@@ -162,13 +198,25 @@ class PeekSenderWaitUI {
                     style: TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
+                      color: Colors.white,
                     ),
+                  ),
+                  const SizedBox(height: 12),
+                  // 🍎 APPLE REVIEW: Clearer messaging that this is intentional
+                  const Text(
+                    "No one responded to your Peek request within 30 seconds.",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 16, color: Colors.white70),
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    "The other user didn't take a photo in time.",
+                    "Try again!",
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 16, color: Colors.white70),
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
                   ),
                   const SizedBox(height: 32),
                   ElevatedButton(
