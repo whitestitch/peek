@@ -91,52 +91,112 @@ class PeekController extends StateNotifier<PeekControllerState> {
       // Continue with peek request if reputation check fails
     }
 
-    try {
-      final HttpsCallable callable = _functions.httpsCallable(
-        'initiatePeekRequest',
-        options: HttpsCallableOptions(
-          timeout: const Duration(seconds: 30),
-        ),
-      );
+    // 🔧 APPLE REVIEW FIX: Increased timeout and added retry logic
+    // Per Apple's guidelines: avoid timeouts when possible, provide retry logic
+    int retryCount = 0;
+    const maxRetries = 2;
 
-      // The client SDK now automatically and securely attaches the user's auth token.
-      // We DO NOT pass 'senderUid' in the payload anymore.
-      final HttpsCallableResult result =
-          await callable.call<Map<String, dynamic>>({'debug': kDebugMode});
-
-      final responseData = result.data as Map<String, dynamic>;
-
-      if (responseData['success'] == true &&
-          responseData['peekRequestId'] != null) {
-        final String peekRequestId = responseData['peekRequestId'] as String;
+    while (retryCount <= maxRetries) {
+      try {
         debugPrint(
-            "[PeekController] Cloud Function success. PeekRequestId: $peekRequestId");
+            "[PeekController] Attempt ${retryCount + 1}/${maxRetries + 1} to initiate Peek request");
 
-        // Use the repository to update stats, which is a cleaner pattern.
-        await _repo.updateUserPeekStats(currentUser.uid,
-            needsDailyReset: needsDailyReset);
+        final HttpsCallable callable = _functions.httpsCallable(
+          'initiatePeekRequest',
+          options: HttpsCallableOptions(
+            // 🔧 APPLE REVIEW FIX: Increased from 30s to 90s for better network resilience
+            timeout: const Duration(seconds: 90),
+          ),
+        );
 
-        state = state.copyWith(isLoading: false);
-        return peekRequestId;
-      } else {
-        final String errorMessage = responseData['message'] as String? ??
-            "Failed to initiate Peek request.";
-        state = state.copyWith(isLoading: false, error: errorMessage);
+        // The client SDK now automatically and securely attaches the user's auth token.
+        // We DO NOT pass 'senderUid' in the payload anymore.
+        final HttpsCallableResult result =
+            await callable.call<Map<String, dynamic>>({'debug': kDebugMode});
+
+        final responseData = result.data as Map<String, dynamic>;
+
+        if (responseData['success'] == true &&
+            responseData['peekRequestId'] != null) {
+          final String peekRequestId = responseData['peekRequestId'] as String;
+          debugPrint(
+              "[PeekController] Cloud Function success. PeekRequestId: $peekRequestId");
+
+          // Use the repository to update stats, which is a cleaner pattern.
+          await _repo.updateUserPeekStats(currentUser.uid,
+              needsDailyReset: needsDailyReset);
+
+          state = state.copyWith(isLoading: false);
+          return peekRequestId;
+        } else {
+          final String errorMessage = responseData['message'] as String? ??
+              "Failed to initiate Peek request.";
+          state = state.copyWith(isLoading: false, error: errorMessage);
+          return null;
+        }
+      } on FirebaseFunctionsException catch (e) {
+        debugPrint(
+            "❌ [PeekController] FirebaseFunctionsException (attempt ${retryCount + 1}): ${e.code} - ${e.message}");
+
+        // 🔧 APPLE REVIEW FIX: Retry on network/timeout errors
+        if ((e.code == 'unavailable' ||
+                e.code == 'deadline-exceeded' ||
+                e.code == 'internal') &&
+            retryCount < maxRetries) {
+          retryCount++;
+          debugPrint(
+              "[PeekController] Retrying after network error (attempt $retryCount/$maxRetries)...");
+          await Future.delayed(
+              Duration(seconds: retryCount * 2)); // Exponential backoff
+          continue;
+        }
+
+        state = state.copyWith(
+            isLoading: false,
+            error:
+                "Connection error. Please check your network and try again.");
+        return null;
+      } on TimeoutException catch (e) {
+        debugPrint(
+            "❌ [PeekController] Timeout (attempt ${retryCount + 1}): $e");
+
+        // 🔧 APPLE REVIEW FIX: Retry on timeout
+        if (retryCount < maxRetries) {
+          retryCount++;
+          debugPrint(
+              "[PeekController] Retrying after timeout (attempt $retryCount/$maxRetries)...");
+          await Future.delayed(Duration(seconds: retryCount * 2));
+          continue;
+        }
+
+        state = state.copyWith(
+            isLoading: false,
+            error: "Request is taking longer than expected. Please try again.");
+        return null;
+      } catch (e) {
+        debugPrint(
+            "❌ [PeekController] Unexpected error (attempt ${retryCount + 1}): $e");
+
+        // 🔧 APPLE REVIEW FIX: Retry on unexpected errors
+        if (retryCount < maxRetries) {
+          retryCount++;
+          debugPrint(
+              "[PeekController] Retrying after unexpected error (attempt $retryCount/$maxRetries)...");
+          await Future.delayed(Duration(seconds: retryCount * 2));
+          continue;
+        }
+
+        state = state.copyWith(
+            isLoading: false, error: "An error occurred. Please try again.");
         return null;
       }
-    } on FirebaseFunctionsException catch (e) {
-      debugPrint(
-          "❌ [PeekController] FirebaseFunctionsException: ${e.code} - ${e.message}");
-      state = state.copyWith(
-          isLoading: false, error: "Peek request failed. Please try again.");
-      return null;
-    } catch (e) {
-      debugPrint("❌ [PeekController] Unexpected error: $e");
-      state = state.copyWith(
-          isLoading: false,
-          error: "An unexpected error occurred. Please try again.");
-      return null;
     }
+
+    // Should never reach here, but just in case
+    state = state.copyWith(
+        isLoading: false,
+        error: "Unable to complete request. Please try again.");
+    return null;
   }
 
   Future<void> expirePeek(String requestId) async {

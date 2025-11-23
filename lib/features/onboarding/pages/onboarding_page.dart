@@ -8,8 +8,6 @@ import 'package:peek/features/onboarding/providers/onboarding_provider.dart';
 import 'package:peek/features/onboarding/widgets/onboarding_slide.dart';
 import 'package:peek/theme/colors.dart';
 import 'package:peek/core/widgets/peek_loading_indicator.dart';
-import 'package:geolocator/geolocator.dart';
-import 'package:peek/core/firestore_service.dart';
 
 class OnboardingPage extends ConsumerStatefulWidget {
   const OnboardingPage({super.key});
@@ -21,7 +19,6 @@ class OnboardingPage extends ConsumerStatefulWidget {
 class _OnboardingPageState extends ConsumerState<OnboardingPage> {
   final PageController _pageController = PageController();
   int _currentPage = 0;
-  bool _isRequestingPermission = false;
 
   final List<Map<String, dynamic>> _allSlides = [
     {
@@ -62,16 +59,15 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
           'Peek is anonymous, safe. Your world is shared once — then it’s gone forever.',
       'background': 'assets/images/onboarding_bg_04.jpg',
     },
-    {
-      'logo': 'assets/images/peekio_logo.svg',
-      'image': 'assets/images/onboarding_04.png',
-      'isHeroFullWidth': false,
-      'title': 'Enable Location',
-      'subtitle': 'See where peeks come from.',
-      'text': "Turn on location to view the city behind each glimpse.",
-      'background': 'assets/images/onboarding_bg_02.jpg',
-      'isLocationSlide': true,
-    },
+    // ✅ REMOVED: Location permission slide moved to just-in-time request
+    // This improves UX and increases permission grant rates by providing
+    // context right when the feature is needed, following Apple's best practices
+    // and patterns used by top apps like Instagram, Uber, and Airbnb.
+    //
+    // Location permission will now be requested:
+    // - When user sends their first Peek (if feature is enabled)
+    // - With a clear explanation modal before the system dialog
+    // - Users can still decline via the iOS system permission dialog
   ];
 
   @override
@@ -104,31 +100,6 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
     if (mounted) context.go('/');
   }
 
-  Future<void> _handleLocationPermissionRequest() async {
-    if (_isRequestingPermission || !mounted) return;
-    setState(() => _isRequestingPermission = true);
-
-    try {
-      final permission = await Geolocator.requestPermission();
-      bool locationEnabled = permission == LocationPermission.whileInUse ||
-          permission == LocationPermission.always;
-      debugPrint(
-          "[Onboarding] Permission status: $permission. Setting preference to: $locationEnabled");
-      if (mounted) {
-        await ref
-            .read(firestoreServiceProvider)
-            .updateUserLocationPreference(locationEnabled);
-      }
-    } catch (e) {
-      debugPrint("❌ Error handling location permission: $e");
-    } finally {
-      if (mounted) {
-        setState(() => _isRequestingPermission = false);
-        _finishOnboarding();
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final userDocAsync = ref.watch(userDocumentProvider);
@@ -143,26 +114,11 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
         body: Center(child: Text('Error: $err')),
       ),
       data: (userDoc) {
-        final locationPrefEnabled =
-            userDoc?.data()?['shareLocationPreference'] as bool? ?? false;
+        // ✅ Simplified: No need to filter slides anymore
+        final slides = _allSlides;
 
-        final filteredSlides = _allSlides.where((slide) {
-          if (slide['isLocationSlide'] == true) {
-            return !locationPrefEnabled;
-          }
-          return true;
-        }).toList();
-
-        if (filteredSlides.isEmpty) {
-          WidgetsBinding.instance
-              .addPostFrameCallback((_) => _finishOnboarding());
-          return const Scaffold(
-              backgroundColor: peekBackgroundColor,
-              body: Center(child: Text("Onboarding complete.")));
-        }
-
-        if (_currentPage >= filteredSlides.length) {
-          _currentPage = filteredSlides.length - 1;
+        if (_currentPage >= slides.length) {
+          _currentPage = slides.length - 1;
         }
 
         return Stack(
@@ -171,9 +127,8 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
             AnimatedSwitcher(
               duration: const Duration(milliseconds: 500),
               child: Image.asset(
-                key: ValueKey<String>(
-                    filteredSlides[_currentPage]['background']!),
-                filteredSlides[_currentPage]['background']!,
+                key: ValueKey<String>(slides[_currentPage]['background']!),
+                slides[_currentPage]['background']!,
                 fit: BoxFit.cover,
                 errorBuilder: (context, error, stackTrace) {
                   return Container(color: peekBackgroundColor);
@@ -182,10 +137,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
             ),
             Scaffold(
               backgroundColor: Colors.transparent,
-              bottomNavigationBar:
-                  filteredSlides[_currentPage]['isLocationSlide'] == true
-                      ? _buildLocationPermissionControls()
-                      : _buildNavigationControls(filteredSlides),
+              bottomNavigationBar: _buildNavigationControls(slides),
               body: SafeArea(
                 bottom: false,
                 child: Column(
@@ -193,10 +145,10 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                     Expanded(
                       child: PageView.builder(
                         controller: _pageController,
-                        itemCount: filteredSlides.length,
+                        itemCount: slides.length,
                         onPageChanged: _onPageChanged,
                         itemBuilder: (context, index) {
-                          final slide = filteredSlides[index];
+                          final slide = slides[index];
                           final isFullWidthLayout =
                               slide['isHeroFullWidth'] as bool? ?? false;
                           return OnboardingSlide(
@@ -211,7 +163,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                         },
                       ),
                     ),
-                    _buildTextualContent(filteredSlides),
+                    _buildTextualContent(slides),
 
                     // Add a SizedBox to create space above the bottom navigation bar.
                     const SizedBox(height: 10),
@@ -292,45 +244,6 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
             ],
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildLocationPermissionControls() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 10, 20, 40),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          // Left button - "Later"
-          TextButton(
-            onPressed: _isRequestingPermission ? null : _finishOnboarding,
-            style: TextButton.styleFrom(
-              foregroundColor: peekOnBackgroundColor.withValues(alpha: 0.7),
-              textStyle: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            child: const Text('Later'),
-          ),
-
-          // Right button - "Enable"
-          ElevatedButton(
-            onPressed: _isRequestingPermission
-                ? null
-                : _handleLocationPermissionRequest,
-            child: _isRequestingPermission
-                ? const SizedBox(
-                    height: 24,
-                    width: 24,
-                    child: PeekLoadingIndicator.small(
-                      logoColor: peekSurfaceColor,
-                    ),
-                  )
-                : const Text('Enable'),
-          ),
-        ],
       ),
     );
   }

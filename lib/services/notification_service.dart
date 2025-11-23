@@ -39,6 +39,14 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     );
   }
 
+  // 🔍 DEBUG: Log background message for TestFlight debugging
+  debugPrint('═══════════════════════════════════════════');
+  debugPrint('📨 [BACKGROUND MESSAGE HANDLER]');
+  debugPrint('Message ID: ${message.messageId}');
+  debugPrint('Notification: ${message.notification?.toMap()}');
+  debugPrint('Data: ${message.data}');
+  debugPrint('═══════════════════════════════════════════');
+
   // The OS now handles displaying the notification, so no further action is needed here.
 
   // 1. Check if the app is already in the foreground.
@@ -439,6 +447,14 @@ class NotificationService {
       await _firebaseMessaging.deleteToken();
 
       final fcmToken = await _firebaseMessaging.getToken();
+
+      // 🔍 DEBUG: Log token details for TestFlight debugging
+      debugPrint('═══════════════════════════════════════════');
+      debugPrint('🔐 [FCM TOKEN DEBUG]');
+      debugPrint('Token: ${fcmToken?.substring(0, 20)}...'); // First 20 chars
+      debugPrint('Platform: ${Platform.isIOS ? "iOS" : "Android"}');
+      debugPrint('Build Mode: ${kDebugMode ? "Debug" : "Release"}');
+      debugPrint('═══════════════════════════════════════════');
 
       final uid = _auth.currentUser?.uid;
       if (uid != null && fcmToken != null) {

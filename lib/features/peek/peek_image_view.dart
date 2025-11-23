@@ -46,6 +46,20 @@ class _PeekImageViewState extends ConsumerState<PeekImageView> {
   @override
   void initState() {
     super.initState();
+
+    // ✅ APPLE GUIDELINE 2.1 FIX: Enhanced debugging for review issues
+    debugPrint("═══════════════════════════════════════════════════════");
+    debugPrint("[PeekImageView] ✅ INITIALIZING");
+    debugPrint("[PeekImageView] RequestId: ${widget.requestId}");
+    debugPrint("[PeekImageView] ImageUrl: ${widget.imageUrl}");
+    debugPrint(
+        "[PeekImageView] ImageUrl length: ${widget.imageUrl.length} characters");
+    debugPrint(
+        "[PeekImageView] SenderLocation: ${widget.senderLocation ?? 'null'}");
+    debugPrint(
+        "[PeekImageView] Device: ${WidgetsBinding.instance.platformDispatcher.views.first.physicalSize}");
+    debugPrint("═══════════════════════════════════════════════════════");
+
     _initializeManagers();
     _loadAllData();
 
@@ -502,12 +516,33 @@ class _PeekImageViewState extends ConsumerState<PeekImageView> {
   }
 
   /// Build main image display
+  /// ✅ APPLE GUIDELINE 2.1 FIX: Enhanced with iPad-specific layout
   Widget _buildImageDisplay() {
     return Positioned.fill(
-      child: _imageManager.buildImageWidget(
-        fit: BoxFit.contain,
-        loadingWidget: const Center(
-          child: CircularProgressIndicator(color: Colors.white),
+      child: Container(
+        // ✅ Ensure black background for proper image display
+        color: Colors.black,
+        child: Center(
+          child: _imageManager.buildImageWidget(
+            fit: BoxFit
+                .contain, // ✅ Properly scales image on all screen sizes including iPad
+            loadingWidget: const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(color: Colors.white),
+                  SizedBox(height: 16),
+                  Text(
+                    'Loading Peek...',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );

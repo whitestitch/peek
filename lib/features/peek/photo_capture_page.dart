@@ -16,6 +16,8 @@ import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:peek/core/providers/session_providers.dart';
+import 'package:peek/core/location_permission_helper.dart';
+import 'package:geolocator/geolocator.dart';
 
 // Global camera list (keeping this as is for compatibility)
 List<CameraDescription> _cameras = [];
@@ -264,12 +266,34 @@ class _PhotoCapturePageState extends ConsumerState<PhotoCapturePage>
       // Load user settings
       await _userSettings.loadUserSettings();
 
-      // Get location if user shares location
-      if (_userSettings.shouldShareLocation()) {
+      // ✅ JUST-IN-TIME LOCATION PERMISSION (Apple-compliant pattern)
+      // CRITICAL: Only request location for RESPONDERS (users capturing the photo)
+      // NOT for requesters (users sending the peek request)
+      // Location is attached to the captured image, not the request itself
+      if (widget.mode == 'response' && _userSettings.shouldShareLocation()) {
+        // Check if permission is already granted
+        final currentPermission = await Geolocator.checkPermission();
+        final bool needsPermission =
+            currentPermission == LocationPermission.denied ||
+                currentPermission == LocationPermission.deniedForever;
+
+        if (needsPermission && mounted) {
+          debugPrint(
+              "[PhotoCapturePage] 🌍 Location permission needed for RESPONDER - showing contextual dialog");
+
+          // Show contextual permission dialog (Apple-compliant)
+          // This explains WHY we need location before showing system dialog
+          await LocationPermissionHelper.requestLocationPermissionWithContext(
+            context: context,
+            ref: ref,
+          );
+        }
+
+        // Now get the location (permission either already granted or just requested)
         await _locationService.getCurrentUserCity();
       } else {
         debugPrint(
-            "[PhotoCapturePage] Location sharing disabled - marked as ready");
+            "[PhotoCapturePage] Location not needed - Mode: ${widget.mode}, ShareLocation: ${_userSettings.shouldShareLocation()}");
       }
 
       // Initialize camera

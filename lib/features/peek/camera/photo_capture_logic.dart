@@ -1,3 +1,4 @@
+import 'dart:async'; // 🔧 APPLE REVIEW FIX: For TimeoutException
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
@@ -92,6 +93,7 @@ class PhotoCaptureLogic {
   // }
 
   /// Upload photo to Firebase Storage
+  /// 🔧 APPLE REVIEW FIX: Added timeout protection and retry logic
   Future<void> uploadPhoto({
     required String requestId,
     required String senderUid, // Add required senderUid parameter
@@ -108,42 +110,111 @@ class PhotoCaptureLogic {
     _uploading = true;
     onUploadStart?.call();
 
-    try {
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final storagePath = 'peeks/$requestId/$timestamp.jpg';
+    // 🔧 APPLE REVIEW FIX: Retry logic for image upload
+    int retryCount = 0;
+    const maxRetries = 2;
 
-      debugPrint("[PhotoCapture] Uploading to: $storagePath");
+    while (retryCount <= maxRetries) {
+      try {
+        debugPrint(
+            "[PhotoCapture] Upload attempt ${retryCount + 1}/${maxRetries + 1}");
 
-      // Upload to Firebase Storage
-      final ref = FirebaseStorage.instance.ref().child(storagePath);
-      final uploadTask = ref.putData(
-        _capturedImageBytes!,
-        SettableMetadata(contentType: 'image/jpeg'),
-      );
+        final timestamp = DateTime.now().millisecondsSinceEpoch;
+        final storagePath = 'peeks/$requestId/$timestamp.jpg';
 
-      final snapshot = await uploadTask;
-      final downloadUrl = await snapshot.ref.getDownloadURL();
+        debugPrint("[PhotoCapture] Uploading to: $storagePath");
 
-      debugPrint("[PhotoCapture] Upload successful: $downloadUrl");
+        // Upload to Firebase Storage with timeout protection
+        final ref = FirebaseStorage.instance.ref().child(storagePath);
+        final uploadTask = ref.putData(
+          _capturedImageBytes!,
+          SettableMetadata(contentType: 'image/jpeg'),
+        );
 
-      // Update Firestore with image URL and location
-      await _updateFirestoreWithImage(
-        requestId: requestId,
-        imageUrl: downloadUrl,
-        senderUid: senderUid, // Pass senderUid to the update method
-        senderLocation: senderLocation,
-        senderDisplayName: senderDisplayName,
-        senderAvatarUrl: senderAvatarUrl,
-      );
+        // 🔧 APPLE REVIEW FIX: Add timeout to upload operation (90 seconds)
+        final snapshot = await uploadTask.timeout(
+          const Duration(seconds: 90),
+          onTimeout: () {
+            debugPrint("[PhotoCapture] Upload timed out after 90 seconds");
+            throw TimeoutException('Upload timed out');
+          },
+        );
 
-      onUploadSuccess?.call(downloadUrl);
-    } catch (e) {
-      debugPrint("[PhotoCapture] Upload failed: $e");
-      onError?.call("Upload failed: $e");
-    } finally {
-      _uploading = false;
-      onUploadComplete?.call();
+        final downloadUrl = await snapshot.ref.getDownloadURL().timeout(
+          const Duration(seconds: 30),
+          onTimeout: () {
+            debugPrint("[PhotoCapture] Getting download URL timed out");
+            throw TimeoutException('Getting download URL timed out');
+          },
+        );
+
+        debugPrint("[PhotoCapture] Upload successful: $downloadUrl");
+
+        // Update Firestore with image URL and location
+        await _updateFirestoreWithImage(
+          requestId: requestId,
+          imageUrl: downloadUrl,
+          senderUid: senderUid, // Pass senderUid to the update method
+          senderLocation: senderLocation,
+          senderDisplayName: senderDisplayName,
+          senderAvatarUrl: senderAvatarUrl,
+        );
+
+        onUploadSuccess?.call(downloadUrl);
+        _uploading = false;
+        onUploadComplete?.call();
+        return; // Success - exit the retry loop
+
+      } on TimeoutException catch (e) {
+        debugPrint(
+            "[PhotoCapture] Timeout on attempt ${retryCount + 1}: $e");
+
+        // 🔧 APPLE REVIEW FIX: Retry on timeout
+        if (retryCount < maxRetries) {
+          retryCount++;
+          debugPrint(
+              "[PhotoCapture] Retrying upload (attempt $retryCount/$maxRetries)...");
+          await Future.delayed(Duration(seconds: retryCount * 2));
+          continue;
+        }
+
+        onError?.call("Upload is taking longer than expected. Please try again.");
+      } on FirebaseException catch (e) {
+        debugPrint(
+            "[PhotoCapture] Firebase error on attempt ${retryCount + 1}: ${e.code} - ${e.message}");
+
+        // 🔧 APPLE REVIEW FIX: Retry on network errors
+        if ((e.code == 'unavailable' ||
+             e.code == 'deadline-exceeded' ||
+             e.code == 'cancelled') &&
+            retryCount < maxRetries) {
+          retryCount++;
+          debugPrint(
+              "[PhotoCapture] Retrying after network error (attempt $retryCount/$maxRetries)...");
+          await Future.delayed(Duration(seconds: retryCount * 2));
+          continue;
+        }
+
+        onError?.call("Upload failed. Please check your connection and try again.");
+      } catch (e) {
+        debugPrint("[PhotoCapture] Upload error on attempt ${retryCount + 1}: $e");
+
+        // 🔧 APPLE REVIEW FIX: Retry on general errors
+        if (retryCount < maxRetries) {
+          retryCount++;
+          debugPrint(
+              "[PhotoCapture] Retrying upload (attempt $retryCount/$maxRetries)...");
+          await Future.delayed(Duration(seconds: retryCount * 2));
+          continue;
+        }
+
+        onError?.call("Upload failed: $e");
+      }
     }
+
+    // If we get here, all retries failed
+    _uploading = false;
+    onUploadComplete?.call();
   }
 
   /// Update Firestore with image URL and metadata

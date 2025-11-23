@@ -3,7 +3,6 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:peek/services/terms_service.dart';
 import 'package:peek/theme/colors.dart';
@@ -318,37 +317,6 @@ class _TermsAcceptanceScreenState extends ConsumerState<TermsAcceptanceScreen> {
                             ),
                     ),
                   ),
-
-                  if (kDebugMode) ...[
-                    SizedBox(height: screenHeight * 0.02),
-                    TextButton(
-                      onPressed: _isProcessing
-                          ? null
-                          : () async {
-                              setState(() => _isProcessing = true);
-                              try {
-                                //SPACE
-
-                                //SPACE
-                                await TermsService.acceptTerms();
-                                if (mounted) {
-                                  // context.go('/');
-                                  context.go('/onboarding');
-                                }
-                              } catch (e) {
-                                debugPrint('[DEBUG] Skip error: $e');
-                              } finally {
-                                if (mounted) {
-                                  setState(() => _isProcessing = false);
-                                }
-                              }
-                            },
-                      child: const Text(
-                        '[DEBUG] Skip Terms',
-                        style: TextStyle(color: Colors.orange),
-                      ),
-                    ),
-                  ],
 
                   SizedBox(height: screenHeight * 0.03),
                 ],
