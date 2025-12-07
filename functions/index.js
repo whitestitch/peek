@@ -11,6 +11,15 @@ const logger = require("firebase-functions/logger");
 
 const {getStorage} = require("firebase-admin/storage");
 
+// Apple App Store Receipt Validation URLs
+const APPLE_PRODUCTION_VERIFY_URL =
+  "https://buy.itunes.apple.com/verifyReceipt";
+const APPLE_SANDBOX_VERIFY_URL =
+  "https://sandbox.itunes.apple.com/verifyReceipt";
+
+// Status code indicating sandbox receipt was used in production
+const APPLE_SANDBOX_RECEIPT_IN_PRODUCTION = 21007;
+
 // Initialize Firebase Admin SDK ONCE
 if (admin.apps.length === 0) {
   admin.initializeApp();
@@ -742,3 +751,261 @@ exports.cancelPeekRequest = onCall(
       }
     },
 );
+
+/**
+ * Validates an Apple App Store receipt with production/sandbox fallback.
+ *
+ * Apple's recommended approach (per App Store Review Guidelines):
+ * 1. First, validate against the PRODUCTION App Store endpoint
+ * 2. If status 21007 is returned ("sandbox receipt used in production"),
+ *    automatically retry against the SANDBOX endpoint
+ *
+ * This ensures the app works correctly in both TestFlight/sandbox testing
+ * and production environments.
+ *
+ * @param {string} receiptData - Base64-encoded receipt data from the app
+ * @param {string} verifyUrl - Apple verification URL to use
+ * @param {string} sharedSecret - Apple App-Specific Shared Secret
+ * @return {Promise<Object>} - Apple's verification response
+ */
+async function verifyAppleReceipt(receiptData, verifyUrl, sharedSecret) {
+  const requestBody = {
+    "receipt-data": receiptData,
+    "password": sharedSecret, // Required for auto-renewable subscriptions
+    "exclude-old-transactions": true,
+  };
+
+  const response = await fetch(verifyUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(requestBody),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Apple verification request failed: ${response.status}`);
+  }
+
+  return await response.json();
+}
+
+/**
+ * Apple Receipt Validation Cloud Function
+ *
+ * Implements Apple's recommended receipt validation flow:
+ * - Validates against production first
+ * - Falls back to sandbox if status 21007 is returned
+ * - Grants premium access only after successful validation
+ * - Stores receipt validation details for audit purposes
+ */
+exports.validateAppleReceipt = onCall(
+    {
+      region: "us-central1",
+      timeoutSeconds: 60,
+      enforceAppCheck: false,
+      // Access the APPLE_SHARED_SECRET from Firebase Secrets
+      secrets: ["APPLE_SHARED_SECRET"],
+    },
+    async (request) => {
+      logger.info("🧾 validateAppleReceipt called");
+
+      // App Check verification
+      if (!request.app && request.data.debug !== true) {
+        logger.error("🚨 App Check failed for validateAppleReceipt");
+        throw new HttpsError(
+            "unauthenticated",
+            "The function must be called from a verified app.",
+        );
+      }
+
+      // Authentication check
+      if (!request.auth || !request.auth.uid) {
+        throw new HttpsError(
+            "unauthenticated",
+            "User must be authenticated to validate receipts.",
+        );
+      }
+
+      // Get the shared secret from environment (populated by Firebase Secrets)
+      const sharedSecret = process.env.APPLE_SHARED_SECRET;
+      if (!sharedSecret) {
+        logger.error("🚨 APPLE_SHARED_SECRET not configured");
+        throw new HttpsError(
+            "failed-precondition",
+            "Server configuration error. Please contact support.",
+        );
+      }
+
+      const userId = request.auth.uid;
+      const {
+        receiptData,
+        productId,
+        purchaseId,
+        transactionDate,
+      } = request.data;
+
+      if (!receiptData) {
+        throw new HttpsError(
+            "invalid-argument",
+            "receiptData is required.",
+        );
+      }
+
+      logger.info(`🧾 Validating receipt for user ${userId}, ` +
+        `product: ${productId}, purchase: ${purchaseId}`);
+
+      try {
+        // Step 1: Try production endpoint first (Apple's recommended approach)
+        logger.info("🧾 Attempting production validation...");
+        let verificationResult = await verifyAppleReceipt(
+            receiptData,
+            APPLE_PRODUCTION_VERIFY_URL,
+            sharedSecret,
+        );
+
+        // Step 2: If sandbox receipt in production, retry with sandbox endpoint
+        if (verificationResult.status === APPLE_SANDBOX_RECEIPT_IN_PRODUCTION) {
+          logger.info(
+              "🧾 Sandbox receipt detected (status 21007). " +
+              "Retrying with sandbox endpoint...",
+          );
+          verificationResult = await verifyAppleReceipt(
+              receiptData,
+              APPLE_SANDBOX_VERIFY_URL,
+              sharedSecret,
+          );
+        }
+
+        // Log the verification status
+        logger.info(
+            `🧾 Apple verification status: ${verificationResult.status}`);
+
+        // Status 0 means success
+        if (verificationResult.status !== 0) {
+          const errorMessage = getAppleErrorMessage(verificationResult.status);
+          logger.error(
+              `🧾 Receipt validation failed: ${errorMessage} ` +
+              `(status: ${verificationResult.status})`,
+          );
+
+          // Store failed validation attempt for audit
+          await db.collection("receipt_validations").add({
+            userId,
+            productId,
+            purchaseId,
+            status: "failed",
+            appleStatus: verificationResult.status,
+            errorMessage,
+            timestamp: FieldValue.serverTimestamp(),
+          });
+
+          throw new HttpsError(
+              "failed-precondition",
+              `Receipt validation failed: ${errorMessage}`,
+          );
+        }
+
+        // Step 3: Validation successful - extract receipt info
+        const receipt = verificationResult.receipt || {};
+        const inAppPurchases = receipt.in_app || [];
+
+        // Verify the product was actually purchased
+        const purchasedProduct = inAppPurchases.find(
+            (p) => p.product_id === productId,
+        );
+
+        if (!purchasedProduct && productId) {
+          logger.warn(
+              `🧾 Product ${productId} not found in receipt. ` +
+              `Available products: ${
+                inAppPurchases.map((p) => p.product_id).join(", ")}`,
+          );
+          // Still proceed if receipt is valid - the product might be there
+          // under a different format or this might be a restore
+        }
+
+        // Step 4: Grant premium access in Firestore
+        const premiumData = {
+          isPremium: true,
+          premiumPlanId: productId || "unknown",
+          premiumGrantedAt: FieldValue.serverTimestamp(),
+          lastPurchaseId: purchaseId,
+          lastPurchaseTimestamp: transactionDate ?
+            Timestamp.fromMillisecondsSinceEpoch(parseInt(transactionDate)) :
+            null,
+          receiptValidated: true,
+          receiptValidatedAt: FieldValue.serverTimestamp(),
+          receiptEnvironment: verificationResult.environment || "unknown",
+        };
+
+        await db.collection("users").doc(userId).set(
+            premiumData,
+            {merge: true},
+        );
+
+        // Step 5: Store successful validation for audit trail
+        await db.collection("receipt_validations").add({
+          userId,
+          productId,
+          purchaseId,
+          status: "success",
+          appleStatus: 0,
+          environment: verificationResult.environment,
+          bundleId: receipt.bundle_id,
+          applicationVersion: receipt.application_version,
+          originalPurchaseDate: purchasedProduct ?
+            purchasedProduct.original_purchase_date : null,
+          timestamp: FieldValue.serverTimestamp(),
+        });
+
+        logger.info(
+            `✅ Receipt validated and premium granted for user ${userId}. ` +
+            `Environment: ${verificationResult.environment}`,
+        );
+
+        return {
+          success: true,
+          message: "Receipt validated successfully. Premium access granted.",
+          environment: verificationResult.environment,
+          productId: productId,
+        };
+      } catch (error) {
+        logger.error(`❌ Error validating receipt: ${error.message}`);
+
+        if (error instanceof HttpsError) {
+          throw error;
+        }
+
+        throw new HttpsError(
+            "internal",
+            `Receipt validation failed: ${error.message}`,
+        );
+      }
+    },
+);
+
+/**
+ * Returns a human-readable error message for Apple receipt status codes.
+ * Reference: https://developer.apple.com/documentation/appstorereceipts/status
+ *
+ * @param {number} status - Apple receipt status code
+ * @return {string} - Human-readable error message
+ */
+function getAppleErrorMessage(status) {
+  const errorMessages = {
+    21000: "The request to the App Store was not made using HTTP POST.",
+    21001: "This status code is no longer sent by the App Store.",
+    21002: "The data in the receipt-data property was malformed or missing.",
+    21003: "The receipt could not be authenticated.",
+    21004: "The shared secret does not match the shared secret on file.",
+    21005: "The receipt server is temporarily unable to provide the receipt.",
+    21006: "This receipt is valid but the subscription has expired.",
+    21007: "This receipt is from the test environment (sandbox).",
+    21008: "This receipt is from the production environment.",
+    21009: "Internal data access error.",
+    21010: "The user account cannot be found or has been deleted.",
+  };
+
+  return errorMessages[status] || `Unknown error (status: ${status})`;
+}

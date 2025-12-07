@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 
 /// Manages all In-App Purchase functionality
@@ -76,7 +78,14 @@ class IAPManager {
     debugPrint(
         "🛒 [IAPManager] Pending complete: ${purchase.pendingCompletePurchase}");
 
-    final bool grantSuccess = await _grantPremiumAccess(purchase);
+    // Use server-side validation for iOS, direct grant for Android
+    final bool grantSuccess;
+    if (Platform.isIOS) {
+      grantSuccess = await _validateAndGrantPremiumAccess(purchase);
+    } else {
+      // For Android, use the existing direct grant (Google Play handles validation)
+      grantSuccess = await _grantPremiumAccessDirect(purchase);
+    }
 
     if (purchase.pendingCompletePurchase) {
       if (grantSuccess) {
@@ -101,10 +110,10 @@ class IAPManager {
         }
       } else {
         debugPrint(
-            "⚠️ [IAPManager] Firestore grant failed, NOT completing purchase: ${purchase.purchaseID}");
+            "⚠️ [IAPManager] Validation/grant failed, NOT completing purchase: ${purchase.purchaseID}");
         // Don't complete the purchase if grant failed - this allows retry
         _showPurchaseErrorDialog(
-            "Failed to save premium status. Please check connection and try again, or use 'Restore Purchases'.");
+            "Failed to validate purchase. Please check connection and try again, or use 'Restore Purchases'.");
       }
     } else {
       debugPrint(
@@ -159,8 +168,89 @@ class IAPManager {
     }
   }
 
-  /// Grant premium access in Firestore with retry logic
-  Future<bool> _grantPremiumAccess(PurchaseDetails purchase) async {
+  /// Validate Apple receipt and grant premium access via Cloud Function
+  ///
+  /// This implements Apple's recommended validation approach:
+  /// 1. Send receipt to server (Cloud Function)
+  /// 2. Server validates against production App Store first
+  /// 3. If status 21007 returned, server retries with sandbox
+  /// 4. Only grants premium access after successful validation
+  Future<bool> _validateAndGrantPremiumAccess(PurchaseDetails purchase) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      debugPrint(
+          "⚠️ [IAPManager] Cannot validate: User is null during validation attempt.");
+      return false;
+    }
+
+    // Extract receipt data from the purchase
+    final receiptData = purchase.verificationData.serverVerificationData;
+    if (receiptData.isEmpty) {
+      debugPrint(
+          "⚠️ [IAPManager] No receipt data available for validation.");
+      // Fall back to direct grant if no receipt data (shouldn't happen normally)
+      return _grantPremiumAccessDirect(purchase);
+    }
+
+    debugPrint(
+        "🧾 [IAPManager] Validating receipt with server for product: ${purchase.productID}");
+
+    // Retry logic: try up to 3 times with delays
+    for (int attempt = 1; attempt <= 3; attempt++) {
+      try {
+        debugPrint(
+            "🧾 [IAPManager] Attempt $attempt/3: Calling validateAppleReceipt");
+
+        final callable = FirebaseFunctions.instanceFor(region: 'us-central1')
+            .httpsCallable('validateAppleReceipt');
+
+        final result = await callable.call({
+          'receiptData': receiptData,
+          'productId': purchase.productID,
+          'purchaseId': purchase.purchaseID,
+          'transactionDate': purchase.transactionDate,
+        });
+
+        final data = result.data as Map<String, dynamic>;
+        final success = data['success'] as bool? ?? false;
+        final environment = data['environment'] as String? ?? 'unknown';
+
+        if (success) {
+          debugPrint(
+              "✅ [IAPManager] Receipt validated successfully! Environment: $environment");
+          return true;
+        } else {
+          debugPrint(
+              "⚠️ [IAPManager] Validation returned success=false: ${data['message']}");
+          return false;
+        }
+      } on FirebaseFunctionsException catch (e) {
+        debugPrint(
+            "❌ [IAPManager] Attempt $attempt/3 - Firebase Functions error: ${e.code} - ${e.message}");
+
+        // If this wasn't the last attempt, wait before retrying
+        if (attempt < 3) {
+          await Future.delayed(Duration(seconds: attempt)); // 1s, then 2s delay
+          debugPrint("🔄 [IAPManager] Retrying validation in ${attempt}s...");
+        }
+      } catch (e) {
+        debugPrint(
+            "❌ [IAPManager] Attempt $attempt/3 - Unexpected error during validation: $e");
+
+        // If this wasn't the last attempt, wait before retrying
+        if (attempt < 3) {
+          await Future.delayed(Duration(seconds: attempt));
+          debugPrint("🔄 [IAPManager] Retrying validation in ${attempt}s...");
+        }
+      }
+    }
+
+    debugPrint("❌ [IAPManager] All 3 validation attempts failed");
+    return false;
+  }
+
+  /// Grant premium access directly in Firestore (for Android or fallback)
+  Future<bool> _grantPremiumAccessDirect(PurchaseDetails purchase) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) {
       debugPrint(

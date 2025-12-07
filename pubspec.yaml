@@ -2,7 +2,7 @@ name: peek
 description: "Peekio - Anonymous photo request app"
 publish_to: 'none' # private project
 
-version: 1.0.1+8
+version: 1.0.1+9
 
 environment:
   sdk: '>=3.3.0 <4.0.0' # Keep modern range
@@ -19,7 +19,7 @@ dependencies:
   firebase_messaging: ^15.0.1 # Keep previous update
   firebase_analytics: ^11.0.1 # Keep previous update
   firebase_in_app_messaging: ^0.8.0 # Keep previous update
-  firebase_ui_auth: ^1.13.1 # Keep previous update
+  # firebase_ui_auth removed - was unused and pulled in deprecated firebase_dynamic_links
   cloud_functions: ^5.5.1
 
   timeago: ^3.6.1
