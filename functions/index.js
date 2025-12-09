@@ -934,7 +934,7 @@ exports.validateAppleReceipt = onCall(
             premiumGrantedAt: FieldValue.serverTimestamp(),
             lastPurchaseId: purchaseId || decodedPayload.transactionId,
             lastPurchaseTimestamp: transactionDate ?
-              Timestamp.fromMillisecondsSinceEpoch(parseInt(transactionDate)) :
+              Timestamp.fromMillis(parseInt(transactionDate)) :
               null,
             receiptValidated: true,
             receiptValidatedAt: FieldValue.serverTimestamp(),
@@ -1133,7 +1133,7 @@ exports.validateAppleReceipt = onCall(
             return expiresMs > max ? expiresMs : max;
           }, 0);
           if (latestExpiry > 0) {
-            subscriptionExpiresAt = Timestamp.fromMillisecondsSinceEpoch(
+            subscriptionExpiresAt = Timestamp.fromMillis(
                 latestExpiry);
           }
         }
@@ -1144,7 +1144,7 @@ exports.validateAppleReceipt = onCall(
           premiumGrantedAt: FieldValue.serverTimestamp(),
           lastPurchaseId: purchaseId,
           lastPurchaseTimestamp: transactionDate ?
-            Timestamp.fromMillisecondsSinceEpoch(parseInt(transactionDate)) :
+            Timestamp.fromMillis(parseInt(transactionDate)) :
             null,
           receiptValidated: true,
           receiptValidatedAt: FieldValue.serverTimestamp(),

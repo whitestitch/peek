@@ -14,7 +14,24 @@ class IAPManager {
   StreamSubscription<List<PurchaseDetails>>? _purchaseSubscription;
   final GlobalKey<NavigatorState> navigatorKey;
 
+  /// Static flag to track if user explicitly requested restore
+  /// Used to prevent showing restore dialog for automatic StoreKit deliveries
+  /// Static so it can be set from SubscriptionController without instance access
+  static bool _userRequestedRestore = false;
+
   IAPManager({required this.navigatorKey});
+
+  /// Call this when user taps "Restore Purchases" button
+  /// Static method so it can be called without instance reference
+  static void markRestoreRequested() {
+    _userRequestedRestore = true;
+    debugPrint("🔄 [IAPManager] User requested restore - flag set");
+  }
+
+  /// Reset the restore flag after handling
+  static void _resetRestoreFlag() {
+    _userRequestedRestore = false;
+  }
 
   /// Initialize IAP listener
   Future<void> initialize() async {
@@ -120,7 +137,15 @@ class IAPManager {
           "🛒 [IAPManager] Purchase already completed, no action needed");
       if (purchase.status == PurchaseStatus.restored && grantSuccess) {
         await _logPurchaseEvent(purchase);
-        _showRestoreSuccessDialog();
+        // Only show restore dialog if user explicitly requested restore
+        // This prevents showing the dialog for automatic StoreKit deliveries on app launch
+        if (_userRequestedRestore) {
+          _showRestoreSuccessDialog();
+          _resetRestoreFlag();
+        } else {
+          debugPrint(
+              "🛒 [IAPManager] Skipping restore dialog - automatic delivery, not user-requested");
+        }
       }
     }
   }

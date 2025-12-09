@@ -1,10 +1,9 @@
 import 'package:flutter/foundation.dart'; // For debugPrint
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
+import 'package:peek/features/iap/iap_manager.dart';
 
 // Import the state class
-// import '../providers/subscription_state.dart';
-// import 'subscription_state.dart';
 import 'subscription_state.dart';
 
 // Define your actual premium product ID here
@@ -133,6 +132,11 @@ class SubscriptionController extends StateNotifier<SubscriptionState> {
     state = state.copyWith(isLoading: true, errorMessage: null);
     debugPrint("[SubscriptionController] Restoring purchases...");
     try {
+      // Mark that user explicitly requested restore
+      // This ensures the restore dialog is shown for user-initiated restores
+      // but not for automatic StoreKit deliveries on app launch
+      IAPManager.markRestoreRequested();
+
       await InAppPurchase.instance.restorePurchases();
       // Result/Updates are handled by the purchase stream listener in _PeekAppState
       // Reset loading *after* initiating the restore attempt.

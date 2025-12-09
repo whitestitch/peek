@@ -2,7 +2,7 @@ name: peek
 description: "Peekio - Anonymous photo request app"
 publish_to: 'none' # private project
 
-version: 1.0.1+9
+version: 1.0.1+10
 
 environment:
   sdk: '>=3.3.0 <4.0.0' # Keep modern range
