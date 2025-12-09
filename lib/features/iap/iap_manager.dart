@@ -184,13 +184,24 @@ class IAPManager {
     }
 
     // Extract receipt data from the purchase
-    final receiptData = purchase.verificationData.serverVerificationData;
+    // On iOS, serverVerificationData contains the base64-encoded App Store receipt
+    // On Android, it contains the purchase token
+    final String receiptData = purchase.verificationData.serverVerificationData;
+
     if (receiptData.isEmpty) {
       debugPrint(
           "⚠️ [IAPManager] No receipt data available for validation.");
       // Fall back to direct grant if no receipt data (shouldn't happen normally)
       return _grantPremiumAccessDirect(purchase);
     }
+
+    // Log receipt data length for debugging (don't log actual receipt for security)
+    debugPrint(
+        "🧾 [IAPManager] Receipt data length: ${receiptData.length} characters");
+    debugPrint(
+        "🧾 [IAPManager] Receipt data starts with: ${receiptData.substring(0, receiptData.length > 50 ? 50 : receiptData.length)}...");
+    debugPrint(
+        "🧾 [IAPManager] Source: ${purchase.verificationData.source}");
 
     debugPrint(
         "🧾 [IAPManager] Validating receipt with server for product: ${purchase.productID}");
